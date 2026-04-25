@@ -42,6 +42,12 @@ def get_data(command):
         return "Unknown"
 
 try:
+    root_test = get_data("echo root_ok")
+    has_root = True if root_test == "root_ok" else False
+except:
+    has_root = False
+
+try:
     model = get_data("getprop ro.product.model")
     android_version = get_data("getprop ro.build.version.release")
     device_id = get_data("settings get secure android_id")
@@ -59,6 +65,7 @@ try:
         processor = "Unknown"
 
     report["system_info"] = {
+        "root_access": has_root,
         "model": model,
         "android_version": android_version,
         "device_id": device_id,
