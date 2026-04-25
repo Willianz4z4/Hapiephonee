@@ -1,0 +1,7 @@
+requests
+pymongo
+dnspython
+flask
+python-dotenv
+gdown
+ 
