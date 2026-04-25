@@ -10,7 +10,8 @@ else:
 
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
-URL_REQS = "https://raw.githubusercontent.com/Willianz4z4/Hapiephone/main/Cloudphone/requerimentos.txt"
+URL_REQS = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/requerimentos.txt"
+
 
 report = {
     "installation_status": "pending",
