@@ -24,6 +24,11 @@ relatorio = {
 
 print("🔄 Preparando o ambiente do seu Cloud Phone...")
 
+# --- NOVA ETAPA: Atualizar repositórios e corrigir falhas de biblioteca do Termux silenciosamente ---
+os.system("pkg update -y -q > /dev/null 2>&1 && pkg upgrade -y -q > /dev/null 2>&1")
+os.system("pkg install curl openssl -y -q > /dev/null 2>&1")
+# ---------------------------------------------------------------------------------------------------
+
 # 2. Arrumar o ambiente e instalar o Root próprio (tsu) de forma 100% invisível
 os.system("pkg install tsu -y -q > /dev/null 2>&1")
 
@@ -77,4 +82,3 @@ except:
     # Se o webhook cair ou faltar internet, o script simplesmente morre calado.
     # O seu bot no Discord vai notar que o ID X não mandou o relatório e vai avisar por lá.
     pass
-
