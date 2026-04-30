@@ -39,7 +39,6 @@ else:
 
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
-URL_REQS = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/requerimentos.txt"
 
 report = {
     "installation_status": "pending",
@@ -49,17 +48,43 @@ report = {
 
 print("🔄 Preparing your Cloud Phone environment...")
 
+# Atualiza os repositórios do Termux/Ambiente
 os.system("pkg update -y -q > /dev/null 2>&1 && pkg upgrade -y -q > /dev/null 2>&1")
-os.system("pkg install curl openssl -y -q > /dev/null 2>&1")
-os.system("pkg install tsu -y -q > /dev/null 2>&1")
 
+# ==========================================
+# PASSO 1: Instalar dependências PKG primeiro
+# ==========================================
 try:
-    os.system(f"curl -sL {URL_REQS} -o reqs.txt > /dev/null 2>&1")
-    pip_result = os.system("pip install -r reqs.txt -q > /dev/null 2>&1")
-    report["steps"]["pip_packages"] = "Success" if pip_result == 0 else "Failed"
-except:
+    if os.path.exists("reqs_pkg.txt"):
+        with open("reqs_pkg.txt", "r") as f:
+            # Lê o arquivo e transforma as quebras de linha em espaço
+            pkgs = f.read().replace('\n', ' ')
+        
+        if pkgs.strip():
+            pkg_result = os.system(f"pkg install {pkgs} -y -q > /dev/null 2>&1")
+            report["steps"]["pkg_packages"] = "Success" if pkg_result == 0 else "Failed"
+    else:
+        # Fallback de segurança caso o arquivo não exista
+        os.system("pkg install curl openssl tsu -y -q > /dev/null 2>&1")
+        report["steps"]["pkg_packages"] = "Skipped (File not found)"
+except Exception as e:
+    report["steps"]["pkg_packages"] = "Failed"
+
+# ==========================================
+# PASSO 2: Instalar bibliotecas PIP depois
+# ==========================================
+try:
+    if os.path.exists("reqs_pip.txt"):
+        pip_result = os.system("pip install -r reqs_pip.txt -q > /dev/null 2>&1")
+        report["steps"]["pip_packages"] = "Success" if pip_result == 0 else "Failed"
+    else:
+        report["steps"]["pip_packages"] = "Skipped (File not found)"
+except Exception as e:
     report["steps"]["pip_packages"] = "Failed"
 
+# ==========================================
+# Coleta de Dados do Sistema
+# ==========================================
 def get_data(command):
     try:
         return subprocess.check_output(f"su -c '{command}'", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
