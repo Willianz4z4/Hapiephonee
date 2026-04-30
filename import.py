@@ -34,7 +34,7 @@ if guild_id and owner_id:
     except:
         pass
 else:
-    print("⚠️ Configuração ausente! Na primeira vez, você precisa fornecer as IDs.")
+    print("⚠️ Configuração ausente! Na primeira vez, você precisa fornecer as IDs no comando.")
     sys.exit(1)
 
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
@@ -100,12 +100,21 @@ except:
 report["installation_status"] = "Completed"
 print("✅ Configuration finished! Connecting to control panel...")
 
+# 👉 AQUI ESTÁ A CORREÇÃO MÁGICA 👈
 print("🚀 Iniciando serviços em background (Auto-Copy)...")
 try:
+    # 1. Cria a pasta 'functions' caso ela não exista
+    os.makedirs("functions", exist_ok=True)
+    
+    # 2. Faz o download do copy.py do seu repositório oficial
+    URL_COPY_PY = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/copy.py"
+    os.system(f"curl -sL {URL_COPY_PY} -o functions/copy.py > /dev/null 2>&1")
+    
+    # 3. Inicia o arquivo
     subprocess.Popen([sys.executable, "functions/copy.py", device_id, guild_id], 
                      stdout=subprocess.DEVNULL, 
                      stderr=subprocess.DEVNULL)
-    print("✅ Módulo Auto-Copy rodando em segundo plano.")
+    print("✅ Módulo Auto-Copy baixado e rodando em segundo plano.")
 except Exception as e:
     print(f"⚠️ Aviso: Não foi possível iniciar o Auto-Copy. Erro: {e}")
 
