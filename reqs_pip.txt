@@ -1,1 +1,5 @@
-. 
+requests
+dnspython
+flask
+python-dotenv
+gdown
