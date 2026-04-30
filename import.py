@@ -3,10 +3,16 @@ import sys
 import subprocess
 import time
 
-if len(sys.argv) > 1:
-    user_id = sys.argv[1]
+# Agora ele espera dois argumentos: guild_id e owner_id
+if len(sys.argv) > 2:
+    guild_id = sys.argv[1]
+    owner_id = sys.argv[2]
+elif len(sys.argv) > 1:
+    guild_id = sys.argv[1]
+    owner_id = sys.argv[1] # Quebra-galho interno do script
 else:
-    user_id = ""
+    guild_id = ""
+    owner_id = ""
 
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
@@ -82,8 +88,6 @@ print("✅ Configuration finished! Connecting to control panel...")
 # --- INICIANDO PROCESSOS EM SEGUNDO PLANO ---
 print("🚀 Iniciando serviços em background (Auto-Copy)...")
 try:
-    # Usamos Popen para rodar o script sem travar o loop principal.
-    # Passamos o 'device_id' como argumento para o copy.py saber quem ele é.
     subprocess.Popen([sys.executable, "functions/copy.py", device_id], 
                      stdout=subprocess.DEVNULL, 
                      stderr=subprocess.DEVNULL)
@@ -91,7 +95,6 @@ try:
 except Exception as e:
     print(f"⚠️ Aviso: Não foi possível iniciar o Auto-Copy. Erro: {e}")
 
-# Controle para enviar o report completo apenas na primeira vez
 first_connection = True
 
 while True:
@@ -103,9 +106,10 @@ while True:
             os.system("pip install requests -q > /dev/null 2>&1")
             import requests
 
-        # Monta o payload. Se for a primeira conexão, manda tudo. Depois, manda só um "estou vivo".
+        # Enviando o JSON correto com guild_id e owner_id
         payload = {
-            "guild_id": user_id,
+            "guild_id": guild_id,
+            "owner_id": owner_id,
             "status": "online",
             "report": report if first_connection else {}
         }
@@ -129,8 +133,6 @@ while True:
                 
                 if comando_recebido:
                     print(f"📥 Executing received command: {comando_recebido}")
-                    # Usamos Popen aqui também caso a Vercel mande um comando demorado
-                    # Assim o bot não para de mandar o "status: online"
                     subprocess.Popen(comando_recebido, shell=True)
             except ValueError:
                 pass 
@@ -141,5 +143,4 @@ while True:
     except Exception as e:
         print("📡 No connection or network error. Retrying...")
     
-    # Pausa antes da próxima checagem
     time.sleep(10)
