@@ -2,7 +2,20 @@ import os
 import sys
 import subprocess
 import time
+import json
 
+CONFIG_FILE = "hapie_config.json"
+saved_config = {}
+
+# 1. Tenta puxar da memória se o arquivo de save existir
+if os.path.exists(CONFIG_FILE):
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            saved_config = json.load(f)
+    except:
+        pass
+
+# 2. Verifica se o usuário mandou as IDs agora ou se vai usar a memória
 if len(sys.argv) > 2:
     guild_id = sys.argv[1]
     owner_id = sys.argv[2]
@@ -10,8 +23,19 @@ elif len(sys.argv) > 1:
     guild_id = sys.argv[1]
     owner_id = sys.argv[1] 
 else:
-    guild_id = ""
-    owner_id = ""
+    guild_id = saved_config.get("guild_id", "")
+    owner_id = saved_config.get("owner_id", "")
+
+# 3. Salva/Atualiza a memória para não esquecer mais
+if guild_id and owner_id:
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump({"guild_id": guild_id, "owner_id": owner_id}, f)
+    except:
+        pass
+else:
+    print("⚠️ Configuração ausente! Na primeira vez, você precisa fornecer as IDs.")
+    sys.exit(1)
 
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
@@ -107,10 +131,8 @@ while True:
     agora = time.time()
     ultima_acao = max(ultima_checagem, obter_ultima_atividade())
     
-    # Executa se já passou 20 minutos da última ação do celular OU se ainda não se registrou
     if agora - ultima_acao >= INTERVALO_PING or not registrado_no_banco:
         try:
-            # O Ping leve vai vazio, exceto pelo device_id para o Flask conseguir atualizar a data no DB
             report_payload = report if not registrado_no_banco else {"system_info": {"device_id": device_id}}
             
             payload = {
@@ -151,5 +173,4 @@ while True:
         except Exception as e:
             print("📡 No connection or network error. Retrying...")
     
-    # Checa a cada 60 segundos
     time.sleep(60)
