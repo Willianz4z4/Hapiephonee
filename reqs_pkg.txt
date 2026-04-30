@@ -1,0 +1,4 @@
+curl
+openssl
+tsu
+termux-api
