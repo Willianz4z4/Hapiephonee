@@ -3,7 +3,7 @@ import time
 import subprocess
 import requests
 
-# Verifica se o import.py passou as IDs corretamente
+# Verifica se o script principal passou as IDs corretamente
 if len(sys.argv) < 3:
     print("❌ Faltando IDs no comando!")
     sys.exit(1)
@@ -11,8 +11,10 @@ if len(sys.argv) < 3:
 device_id = sys.argv[1]
 guild_id = sys.argv[2]
 
-# Suas configurações de conexão
-URL_WEBHOOK_COPY = "https://hapiephoneugph.vercel.app/api/copy"
+# ==========================================
+# USANDO EXATAMENTE A MESMA URL DO IMPORT.PY
+# ==========================================
+URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 
 def get_clipboard_termux():
@@ -51,8 +53,8 @@ while True:
                 "Authorization": AUTH_SECRET
             }
 
-            # Manda a bala pro Servidor
-            resp = requests.post(URL_WEBHOOK_COPY, json=payload, headers=headers, timeout=5)
+            # Manda a bala pro Servidor na MESMA rota
+            resp = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=5)
             
             print(f"📡 Resposta da Vercel: STATUS {resp.status_code}")
             
