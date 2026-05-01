@@ -19,14 +19,25 @@ AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 
 print("🔓 Preparando o ambiente e ativando superpoderes...")
 
-# 👉 1. LOOP PERSISTENTE PARA GARANTIR O ROOT
-# Se a permissão for negada, ele tenta de novo a cada 3 segundos até dar certo!
+# 👉 1. LOOP PERSISTENTE PARA GARANTIR O ROOT E BYPASS DE BATERIA
 while True:
-    print("🛡️ Solicitando ROOT para liberar leitura de teclado global...")
+    print("🛡️ Solicitando ROOT para liberar permissões e desativar soneca do Android...")
     try:
-        # check=True faz o código acusar erro se o Root for negado
+        # 1. Permissão para ler a área de transferência
         subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow"', shell=True, check=True)
-        print("✅ ROOT concedido! Bloqueio do Android desativado com sucesso.")
+        subprocess.run('su -c "appops set com.termux.api READ_CLIPBOARD allow"', shell=True, check=False)
+
+        # 2. O Truque da Tela Sobreposta (SYSTEM_ALERT_WINDOW)
+        # Impede o Android de congelar os processos achando que estão inativos
+        subprocess.run('su -c "appops set com.termux SYSTEM_ALERT_WINDOW allow"', shell=True, check=False)
+        subprocess.run('su -c "appops set com.termux.api SYSTEM_ALERT_WINDOW allow"', shell=True, check=False)
+
+        # 3. Desligar a "Soneca" (Doze Mode / Otimização de Bateria)
+        # Coloca o Termux e o Termux:API na Whitelist de energia irrestrita do Android
+        subprocess.run('su -c "dumpsys deviceidle whitelist +com.termux"', shell=True, check=False)
+        subprocess.run('su -c "dumpsys deviceidle whitelist +com.termux.api"', shell=True, check=False)
+
+        print("✅ ROOT concedido e permissões de anti-congelamento ativadas com sucesso!")
         break  # Sai da repetição infinita porque deu certo!
     except subprocess.CalledProcessError:
         print("❌ Permissão Root NEGADA ou falhou!")
@@ -55,10 +66,10 @@ def get_clipboard_termux():
 
 last_clipboard = get_clipboard_termux()
 
-print(f"\n📋 Monitor de Teclado Global (Root API) Iniciado!")
+print(f"\n📋 Monitor de Teclado Global (Root Bypass) Iniciado!")
 print(f"📱 Device: {device_id} | 🛡️ Guilda: {guild_id}")
 print(f"Última coisa copiada: '{last_clipboard}'\n")
-print("⏳ Rodando em segundo plano. Pode minimizar o Termux e ir copiar suas coisas!")
+print("⏳ Rodando em segundo plano. O Root agora protege contra o congelamento. Pode minimizar!")
 
 while True:
     try:
