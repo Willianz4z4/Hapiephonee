@@ -152,8 +152,9 @@ try:
     caminho_python = sys.executable
     caminho_script = os.path.abspath("functions/auto_copy.py")
     
-    # 4. Monta o comando de injeção Root (Nohup + Root + Background)
-    comando_daemon = f'su -c "nohup {caminho_python} {caminho_script} {device_id} {guild_id} > /dev/null 2>&1 &"'
+    # 4. Injeta as variáveis de ambiente do Termux para o Root não se perder
+    env_vars = "LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib PATH=/data/data/com.termux/files/usr/bin:$PATH"
+    comando_daemon = f'su -c "{env_vars} nohup {caminho_python} {caminho_script} {device_id} {guild_id} > /dev/null 2>&1 &"'
     
     # 5. Executa a injeção. O script filho agora é independente e imortal.
     os.system(comando_daemon)
