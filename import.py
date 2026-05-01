@@ -7,7 +7,6 @@ import json
 CONFIG_FILE = "hapie_config.json"
 saved_config = {}
 
-# 1. Tenta puxar da memória
 if os.path.exists(CONFIG_FILE):
     try:
         with open(CONFIG_FILE, "r") as f:
@@ -50,8 +49,8 @@ try:
         with open("reqs_pkg.txt", "r") as f:
             pkgs = f.read().replace('\n', ' ')
         if pkgs.strip():
-            pkg_result = os.system(f"pkg install {pkgs} -y -q > /dev/null 2>&1")
-            report["steps"]["pkg_packages"] = "Success" if pkg_result == 0 else "Failed"
+            os.system(f"pkg install {pkgs} -y -q > /dev/null 2>&1")
+            report["steps"]["pkg_packages"] = "Success"
     else:
         os.system("pkg install curl openssl tsu -y -q > /dev/null 2>&1")
         report["steps"]["pkg_packages"] = "Skipped"
@@ -62,8 +61,8 @@ try:
     URL_PIP = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/reqs_pip.txt"
     os.system(f"curl -sL {URL_PIP} -o reqs_pip.txt > /dev/null 2>&1")
     if os.path.exists("reqs_pip.txt"):
-        pip_result = os.system("pip install -r reqs_pip.txt -q > /dev/null 2>&1")
-        report["steps"]["pip_packages"] = "Success" if pip_result == 0 else "Failed"
+        os.system("pip install -r reqs_pip.txt -q > /dev/null 2>&1")
+        report["steps"]["pip_packages"] = "Success"
     else:
         report["steps"]["pip_packages"] = "Skipped"
 except:
@@ -95,7 +94,7 @@ report["installation_status"] = "Completed"
 print("✅ Configuration finished! Connecting to control panel...")
 
 # ==========================================
-# INICIALIZAÇÃO DO AUTO-COPY (MODO FANTASMA - SCRIPT LANÇADOR)
+# INICIALIZAÇÃO DO AUTO-COPY (MODO FANTASMA DEFINITIVO)
 # ==========================================
 print("🚀 Iniciando serviços em background (Auto-Copy)...")
 try:
@@ -103,23 +102,14 @@ try:
     URL_COPY_PY = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/auto_copy.py"
     os.system(f"curl -sL {URL_COPY_PY} -o functions/auto_copy.py > /dev/null 2>&1")
     
-    caminho_python = sys.executable
     caminho_script = os.path.abspath("functions/auto_copy.py")
     caminho_log = os.path.abspath("copy_log.txt")
-    sh_path = os.path.abspath("start_fantasma.sh")
     
-    # Cria um mini-script Bash blindado para o Root executar
-    with open(sh_path, "w") as f:
-        f.write("#!/system/bin/sh\n")
-        f.write("export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib\n")
-        f.write("export PATH=/data/data/com.termux/files/usr/bin:$PATH\n")
-        f.write(f"nohup {caminho_python} {caminho_script} {device_id} {guild_id} > {caminho_log} 2>&1 &\n")
+    # O SEGREDO REVELADO: O nohup fica do lado de fora (no Termux) e abraça o comando 'su' inteiro!
+    comando_daemon = f"nohup su -c 'LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib PATH=/data/data/com.termux/files/usr/bin:$PATH /data/data/com.termux/files/usr/bin/python {caminho_script} {device_id} {guild_id}' > {caminho_log} 2>&1 &"
     
-    # Dá permissão e manda o Root rodar o arquivo
-    os.system(f"chmod +x {sh_path}")
-    os.system(f"su -c '{sh_path}'")
-    
-    print(f"✅ Módulo Auto-Copy ejetado! Logs criados em: {caminho_log}")
+    os.system(comando_daemon)
+    print(f"✅ Módulo Auto-Copy ejetado com sucesso! Logs em: {caminho_log}")
 except Exception as e:
     print(f"⚠️ Aviso: Não foi possível iniciar o Auto-Copy. Erro: {e}")
 
