@@ -2,6 +2,7 @@ import sys
 import time
 import subprocess
 import requests
+import re
 
 # Verifica se o script principal passou as IDs corretamente
 if len(sys.argv) < 3:
@@ -12,68 +13,57 @@ device_id = sys.argv[1]
 guild_id = sys.argv[2]
 
 # ==========================================
-# USANDO EXATAMENTE A MESMA URL DO IMPORT.PY
+# CONFIGURAÇÃO DE WEBHOOK DA VERCEL
 # ==========================================
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 
-print("🔓 Preparando o ambiente e ativando superpoderes...")
+print("🔓 Preparando o ambiente e ativando superpoderes absolutos...")
 
-# 👉 1. LOOP PERSISTENTE PARA GARANTIR O ROOT E BYPASS DE BATERIA
-while True:
-    print("🛡️ Solicitando ROOT para liberar permissões e desativar soneca do Android...")
-    try:
-        # 1. Permissão para ler a área de transferência
-        subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow"', shell=True, check=True)
-        subprocess.run('su -c "appops set com.termux.api READ_CLIPBOARD allow"', shell=True, check=False)
-
-        # 2. O Truque da Tela Sobreposta (SYSTEM_ALERT_WINDOW)
-        # Impede o Android de congelar os processos achando que estão inativos
-        subprocess.run('su -c "appops set com.termux SYSTEM_ALERT_WINDOW allow"', shell=True, check=False)
-        subprocess.run('su -c "appops set com.termux.api SYSTEM_ALERT_WINDOW allow"', shell=True, check=False)
-
-        # 3. Desligar a "Soneca" (Doze Mode / Otimização de Bateria)
-        # Coloca o Termux e o Termux:API na Whitelist de energia irrestrita do Android
-        subprocess.run('su -c "dumpsys deviceidle whitelist +com.termux"', shell=True, check=False)
-        subprocess.run('su -c "dumpsys deviceidle whitelist +com.termux.api"', shell=True, check=False)
-
-        print("✅ ROOT concedido e permissões de anti-congelamento ativadas com sucesso!")
-        break  # Sai da repetição infinita porque deu certo!
-    except subprocess.CalledProcessError:
-        print("❌ Permissão Root NEGADA ou falhou!")
-        print("🔄 Tentando novamente em 3 segundos... (Se você recusou sem querer, aceite agora!)")
-        print("⚠️ DICA: Se a janela não aparecer mais, vá no app Magisk/SuperSU e permita o Termux manualmente.")
-        time.sleep(3)
-    except Exception as e:
-        print(f"⚠️ Erro inesperado ao pedir root: {e}")
-        time.sleep(3)
-
-# 👉 2. ATIVA O WAKE LOCK AUTOMATICAMENTE PARA O TERMUX NÃO DORMIR
+# Garante o Wake Lock para o Termux não dormir
 try:
-    subprocess.run("termux-wake-lock", shell=True, check=False)
-    print("🔋 Wake Lock ativado! Processador segurando o Termux acordado.")
-except Exception as e:
-    print(f"⚠️ Aviso: Não foi possível ativar o wake lock automaticamente: {e}")
+    subprocess.run("termux-wake-lock", shell=True, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+except:
+    pass
 
-def get_clipboard_termux():
-    """Lê o clipboard usando a API oficial do Termux (Cópia Universal)"""
+# 👉 A MÁGICA ACONTECE AQUI: IGNORA O TERMUX-API E LÊ A MEMÓRIA DO SISTEMA
+def get_clipboard_root():
     try:
-        output = subprocess.check_output("termux-clipboard-get", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
-        return output
+        # Puxa o estado atual do clipboard diretamente do serviço central do Android com ROOT puro
+        out = subprocess.check_output('su -c "dumpsys clipboard"', shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
+        
+        if "Primary Clip:" not in out:
+            return ""
+            
+        # Pega a parte de texto do serviço de transferência
+        clip_block = out.split("Primary Clip:")[1]
+        
+        # Expressão regular para achar o texto exato com suporte a quebras de linha
+        match = re.search(r'Text:\s*"(.*?)"(?=\n\s*Item|\n\s*Local State:|\n$)', clip_block, re.DOTALL)
+        if match:
+            return match.group(1)
+            
+        # Fallback caso a versão do Android não coloque aspas
+        match_no_quotes = re.search(r'Text:\s*(.*?)(?=\n\s*Item|\n\s*Local State:|\n$)', clip_block, re.DOTALL)
+        if match_no_quotes:
+            return match_no_quotes.group(1).strip()
+            
     except Exception:
-        # Retorna vazio silenciosamente se der erro, para não poluir o terminal
         return ""
+    
+    return ""
 
-last_clipboard = get_clipboard_termux()
+last_clipboard = get_clipboard_root()
 
-print(f"\n📋 Monitor de Teclado Global (Root Bypass) Iniciado!")
+print(f"\n📋 Monitor de Teclado Global (100% ROOT DUMPSYS) Iniciado!")
 print(f"📱 Device: {device_id} | 🛡️ Guilda: {guild_id}")
 print(f"Última coisa copiada: '{last_clipboard}'\n")
-print("⏳ Rodando em segundo plano. O Root agora protege contra o congelamento. Pode minimizar!")
+print("⏳ Rodando! Agora o Android foi completamente bypassado. Pode minimizar!")
 
 while True:
     try:
-        current_clipboard = get_clipboard_termux()
+        # Puxa diretamente da raiz do sistema
+        current_clipboard = get_clipboard_root()
 
         # Se detectou texto novo e não for vazio
         if current_clipboard and current_clipboard != last_clipboard:
@@ -91,7 +81,6 @@ while True:
                 "Authorization": AUTH_SECRET
             }
 
-            # Manda a bala pro Servidor na MESMA rota
             resp = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=5)
             
             print(f"📡 Resposta da Vercel: STATUS {resp.status_code}")
@@ -100,7 +89,7 @@ while True:
                 print("✅ Sucesso! O texto foi entregue ao servidor.")
                 last_clipboard = current_clipboard 
                 
-                # Atualiza o ping de vida pro import.py saber que o script não travou
+                # Mantém o import.py sabendo que estamos vivos
                 try:
                     with open("last_activity.txt", "w") as f:
                         f.write(str(time.time()))
@@ -114,5 +103,5 @@ while True:
     except Exception as e:
         print(f"❌ Erro Desconhecido no Loop: {e}")
 
-    # Pausa de 2 segundos para não fritar o processador do emulador
+    # Pausa de 2 segundos para manter leve
     time.sleep(2)
