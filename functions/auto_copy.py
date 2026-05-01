@@ -13,29 +13,41 @@ URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 headers = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
 
-print("🔓 Preparando leitura super furtiva...")
+print("🔓 Preparando leitura super furtiva (Modo Diagnóstico)...")
 
 # Evita que o Termux durma
 subprocess.run("termux-wake-lock", shell=True, check=False)
 
 def get_clipboard_invisivel():
-    """Usa o Root puro para ler o teclado sem abrir nenhum app"""
+    """Usa o Root puro para ler o teclado sem abrir nenhum app e captura erros reais"""
     try:
-        # 👉 O COMANDO MÁGICO: Pergunta direto pro sistema Android, ignorando o Termux!
-        output = subprocess.check_output('su -c "cmd clipboard get-text"', shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        # Executa o comando e captura a saída padrão (stdout) e os erros (stderr)
+        resultado = subprocess.run(
+            ['su', '-c', 'cmd clipboard get-text'], 
+            capture_output=True, 
+            text=True
+        )
         
-        # Limpa coisas estranhas que o Android pode retornar quando está vazio
+        # Se o sistema Android recusar ou der erro no Magisk, avisa na tela
+        if resultado.returncode != 0:
+            print(f"⚠️ Erro no Root/Android: {resultado.stderr.strip()}")
+            return ""
+            
+        output = resultado.stdout.strip()
+        
+        # Limpa vazios e retornos nulos
         if output == "null" or output == "":
             return ""
             
         return output
-    except Exception:
+    except Exception as e:
+        print(f"❌ Erro interno do Python: {e}")
         return ""
 
 last_clip = get_clipboard_invisivel()
 
-print("📋 Monitor 100% Invisível Iniciado!")
-print("⏳ Pode ir pro Google copiar as coisas. Nada vai piscar na tela.")
+print("📋 Monitor Invisível Iniciado!")
+print("⏳ Tente copiar algo no Google. Se o Android bloquear, o erro aparecerá aqui.")
 
 while True:
     try:
@@ -44,7 +56,12 @@ while True:
         if current and current != last_clip:
             print(f"\n📝 NOVO TEXTO: '{current}'")
             try:
-                requests.post(URL_WEBHOOK, json={"texto": current, "device_id": device_id, "guild_id": guild_id}, headers=headers, timeout=5)
+                requests.post(
+                    URL_WEBHOOK, 
+                    json={"texto": current, "device_id": device_id, "guild_id": guild_id}, 
+                    headers=headers, 
+                    timeout=5
+                )
                 print("✅ Enviado com sucesso!")
                 last_clip = current
                 
