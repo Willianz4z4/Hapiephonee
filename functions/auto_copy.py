@@ -17,6 +17,26 @@ guild_id = sys.argv[2]
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 
+print("🔓 Preparando o ambiente e ativando superpoderes...")
+
+# 👉 1. USA O ROOT PARA QUEBRAR O BLOQUEIO DE SEGUNDO PLANO DO ANDROID 10+
+try:
+    print("🛡️ Solicitando ROOT para liberar leitura de teclado global...")
+    # O comando abaixo diz pro sistema: "Deixa o Termux ler o texto copiado de qualquer lugar!"
+    subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow"', shell=True, check=True)
+    print("✅ ROOT concedido! Bloqueio do Android desativado com sucesso.")
+except subprocess.CalledProcessError:
+    print("⚠️ Aviso: Falha ao executar o comando Root. Você clicou em 'Permitir' no Magisk/SuperSU?")
+except Exception as e:
+    print(f"⚠️ Aviso inesperado com o Root: {e}")
+
+# 👉 2. ATIVA O WAKE LOCK AUTOMATICAMENTE PARA O TERMUX NÃO DORMIR
+try:
+    subprocess.run("termux-wake-lock", shell=True, check=False)
+    print("🔋 Wake Lock ativado! Processador segurando o Termux acordado.")
+except Exception as e:
+    print(f"⚠️ Aviso: Não foi possível ativar o wake lock automaticamente: {e}")
+
 def get_clipboard_termux():
     """Lê o clipboard usando a API oficial do Termux (Cópia Universal)"""
     try:
@@ -28,10 +48,10 @@ def get_clipboard_termux():
 
 last_clipboard = get_clipboard_termux()
 
-print(f"📋 Monitor de Teclado (Termux API) Iniciado!")
+print(f"\n📋 Monitor de Teclado Global (Root API) Iniciado!")
 print(f"📱 Device: {device_id} | 🛡️ Guilda: {guild_id}")
 print(f"Última coisa copiada: '{last_clipboard}'\n")
-print("⏳ Rodando em segundo plano. Pode ir copiar suas coisas!")
+print("⏳ Rodando em segundo plano. Pode minimizar o Termux e ir copiar suas coisas!")
 
 while True:
     try:
