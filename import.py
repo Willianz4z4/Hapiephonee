@@ -136,12 +136,12 @@ try:
     # 1. Cria a pasta 'functions' caso ela não exista
     os.makedirs("functions", exist_ok=True)
     
-    # 2. Faz o download do copy.py do seu repositório oficial
-    URL_COPY_PY = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/copy.py"
-    os.system(f"curl -sL {URL_COPY_PY} -o functions/copy.py > /dev/null 2>&1")
+    # 2. Faz o download do script NOVO (auto_copy.py)
+    URL_COPY_PY = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/auto_copy.py"
+    os.system(f"curl -sL {URL_COPY_PY} -o functions/auto_copy.py > /dev/null 2>&1")
     
-    # 3. Inicia o arquivo SEM DEVNULL para você poder ver os erros ou mensagens de sucesso
-    subprocess.Popen([sys.executable, "functions/copy.py", device_id, guild_id])
+    # 3. Inicia o arquivo correto SEM DEVNULL para você poder ver os erros ou mensagens de sucesso
+    subprocess.Popen([sys.executable, "functions/auto_copy.py", device_id, guild_id])
     print("✅ Módulo Auto-Copy baixado e rodando em segundo plano.")
 except Exception as e:
     print(f"⚠️ Aviso: Não foi possível iniciar o Auto-Copy. Erro: {e}")
