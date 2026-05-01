@@ -93,9 +93,6 @@ except:
 report["installation_status"] = "Completed"
 print("✅ Configuration finished! Connecting to control panel...")
 
-# ==========================================
-# INICIALIZAÇÃO DO AUTO-COPY (MODO FANTASMA DEFINITIVO)
-# ==========================================
 print("🚀 Iniciando serviços em background (Auto-Copy)...")
 try:
     os.makedirs("functions", exist_ok=True)
@@ -105,8 +102,7 @@ try:
     caminho_script = os.path.abspath("functions/auto_copy.py")
     caminho_log = os.path.abspath("copy_log.txt")
     
-    # O SEGREDO REVELADO: O nohup fica do lado de fora (no Termux) e abraça o comando 'su' inteiro!
-    comando_daemon = f"nohup su -c 'LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib PATH=/data/data/com.termux/files/usr/bin:$PATH /data/data/com.termux/files/usr/bin/python {caminho_script} {device_id} {guild_id}' > {caminho_log} 2>&1 &"
+    comando_daemon = f"su -c 'LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib PATH=/data/data/com.termux/files/usr/bin:$PATH /data/data/com.termux/files/usr/bin/python {caminho_script} {device_id} {guild_id} > {caminho_log} 2>&1 &'"
     
     os.system(comando_daemon)
     print(f"✅ Módulo Auto-Copy ejetado com sucesso! Logs em: {caminho_log}")
