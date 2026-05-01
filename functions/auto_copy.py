@@ -19,16 +19,23 @@ AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 
 print("🔓 Preparando o ambiente e ativando superpoderes...")
 
-# 👉 1. USA O ROOT PARA QUEBRAR O BLOQUEIO DE SEGUNDO PLANO DO ANDROID 10+
-try:
+# 👉 1. LOOP PERSISTENTE PARA GARANTIR O ROOT
+# Se a permissão for negada, ele tenta de novo a cada 3 segundos até dar certo!
+while True:
     print("🛡️ Solicitando ROOT para liberar leitura de teclado global...")
-    # O comando abaixo diz pro sistema: "Deixa o Termux ler o texto copiado de qualquer lugar!"
-    subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow"', shell=True, check=True)
-    print("✅ ROOT concedido! Bloqueio do Android desativado com sucesso.")
-except subprocess.CalledProcessError:
-    print("⚠️ Aviso: Falha ao executar o comando Root. Você clicou em 'Permitir' no Magisk/SuperSU?")
-except Exception as e:
-    print(f"⚠️ Aviso inesperado com o Root: {e}")
+    try:
+        # check=True faz o código acusar erro se o Root for negado
+        subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow"', shell=True, check=True)
+        print("✅ ROOT concedido! Bloqueio do Android desativado com sucesso.")
+        break  # Sai da repetição infinita porque deu certo!
+    except subprocess.CalledProcessError:
+        print("❌ Permissão Root NEGADA ou falhou!")
+        print("🔄 Tentando novamente em 3 segundos... (Se você recusou sem querer, aceite agora!)")
+        print("⚠️ DICA: Se a janela não aparecer mais, vá no app Magisk/SuperSU e permita o Termux manualmente.")
+        time.sleep(3)
+    except Exception as e:
+        print(f"⚠️ Erro inesperado ao pedir root: {e}")
+        time.sleep(3)
 
 # 👉 2. ATIVA O WAKE LOCK AUTOMATICAMENTE PARA O TERMUX NÃO DORMIR
 try:
