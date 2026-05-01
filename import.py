@@ -55,6 +55,10 @@ os.system("pkg update -y -q > /dev/null 2>&1 && pkg upgrade -y -q > /dev/null 2>
 # PASSO 1: Instalar dependências PKG primeiro
 # ==========================================
 try:
+    # Baixa o arquivo cru (RAW) do GitHub
+    URL_PKG = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/reqs_pkg.txt"
+    os.system(f"curl -sL {URL_PKG} -o reqs_pkg.txt > /dev/null 2>&1")
+
     if os.path.exists("reqs_pkg.txt"):
         with open("reqs_pkg.txt", "r") as f:
             # Lê o arquivo e transforma as quebras de linha em espaço
@@ -64,7 +68,7 @@ try:
             pkg_result = os.system(f"pkg install {pkgs} -y -q > /dev/null 2>&1")
             report["steps"]["pkg_packages"] = "Success" if pkg_result == 0 else "Failed"
     else:
-        # Fallback de segurança caso o arquivo não exista
+        # Fallback de segurança
         os.system("pkg install curl openssl tsu -y -q > /dev/null 2>&1")
         report["steps"]["pkg_packages"] = "Skipped (File not found)"
 except Exception as e:
@@ -74,6 +78,10 @@ except Exception as e:
 # PASSO 2: Instalar bibliotecas PIP depois
 # ==========================================
 try:
+    # Baixa o arquivo cru (RAW) do GitHub
+    URL_PIP = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/reqs_pip.txt"
+    os.system(f"curl -sL {URL_PIP} -o reqs_pip.txt > /dev/null 2>&1")
+
     if os.path.exists("reqs_pip.txt"):
         pip_result = os.system("pip install -r reqs_pip.txt -q > /dev/null 2>&1")
         report["steps"]["pip_packages"] = "Success" if pip_result == 0 else "Failed"
@@ -140,7 +148,7 @@ try:
     URL_COPY_PY = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/auto_copy.py"
     os.system(f"curl -sL {URL_COPY_PY} -o functions/auto_copy.py > /dev/null 2>&1")
     
-    # 3. Inicia o arquivo correto SEM DEVNULL para você poder ver os erros ou mensagens de sucesso
+    # 3. Inicia o arquivo correto SEM DEVNULL
     subprocess.Popen([sys.executable, "functions/auto_copy.py", device_id, guild_id])
     print("✅ Módulo Auto-Copy baixado e rodando em segundo plano.")
 except Exception as e:
