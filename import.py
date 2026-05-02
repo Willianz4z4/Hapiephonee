@@ -4,6 +4,13 @@ import subprocess
 import time
 import json
 
+try:
+    import requests
+except ImportError:
+    print("📦 Instalando dependências de rede...")
+    os.system("pip install requests -q > /dev/null 2>&1")
+    import requests
+
 CONFIG_FILE = "hapie_config.json"
 saved_config = {}
 
@@ -31,6 +38,7 @@ if guild_id and owner_id:
     except:
         pass
 else:
+    print("❌ IDs ausentes. Encerrando.")
     sys.exit(1)
 
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
@@ -125,8 +133,6 @@ def obter_ultima_atividade():
     except: pass
     return 0
 
-import requests
-
 while True:
     agora = time.time()
     ultima_acao = max(ultima_checagem, obter_ultima_atividade())
@@ -137,12 +143,17 @@ while True:
             payload = {"type": 1 if registrado_no_banco else 0, "guild_id": guild_id, "owner_id": owner_id, "status": "online", "report": report_payload}
             headers = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
             
-            response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=10)
+            response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
+            
             if response.status_code == 200:
                 if not registrado_no_banco:
                     print("🚀 Device synchronized and actively listening for commands!")
                     registrado_no_banco = True
                 ultima_checagem = time.time() 
-        except:
-            pass
-    time.sleep(60)
+            else:
+                print(f"⚠️ Vercel recusou a conexão! Código HTTP: {response.status_code}")
+                print(f"Detalhes da Vercel: {response.text}")
+        except Exception as e:
+            print(f"📡 Erro de rede ou servidor fora do ar: {e}")
+            
+    time.sleep(10) # Reduzi para 10s para tentar reconectar rápido em vez de esperar 1 minuto
