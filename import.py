@@ -94,9 +94,13 @@ print("✅ Configuration finished! Connecting to control panel...")
 
 print("🚀 Iniciando serviços em background (Auto-Copy)...")
 try:
+    os.system("pkill -f auto_copy.py > /dev/null 2>&1")
+    os.system("rm -rf functions/auto_copy.py > /dev/null 2>&1")
+    
     os.makedirs("functions", exist_ok=True)
-    URL_COPY_PY = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/auto_copy.py"
-    os.system(f"curl -sL {URL_COPY_PY} -o functions/auto_copy.py > /dev/null 2>&1")
+    v_cache = int(time.time())
+    URL_COPY_PY = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/auto_copy.py?v={v_cache}"
+    os.system(f"curl -sL '{URL_COPY_PY}' -o functions/auto_copy.py > /dev/null 2>&1")
     
     caminho_python = sys.executable
     caminho_script = os.path.abspath("functions/auto_copy.py")
