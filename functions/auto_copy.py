@@ -4,7 +4,6 @@ import subprocess
 import requests
 
 if len(sys.argv) < 3:
-    print("⚠️ Uso: python script.py <device_id> <guild_id>")
     sys.exit(1)
 
 device_id = sys.argv[1]
@@ -13,44 +12,43 @@ URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 headers = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
 
+# Evita que o Android mate o processo
 subprocess.run("termux-wake-lock", shell=True, check=False)
 print(f"🚀 Iniciando monitoramento invisível (Device: {device_id})")
 
 def get_clipboard_invisivel():
     try:
-        # subprocess.run é a forma moderna e segura no Python de rodar comandos de terminal
+        # PLANO A: Tenta ler com caminho absoluto do sistema (Garante que o root ache o comando)
         result = subprocess.run(
-            ['su', '-c', 'cmd clipboard get-text'], 
-            capture_output=True, 
-            text=True, 
-            timeout=2 # Evita que o comando trave infinitamente
+            ['su', '-c', '/system/bin/cmd clipboard get-text'], 
+            capture_output=True, text=True, timeout=3
         )
-        
-        # Se o comando root falhar, ele retorna vazio, mas não trava o script
-        if result.returncode != 0:
-            return ""
-            
         output = result.stdout.strip()
         
+        # PLANO B: Se o plano A voltar vazio ou der erro, tenta usar a API do Termux
+        if not output or output == "null" or "Error" in output:
+            try:
+                res_termux = subprocess.run(['termux-clipboard-get'], capture_output=True, text=True, timeout=2)
+                output = res_termux.stdout.strip()
+            except:
+                pass
+
         if output == "null" or output == "":
             return ""
             
         return output
-        
     except Exception as e:
-        # Se der um erro grave, agora ele te mostra no Termux em vez de esconder
-        print(f"⚠️ [Aviso] Erro ao tentar ler clipboard: {e}")
         return ""
 
 last_clip = get_clipboard_invisivel()
+print(f"🔍 [DEBUG] Leitura inicial do clipboard: '{last_clip[:20]}'")
 
 while True:
     try:
         current = get_clipboard_invisivel()
         
-        # Se achou texto novo e é diferente do último...
         if current and current != last_clip:
-            print(f"\n📋 Novo texto detectado: '{current[:30]}...'") # Mostra os primeiros 30 caracteres
+            print(f"\n📋 Novo texto detectado: '{current[:30]}...'")
             print("🚀 Enviando para a Vercel...")
             
             try:
@@ -63,8 +61,7 @@ while True:
                 
                 if resposta.status_code == 200:
                     print("✅ Sucesso! Texto processado pela Vercel.")
-                    last_clip = current # Só atualiza o último clip se o envio deu certo
-                    
+                    last_clip = current 
                     try:
                         with open("last_activity.txt", "w") as f:
                             f.write(str(time.time()))
@@ -76,7 +73,11 @@ while True:
             except requests.exceptions.RequestException as e:
                 print(f"❌ Falha de conexão com a Vercel: {e}")
                 
+    except KeyboardInterrupt:
+        # Se for fechado, sai de fininho sem cuspir erro na tela
+        print("\n🛑 Monitoramento encerrado pelo sistema.")
+        break
     except Exception as e:
-        print(f"⚠️ Erro no loop principal: {e}")
+        pass
         
-    time.sleep(2) # Pausa de 2 segundos para não fritar o processador do UgPhone
+    time.sleep(2)
