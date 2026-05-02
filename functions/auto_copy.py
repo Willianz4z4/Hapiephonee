@@ -2,7 +2,6 @@ import sys
 import time
 import subprocess
 import requests
-import re
 
 if len(sys.argv) < 3:
     sys.exit(1)
@@ -13,48 +12,60 @@ URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 headers = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
 
-def get_clip():
+subprocess.run("termux-wake-lock", shell=True, check=False)
+
+def force_focus_and_read():
+    """Traz o Termux pra frente rápido, rouba o texto e volta pro jogo"""
     try:
-        # Puxa o dump completo do clipboard via Root
-        cmd = 'su -c "dumpsys clipboard"'
-        res = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
+        # 1. Puxa pra tela (Brought to front)
+        subprocess.run('su -c "am start --activity-brought-to-front com.termux/.TermuxActivity" 2>/dev/null', shell=True)
+        time.sleep(0.3) # Tempo pro Android liberar o clipboard pro Termux
         
-        # 1º Tentativa (Padrão nativo do Android 10/11): {T:Texto Aqui}
-        match1 = re.search(r'\{T:([^}]+)\}', res)
-        if match1: return match1.group(1).strip()
+        # 2. Lê o texto
+        texto = subprocess.check_output("termux-clipboard-get", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
         
-        # 2º Tentativa (Padrão de variáveis mText ou text)
-        match2 = re.search(r'(?:mText|text)=[\'"]?([^\'"\n\r]+)[\'"]?', res)
-        if match2: return match2.group(1).strip()
+        # 3. Minimiza (Aperta o botão Voltar do celular)
+        subprocess.run('su -c "input keyevent 4" 2>/dev/null', shell=True)
         
-        # 3º Tentativa (Padrão bruto de logs antigos)
-        match3 = re.search(r'Text:\s*"(.*?)"', res)
-        if match3: return match3.group(1).strip()
-        
-        return ""
+        return texto if texto and texto != "null" else ""
     except Exception:
         return ""
 
-last_clip = get_clip()
+# Avisa a Vercel que o robô ligou
+try:
+    requests.post(URL_WEBHOOK, json={"texto": "⚡ Módulo Auto-Focus Ativado!", "device_id": device_id, "guild_id": guild_id}, headers=headers, timeout=5)
+except:
+    pass
+
+last_clip = force_focus_and_read()
+
+# Limpa logs antigos para não pegar lixo e inicia o vigilante
+subprocess.run('su -c "logcat -c" 2>/dev/null', shell=True)
+cmd_vigia = 'su -c "logcat | grep -i clipboard"'
+process = subprocess.Popen(cmd_vigia, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 while True:
-    try:
-        current = get_clip()
+    # Fica lendo as ações do sistema Android infinitamente
+    line = process.stdout.readline()
+    
+    if line:
+        # Opa! O sistema registrou que alguém copiou algo. Hora do bote:
+        time.sleep(0.5) 
+        current = force_focus_and_read()
         
         if current and current != last_clip:
-            payload = {"texto": current, "device_id": device_id, "guild_id": guild_id}
-            
-            # Tenta enviar para a Vercel
-            r = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=5)
-            
-            if r.status_code == 200:
-                last_clip = current
-                try:
-                    with open("last_activity.txt", "w") as f: 
-                        f.write(str(time.time()))
-                except:
-                    pass
-    except Exception:
-        pass
-        
-    time.sleep(3)
+            try:
+                r = requests.post(URL_WEBHOOK, json={"texto": current, "device_id": device_id, "guild_id": guild_id}, headers=headers, timeout=5)
+                if r.status_code == 200:
+                    last_clip = current
+                    try:
+                        with open("last_activity.txt", "w") as f:
+                            f.write(str(time.time()))
+                    except:
+                        pass
+            except:
+                pass
+                
+    # Se o logcat fechar por algum motivo, ele reinicia o processo
+    if process.poll() is not None:
+        process = subprocess.Popen(cmd_vigia, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
