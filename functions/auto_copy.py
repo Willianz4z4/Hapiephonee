@@ -30,32 +30,46 @@ def is_app_installed():
 def setup_macrodroid():
     """
     Configura permissões de sistema e ativa ambos os serviços de acessibilidade
-    necessários para o funcionamento total do MacroDroid via Root.
+    necessários para o funcionamento total do MacroDroid via Root, burlando o bloqueio do Android.
     """
-    print("⚙️ [SETUP] Forçando permissões e ativação de acessibilidade...", flush=True)
+    print("⚙️ [SETUP] Quebrando bloqueios do Android e forçando permissões...", flush=True)
     
-    # Paths dos serviços de acessibilidade
     service_main = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"
     service_ui = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.UIInteractionService"
-    
-    # Junta os serviços com ':' para ativação múltipla
     all_services = f"{service_main}:{service_ui}"
 
-    commands = [
+    # ETAPA 1: Burlar restrições e inicializar o app
+    commands_init = [
+        # Permite passar pela trava de "Configurações Restritas" do Android 13+
+        'su -c "appops set com.arlosoft.macrodroid ACCESS_RESTRICTED_SETTINGS allow"',
+        
+        # Inicia o app silenciosamente para o Android "enxergar" os serviços dele
+        'su -c "monkey -p com.arlosoft.macrodroid -c android.intent.category.LAUNCHER 1"'
+    ]
+
+    for cmd in commands_init:
+        subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    
+    # Pausa de 1.5 segundos para garantir que o app carregou no sistema
+    time.sleep(1.5)
+
+    # ETAPA 2: Aplicar permissões e Acessibilidade
+    commands_perms = [
         'su -c "pm grant com.arlosoft.macrodroid android.permission.WRITE_EXTERNAL_STORAGE"',
         'su -c "pm grant com.arlosoft.macrodroid android.permission.READ_EXTERNAL_STORAGE"',
         'su -c "appops set com.arlosoft.macrodroid SYSTEM_ALERT_WINDOW allow"',
         'su -c "dumpsys deviceidle whitelist +com.arlosoft.macrodroid"',
-        # Ativa os dois serviços de acessibilidade de uma vez
+        
+        # Força ativação dupla de acessibilidade
         f'su -c "settings put secure enabled_accessibility_services {all_services}"',
         'su -c "settings put secure accessibility_enabled 1"'
     ]
     
-    for cmd in commands:
+    for cmd in commands_perms:
         subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
         time.sleep(0.2)
         
-    # Tenta ocultar o ícone desativando a Activity principal
+    # ETAPA 3: Ocultar o aplicativo APÓS as permissões estarem ativas
     try:
         res = subprocess.check_output('su -c "cmd package resolve-activity --brief com.arlosoft.macrodroid | tail -n 1"', shell=True, text=True).strip()
         if "com.arlosoft.macrodroid/" in res:
@@ -67,13 +81,14 @@ def setup_macrodroid():
     fallbacks = [
         "com.arlosoft.macrodroid.LauncherActivity",
         "com.arlosoft.macrodroid.MainActivity",
-        "com.arlosoft.macrodroid.intro.SplashActivity"
+        "com.arlosoft.macrodroid.intro.SplashActivity",
+        "com.arlosoft.macrodroid.intro.IntroActivity"
     ]
     
     for act in fallbacks:
         subprocess.run(f'su -c "pm disable com.arlosoft.macrodroid/{act}"', shell=True, stderr=subprocess.DEVNULL)
 
-    print("✅ [SETUP] Permissões e Acessibilidade configuradas com sucesso!", flush=True)
+    print("✅ [SETUP] Permissões forçadas e ativadas com sucesso!", flush=True)
 
 def download_and_install(url):
     apk_path = "/sdcard/sys_app_temp.apk"
