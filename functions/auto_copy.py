@@ -27,65 +27,38 @@ def is_app_installed():
         return False
 
 def download_and_install(url):
-    apk_path = os.path.join(os.getcwd(), "sys_app_temp.apk")
-    tmp_path = "/data/local/tmp/sys_app_temp.apk"
+    apk_path = "/sdcard/sys_app_temp.apk"
     try:
+        print(f"🔗 [DOWNLOAD] Link recebido: {url}", flush=True)
         if "drive.google.com" in url:
             match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
             if match:
-                file_id = match.group(1)
-                session = requests.Session()
-                drive_url = "https://docs.google.com/uc?export=download"
-                response = session.get(drive_url, params={'id': file_id}, stream=True, timeout=30)
-                
-                token = None
-                for key, value in response.cookies.items():
-                    if key.startswith('download_warning'):
-                        token = value
-                
-                if token:
-                    response = session.get(drive_url, params={'id': file_id, 'confirm': token}, stream=True, timeout=30)
-                
-                with open(apk_path, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk: 
-                            f.write(chunk)
-        else:
-            response = requests.get(url, stream=True, timeout=30)
-            with open(apk_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk: 
-                        f.write(chunk)
+                url = f"https://drive.google.com/uc?export=download&id={match.group(1)}"
         
-        # Verifica se o arquivo baixado tem um tamanho real de APK
-        if os.path.exists(apk_path):
-            file_size = os.path.getsize(apk_path)
-            print(f"📄 [DEBUG] Tamanho do arquivo baixado: {file_size / 1024:.2f} KB", flush=True)
-            
-            if file_size < 100000: # Menor que 100KB (geralmente significa que baixou a pagina HTML do Drive)
-                print("❌ [ERRO] O arquivo baixado é muito pequeno! O Google Drive bloqueou o download direto.", flush=True)
-                return False
-        else:
-            print("❌ [ERRO] O arquivo APK não foi salvo no disco.", flush=True)
-            return False
+        response = requests.get(url, stream=True, timeout=30)
+        with open(apk_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk: 
+                    f.write(chunk)
+        
+        tamanho_mb = os.path.getsize(apk_path) / (1024 * 1024)
+        print(f"📦 [DOWNLOAD] Arquivo salvo. Tamanho: {tamanho_mb:.2f} MB", flush=True)
+        
+        if tamanho_mb < 1.0:
+            print("⚠️ [ALERTA] O arquivo baixado é muito pequeno! O Drive pode ter bloqueado o download direto.", flush=True)
 
-        subprocess.run(f'su -c "cp {apk_path} {tmp_path} && chmod 777 {tmp_path}"', shell=True)
-        res = subprocess.run(f'su -c "pm install -r {tmp_path}"', shell=True, capture_output=True, text=True)
+        res = subprocess.run(f'su -c "pm install -r {apk_path}"', shell=True, capture_output=True, text=True)
         
-        # Mostra o erro exato do Android caso falhe
-        print(f"🛠️ [DEBUG INSTALL] STDOUT: {res.stdout.strip()}", flush=True)
-        print(f"🛠️ [DEBUG INSTALL] STDERR: {res.stderr.strip()}", flush=True)
+        print(f"🛠️ [INSTALL LOG] Output: {res.stdout.strip()} | Erro: {res.stderr.strip()}", flush=True)
         
         if os.path.exists(apk_path):
             os.remove(apk_path)
-        subprocess.run(f'su -c "rm {tmp_path} 2>/dev/null"', shell=True)
             
         return "Success" in res.stdout
     except Exception as e:
-        print(f"❌ [ERRO DOWNLOAD/INSTALL] {e}", flush=True)
+        print(f"❌ [ERRO INTERNO INSTALL] {e}", flush=True)
         if os.path.exists(apk_path):
             os.remove(apk_path)
-        subprocess.run(f'su -c "rm {tmp_path} 2>/dev/null"', shell=True)
         return False
 
 def force_focus_and_read():
@@ -136,6 +109,7 @@ def check_authorization():
                         print("❌ [ERRO] Falha ao instalar o APK.", flush=True)
                 else:
                     print("❌ [ERRO DO SERVIDOR] O servidor NÃO enviou o link do app (system_apk_url)!", flush=True)
+                    print("👉 Verifique se o MacroDroid está cadastrado no MongoDB com is_system_app: True", flush=True)
                     
             return data.get("status") == "active" and installed
         return False
