@@ -17,6 +17,9 @@ AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 HEADERS = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
 APP_PACKAGE = "com.arlosoft.macrodroid"
 
+# Arquivo de controle para não ficar reiniciando o celular em loop
+FLAG_SETUP = "/sdcard/.hapie_macro_setup"
+
 # Garante que o Termux não durma
 subprocess.run("termux-wake-lock", shell=True, check=False)
 
@@ -28,21 +31,33 @@ def is_app_installed():
         return False
 
 def setup_macrodroid():
-    print("⚙️ [SETUP] Força Bruta no Banco de Dados de Acessibilidade...", flush=True)
+    if os.path.exists(FLAG_SETUP):
+        print("✅ [SETUP] Acessibilidade já foi configurada e burlada anteriormente.", flush=True)
+        
+        # Etapa final: Ocultar o ícone apenas se a acessibilidade já estiver 100% fixada
+        try:
+            fallbacks = [
+                "com.arlosoft.macrodroid.LauncherActivity",
+                "com.arlosoft.macrodroid.MainActivity",
+                "com.arlosoft.macrodroid.intro.SplashActivity",
+                "com.arlosoft.macrodroid.intro.IntroActivity"
+            ]
+            for act in fallbacks:
+                subprocess.run(f'su -c "pm disable com.arlosoft.macrodroid/{act}"', shell=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        return
+
+    print("⚙️ [SETUP] Injetando Acessibilidade no Banco de Dados...", flush=True)
     
-    # Strings exatas dos serviços
     service_main = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"
     service_ui = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.UIInteractionService"
     macrodroid_services = f"{service_main}:{service_ui}"
 
-    # ETAPA 1: Burlar restrições e ACORDAR o aplicativo
     subprocess.run('su -c "appops set com.arlosoft.macrodroid ACCESS_RESTRICTED_SETTINGS allow"', shell=True, stderr=subprocess.DEVNULL)
-    
-    print("🔄 [SETUP] Inicializando o app para o Android validar o serviço...", flush=True)
     subprocess.run('su -c "monkey -p com.arlosoft.macrodroid -c android.intent.category.LAUNCHER 1"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(2.0) # Pausa vital para o app carregar na memória
+    time.sleep(1.5)
 
-    # ETAPA 2: Aplicar permissões básicas
     commands_perms = [
         'su -c "pm grant com.arlosoft.macrodroid android.permission.WRITE_EXTERNAL_STORAGE"',
         'su -c "pm grant com.arlosoft.macrodroid android.permission.READ_EXTERNAL_STORAGE"',
@@ -52,37 +67,35 @@ def setup_macrodroid():
     for cmd in commands_perms:
         subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
     
-    # ETAPA 3: Injeção direta no banco de dados (sem ler o estado anterior)
     try:
-        # Ativa a acessibilidade global primeiro
         subprocess.run("su -c 'settings put secure accessibility_enabled 1'", shell=True)
         time.sleep(0.5)
-        
-        # Injeta apenas os serviços do MacroDroid cravados com aspas simples por fora
         cmd_inject = f"su -c 'settings put secure enabled_accessibility_services {macrodroid_services}'"
         subprocess.run(cmd_inject, shell=True)
         time.sleep(0.5)
         
-        # DEBUG: Lê o que o Android efetivamente salvou
-        check_db = subprocess.check_output("su -c 'settings get secure enabled_accessibility_services'", shell=True, text=True).strip()
-        print(f"🔎 [DEBUG BANCO DE DADOS] Atual: {check_db}", flush=True)
+        # Cria o arquivo de flag para avisar que a injeção já foi feita
+        subprocess.run(f"touch {FLAG_SETUP}", shell=True)
+        
+        print("🚀 [BYPASS] ROM do UGPhone detectada. Bloqueio visual ativo.", flush=True)
+        print("🔄 [BYPASS] O sistema será REINICIADO em 3 segundos para fixar a permissão na marra...", flush=True)
+        time.sleep(3)
+        
+        # Força o reboot do cloud phone. Na volta, a acessibilidade já vai ligar sozinha.
+        subprocess.run('su -c "reboot"', shell=True)
+        sys.exit(0)
         
     except Exception as e:
         print(f"❌ Erro ao forçar acessibilidade: {e}", flush=True)
 
-    print("✅ [SETUP] Injeção concluída. Verifique a tela do celular agora.", flush=True)
-
 def download_and_install(url):
     apk_path = "/sdcard/sys_app_temp.apk"
     try:
-        print(f"🔗 [DOWNLOAD] Received link: {url}", flush=True)
+        print(f"🔗 [DOWNLOAD] Recebendo link...", flush=True)
         
         if "drive.google.com" in url or "docs.google.com" in url:
-            print("⚠️ [WARNING] Google Drive link detected. Using gdown bypass...", flush=True)
-            res_dl = subprocess.run(f'gdown "{url}" -O {apk_path}', shell=True)
-            
+            res_dl = subprocess.run(f'gdown "{url}" -O {apk_path}', shell=True, stdout=subprocess.DEVNULL)
             if res_dl.returncode != 0:
-                print("❌ [ERROR] gdown failed. Make sure it is installed: pip install gdown", flush=True)
                 return False
         else:
             response = requests.get(url, stream=True, timeout=60)
@@ -93,26 +106,23 @@ def download_and_install(url):
                         f.write(chunk)
         
         if not os.path.exists(apk_path):
-             print("❌ [ERROR] File was not created.", flush=True)
              return False
 
         size_mb = os.path.getsize(apk_path) / (1024 * 1024)
-        print(f"📦 [DOWNLOAD] File saved. Size: {size_mb:.2f} MB", flush=True)
+        print(f"📦 [DOWNLOAD] Salvo. Tamanho: {size_mb:.2f} MB", flush=True)
         
         if size_mb < 2.0:
-            print("⚠️ [WARNING] File is too small. Download blocked.", flush=True)
             os.remove(apk_path)
             return False
 
-        print("⚙️ [INSTALL] Starting silent installation...", flush=True)
+        print("⚙️ [INSTALL] Instalando silenciosamente...", flush=True)
         res = subprocess.run(f'su -c "pm install -r {apk_path}"', shell=True, capture_output=True, text=True)
         
         if os.path.exists(apk_path):
             os.remove(apk_path)
             
         return "Success" in res.stdout
-    except Exception as e:
-        print(f"❌ [INTERNAL INSTALL ERROR] {e}", flush=True)
+    except Exception:
         if os.path.exists(apk_path):
             os.remove(apk_path)
         return False
