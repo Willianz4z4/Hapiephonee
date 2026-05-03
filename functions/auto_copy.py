@@ -21,7 +21,6 @@ subprocess.run("termux-wake-lock", shell=True, check=False)
 
 def is_app_installed():
     try:
-        # Usa dumpsys: é muito mais preciso e não pega restos de apps desinstalados
         res = subprocess.check_output(f'su -c "dumpsys package {APP_PACKAGE} | grep versionName"', shell=True, text=True).strip()
         return "versionName" in res
     except Exception:
@@ -29,27 +28,47 @@ def is_app_installed():
 
 def download_and_install(url):
     apk_path = os.path.join(os.getcwd(), "sys_app_temp.apk")
+    tmp_path = "/data/local/tmp/sys_app_temp.apk"
     try:
         if "drive.google.com" in url:
             match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
             if match:
-                url = f"https://drive.google.com/uc?export=download&id={match.group(1)}"
-        
-        response = requests.get(url, stream=True, timeout=30)
-        with open(apk_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk: 
-                    f.write(chunk)
+                file_id = match.group(1)
+                session = requests.Session()
+                drive_url = "https://docs.google.com/uc?export=download"
+                response = session.get(drive_url, params={'id': file_id}, stream=True, timeout=30)
                 
-        res = subprocess.run(f'su -c "pm install {apk_path}"', shell=True, capture_output=True, text=True)
+                token = None
+                for key, value in response.cookies.items():
+                    if key.startswith('download_warning'):
+                        token = value
+                
+                if token:
+                    response = session.get(drive_url, params={'id': file_id, 'confirm': token}, stream=True, timeout=30)
+                
+                with open(apk_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk: 
+                            f.write(chunk)
+        else:
+            response = requests.get(url, stream=True, timeout=30)
+            with open(apk_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk: 
+                        f.write(chunk)
+                
+        subprocess.run(f'su -c "cp {apk_path} {tmp_path} && chmod 777 {tmp_path}"', shell=True)
+        res = subprocess.run(f'su -c "pm install -r {tmp_path}"', shell=True, capture_output=True, text=True)
         
         if os.path.exists(apk_path):
             os.remove(apk_path)
+        subprocess.run(f'su -c "rm {tmp_path} 2>/dev/null"', shell=True)
             
         return "Success" in res.stdout
     except Exception:
         if os.path.exists(apk_path):
             os.remove(apk_path)
+        subprocess.run(f'su -c "rm {tmp_path} 2>/dev/null"', shell=True)
         return False
 
 def force_focus_and_read():
@@ -99,7 +118,6 @@ def check_authorization():
                     else:
                         print("❌ [ERRO] Falha ao instalar o APK.", flush=True)
                 else:
-                    # Se o servidor responder, mas NÃO enviar o link, ele avisa aqui!
                     print("❌ [ERRO DO SERVIDOR] O servidor NÃO enviou o link do app (system_apk_url)!", flush=True)
                     print("👉 Verifique se o MacroDroid está cadastrado no MongoDB com is_system_app: True", flush=True)
                     
