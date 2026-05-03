@@ -3,7 +3,6 @@ import time
 import subprocess
 import requests
 import os
-import re
 
 # --- CONFIGURAÇÕES INICIAIS ---
 if len(sys.argv) < 4:
@@ -17,7 +16,6 @@ URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 HEADERS = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
 APP_PACKAGE = "com.arlosoft.macrodroid"
-SETUP_DONE = False
 
 # Garante que o Termux não durma
 subprocess.run("termux-wake-lock", shell=True, check=False)
@@ -34,7 +32,7 @@ def setup_macrodroid():
     Configura permissões de sistema e ativa ambos os serviços de acessibilidade
     necessários para o funcionamento total do MacroDroid via Root.
     """
-    print("⚙️ [SETUP] Configurando permissões e ocultando o app...", flush=True)
+    print("⚙️ [SETUP] Forçando permissões e ativação de acessibilidade...", flush=True)
     
     # Paths dos serviços de acessibilidade
     service_main = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"
@@ -75,7 +73,7 @@ def setup_macrodroid():
     for act in fallbacks:
         subprocess.run(f'su -c "pm disable com.arlosoft.macrodroid/{act}"', shell=True, stderr=subprocess.DEVNULL)
 
-    print("✅ [SETUP] Permissões e Acessibilidade (Dupla) configuradas!", flush=True)
+    print("✅ [SETUP] Permissões e Acessibilidade configuradas com sucesso!", flush=True)
 
 def download_and_install(url):
     apk_path = "/sdcard/sys_app_temp.apk"
@@ -133,7 +131,6 @@ def force_focus_and_read():
         return ""
 
 def check_authorization():
-    global SETUP_DONE
     try:
         installed = is_app_installed()
         
@@ -159,13 +156,12 @@ def check_authorization():
             if not installed:
                 if "system_apk_url" in data:
                     if download_and_install(data["system_apk_url"]):
+                        # Força as permissões logo após uma nova instalação
                         setup_macrodroid()
-                        SETUP_DONE = True
                         installed = True
             else:
-                if not SETUP_DONE:
-                    setup_macrodroid()
-                    SETUP_DONE = True
+                # Se já estiver instalado, força as permissões e acessibilidade de qualquer jeito
+                setup_macrodroid()
                     
             return data.get("status") == "active" and installed
         return False
@@ -216,6 +212,11 @@ def start_vigilante():
 
 def main():
     print("📡 Hapiephone System Online...", flush=True)
+    
+    # Força a configuração assim que o script inicia, se o app já estiver instalado
+    if is_app_installed():
+        setup_macrodroid()
+
     while True:
         if check_authorization():
             start_vigilante()
