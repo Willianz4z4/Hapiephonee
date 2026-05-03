@@ -6,6 +6,7 @@ import os
 import re
 
 if len(sys.argv) < 4:
+    print(f"❌ [ERRO FATAL] Argumentos insuficientes para iniciar! Recebido: {sys.argv}", flush=True)
     sys.exit(1)
 
 DEVICE_ID = sys.argv[1]
@@ -20,7 +21,6 @@ subprocess.run("termux-wake-lock", shell=True, check=False)
 
 def is_app_installed():
     try:
-        # Usa dumpsys: é muito mais preciso e não pega restos de apps desinstalados
         res = subprocess.check_output(f'su -c "dumpsys package {APP_PACKAGE} | grep versionName"', shell=True, text=True).strip()
         return "versionName" in res
     except Exception:
@@ -65,7 +65,6 @@ def check_authorization():
     try:
         installed = is_app_installed()
         
-        # flush=True obriga a mensagem a ir direto para o copy_log.txt
         if not installed:
             print("⚠️ [APP SYSTEM] MacroDroid não encontrado no aparelho. Solicitando link ao servidor...", flush=True)
         else:
