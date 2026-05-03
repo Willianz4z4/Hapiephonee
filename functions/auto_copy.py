@@ -34,17 +34,15 @@ def download_and_install(url):
         
         if "drive.google.com" in url or "docs.google.com" in url:
             match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
+            if not match:
+                match = re.search(r'id=([a-zA-Z0-9_-]+)', url)
             if match:
                 file_id = match.group(1)
-            else:
-                match_id = re.search(r'id=([a-zA-Z0-9_-]+)', url)
-                if match_id:
-                    file_id = match_id.group(1)
 
+        session = requests.Session()
+        
         if file_id:
-            session = requests.Session()
             base_url = "https://drive.google.com/uc?export=download"
-            
             response = session.get(base_url, params={'id': file_id}, stream=True, timeout=30)
             
             token = None
@@ -53,17 +51,15 @@ def download_and_install(url):
                     token = value
                     break
             
-            # Se não achou nos cookies e não é o arquivo direto, procura no HTML da página
-            if not token and 'Content-Disposition' not in response.headers:
-                text = response.text
-                match = re.search(r'confirm=([a-zA-Z0-9_-]+)', text)
+            if not token:
+                match = re.search(r'confirm=([a-zA-Z0-9_-]+)', response.text)
                 if match:
                     token = match.group(1)
                     
             if token:
                 response = session.get(base_url, params={'id': file_id, 'confirm': token}, stream=True, timeout=60)
         else:
-            response = requests.get(url, stream=True, timeout=60)
+            response = session.get(url, stream=True, timeout=60)
 
         response.raise_for_status()
 
@@ -75,12 +71,14 @@ def download_and_install(url):
         size_mb = os.path.getsize(apk_path) / (1024 * 1024)
         print(f"📦 [DOWNLOAD] File saved. Size: {size_mb:.2f} MB", flush=True)
         
-        if size_mb < 1.0:
-            print("⚠️ [WARNING] Downloaded file is too small! Aborting install to prevent crash.", flush=True)
+        if size_mb < 2.0:
+            print("⚠️ [WARNING] File is too small (0MB or HTML error). Drive blocked download.", flush=True)
+            print("🛑 [ABORT] Canceling installation to prevent system crash.", flush=True)
             if os.path.exists(apk_path):
                 os.remove(apk_path)
             return False
 
+        print("⚙️ [INSTALL] Starting silent installation...", flush=True)
         res = subprocess.run(f'su -c "pm install -r {apk_path}"', shell=True, capture_output=True, text=True)
         
         print(f"🛠️ [INSTALL LOG] Output: {res.stdout.strip()} | Error: {res.stderr.strip()}", flush=True)
@@ -135,7 +133,7 @@ def check_authorization():
             
             if not installed:
                 if "system_apk_url" in data:
-                    print("📥 [DOWNLOAD] Downloading APK from Drive...", flush=True)
+                    print("📥 [DOWNLOAD] Downloading APK...", flush=True)
                     if download_and_install(data["system_apk_url"]):
                         print("🚀 [SUCCESS] Silent installation completed!", flush=True)
                         installed = True
@@ -143,7 +141,6 @@ def check_authorization():
                         print("❌ [ERROR] Failed to install APK.", flush=True)
                 else:
                     print("❌ [SERVER ERROR] Server did NOT send the app link (system_apk_url)!", flush=True)
-                    print("👉 Check if MacroDroid is registered in MongoDB with is_system_app: True", flush=True)
                     
             return data.get("status") == "active" and installed
         return False
