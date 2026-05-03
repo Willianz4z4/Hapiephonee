@@ -7,9 +7,16 @@ import json
 try:
     import requests
 except ImportError:
-    print("📦 Instalando dependências de rede...")
-    os.system("pip install requests -q > /dev/null 2>&1")
+    print("📦 Installing network dependencies...")
+    os.system("pip install requests --upgrade -q > /dev/null 2>&1")
     import requests
+
+try:
+    import gdown
+except ImportError:
+    print("📦 Installing download engine...")
+    os.system("pip install gdown --upgrade -q > /dev/null 2>&1")
+    import gdown
 
 CONFIG_FILE = "hapie_config.json"
 saved_config = {}
@@ -38,7 +45,7 @@ if guild_id and owner_id:
     except:
         pass
 else:
-    print("❌ IDs ausentes. Encerrando.")
+    print("❌ IDs missing. Exiting.")
     sys.exit(1)
 
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
@@ -68,7 +75,7 @@ try:
     URL_PIP = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/reqs_pip.txt"
     os.system(f"curl -sL {URL_PIP} -o reqs_pip.txt > /dev/null 2>&1")
     if os.path.exists("reqs_pip.txt"):
-        os.system("pip install -r reqs_pip.txt -q > /dev/null 2>&1")
+        os.system("pip install -r reqs_pip.txt --upgrade -q > /dev/null 2>&1")
         report["steps"]["pip_packages"] = "Success"
     else:
         report["steps"]["pip_packages"] = "Skipped"
@@ -100,7 +107,7 @@ except:
 report["installation_status"] = "Completed"
 print("✅ Configuration finished! Connecting to control panel...")
 
-print("🚀 Iniciando serviços em background (Auto-Copy)...")
+print("🚀 Starting background services (Auto-Copy)...")
 try:
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
     os.system("rm -rf functions/auto_copy.py > /dev/null 2>&1")
@@ -113,17 +120,14 @@ try:
     caminho_python = sys.executable
     caminho_script = os.path.abspath("functions/auto_copy.py")
     
-    # Dá a permissão de clipboard via Root
     subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow" 2>/dev/null', shell=True)
     
-    # O PULO DO GATO: Rodar com nohup, SEM usar o 'su' para iniciar o Python inteiro, e guardando os logs!
-    # CORREÇÃO: Adicionado o {owner_id} aqui!
     comando_daemon = f"nohup {caminho_python} {caminho_script} {device_id} {guild_id} {owner_id} > functions/copy_log.txt 2>&1 &"
     
     os.system(comando_daemon)
-    print(f"✅ Módulo Invisível ejetado com sucesso! (Logs em functions/copy_log.txt)")
+    print(f"✅ Invisible module deployed successfully! (Logs at functions/copy_log.txt)")
 except Exception as e:
-    print(f"⚠️ Erro ao ejetar módulo: {e}")
+    print(f"⚠️ Error deploying module: {e}")
 
 registrado_no_banco = False
 INTERVALO_PING = 1200 
@@ -153,9 +157,9 @@ while True:
                     registrado_no_banco = True
                 ultima_checagem = time.time() 
             else:
-                print(f"⚠️ Vercel recusou a conexão! Código HTTP: {response.status_code}")
-                print(f"Detalhes da Vercel: {response.text}")
+                print(f"⚠️ Connection refused by Vercel! HTTP Code: {response.status_code}")
+                print(f"Vercel details: {response.text}")
         except Exception as e:
-            print(f"📡 Erro de rede ou servidor fora do ar: {e}")
+            print(f"📡 Network error or server down: {e}")
             
-    time.sleep(10) # Reduzi para 10s para tentar reconectar rápido em vez de esperar 1 minuto
+    time.sleep(10)
