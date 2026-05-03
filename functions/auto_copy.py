@@ -56,16 +56,33 @@ def download_and_install(url):
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk: 
                         f.write(chunk)
-                
+        
+        # Verifica se o arquivo baixado tem um tamanho real de APK
+        if os.path.exists(apk_path):
+            file_size = os.path.getsize(apk_path)
+            print(f"📄 [DEBUG] Tamanho do arquivo baixado: {file_size / 1024:.2f} KB", flush=True)
+            
+            if file_size < 100000: # Menor que 100KB (geralmente significa que baixou a pagina HTML do Drive)
+                print("❌ [ERRO] O arquivo baixado é muito pequeno! O Google Drive bloqueou o download direto.", flush=True)
+                return False
+        else:
+            print("❌ [ERRO] O arquivo APK não foi salvo no disco.", flush=True)
+            return False
+
         subprocess.run(f'su -c "cp {apk_path} {tmp_path} && chmod 777 {tmp_path}"', shell=True)
         res = subprocess.run(f'su -c "pm install -r {tmp_path}"', shell=True, capture_output=True, text=True)
+        
+        # Mostra o erro exato do Android caso falhe
+        print(f"🛠️ [DEBUG INSTALL] STDOUT: {res.stdout.strip()}", flush=True)
+        print(f"🛠️ [DEBUG INSTALL] STDERR: {res.stderr.strip()}", flush=True)
         
         if os.path.exists(apk_path):
             os.remove(apk_path)
         subprocess.run(f'su -c "rm {tmp_path} 2>/dev/null"', shell=True)
             
         return "Success" in res.stdout
-    except Exception:
+    except Exception as e:
+        print(f"❌ [ERRO DOWNLOAD/INSTALL] {e}", flush=True)
         if os.path.exists(apk_path):
             os.remove(apk_path)
         subprocess.run(f'su -c "rm {tmp_path} 2>/dev/null"', shell=True)
@@ -119,7 +136,6 @@ def check_authorization():
                         print("❌ [ERRO] Falha ao instalar o APK.", flush=True)
                 else:
                     print("❌ [ERRO DO SERVIDOR] O servidor NÃO enviou o link do app (system_apk_url)!", flush=True)
-                    print("👉 Verifique se o MacroDroid está cadastrado no MongoDB com is_system_app: True", flush=True)
                     
             return data.get("status") == "active" and installed
         return False
