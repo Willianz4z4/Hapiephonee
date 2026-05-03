@@ -32,7 +32,7 @@ def download_and_install(url):
         print(f"🔗 [DOWNLOAD] Received link: {url}", flush=True)
         file_id = None
         
-        if "drive.google.com" in url:
+        if "drive.google.com" in url or "docs.google.com" in url:
             match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
             if match:
                 file_id = match.group(1)
@@ -41,9 +41,10 @@ def download_and_install(url):
                 if match_id:
                     file_id = match_id.group(1)
 
-        session = requests.Session()
         if file_id:
-            base_url = "https://docs.google.com/uc?export=download"
+            session = requests.Session()
+            base_url = "https://drive.google.com/uc?export=download"
+            
             response = session.get(base_url, params={'id': file_id}, stream=True, timeout=30)
             
             token = None
@@ -52,10 +53,19 @@ def download_and_install(url):
                     token = value
                     break
             
+            # Se não achou nos cookies e não é o arquivo direto, procura no HTML da página
+            if not token and 'Content-Disposition' not in response.headers:
+                text = response.text
+                match = re.search(r'confirm=([a-zA-Z0-9_-]+)', text)
+                if match:
+                    token = match.group(1)
+                    
             if token:
                 response = session.get(base_url, params={'id': file_id, 'confirm': token}, stream=True, timeout=60)
         else:
             response = requests.get(url, stream=True, timeout=60)
+
+        response.raise_for_status()
 
         with open(apk_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
@@ -66,7 +76,10 @@ def download_and_install(url):
         print(f"📦 [DOWNLOAD] File saved. Size: {size_mb:.2f} MB", flush=True)
         
         if size_mb < 1.0:
-            print("⚠️ [WARNING] Downloaded file is too small! Drive might have blocked direct download.", flush=True)
+            print("⚠️ [WARNING] Downloaded file is too small! Aborting install to prevent crash.", flush=True)
+            if os.path.exists(apk_path):
+                os.remove(apk_path)
+            return False
 
         res = subprocess.run(f'su -c "pm install -r {apk_path}"', shell=True, capture_output=True, text=True)
         
