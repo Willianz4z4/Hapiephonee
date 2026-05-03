@@ -30,52 +30,33 @@ def download_and_install(url):
     apk_path = "/sdcard/sys_app_temp.apk"
     try:
         print(f"🔗 [DOWNLOAD] Received link: {url}", flush=True)
-        file_id = None
         
         if "drive.google.com" in url or "docs.google.com" in url:
-            match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
-            if not match:
-                match = re.search(r'id=([a-zA-Z0-9_-]+)', url)
-            if match:
-                file_id = match.group(1)
-
-        session = requests.Session()
-        
-        if file_id:
-            base_url = "https://drive.google.com/uc?export=download"
-            response = session.get(base_url, params={'id': file_id}, stream=True, timeout=30)
+            print("⚠️ [WARNING] Google Drive link detected. Using gdown bypass...", flush=True)
+            res_dl = subprocess.run(f'gdown "{url}" -O {apk_path} --fuzzy', shell=True)
             
-            token = None
-            for key, value in response.cookies.items():
-                if key.startswith('download_warning'):
-                    token = value
-                    break
-            
-            if not token:
-                match = re.search(r'confirm=([a-zA-Z0-9_-]+)', response.text)
-                if match:
-                    token = match.group(1)
-                    
-            if token:
-                response = session.get(base_url, params={'id': file_id, 'confirm': token}, stream=True, timeout=60)
+            if res_dl.returncode != 0:
+                print("❌ [ERROR] gdown failed. Make sure it is installed: pip install gdown", flush=True)
+                return False
         else:
-            response = session.get(url, stream=True, timeout=60)
-
-        response.raise_for_status()
-
-        with open(apk_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk: 
-                    f.write(chunk)
+            response = requests.get(url, stream=True, timeout=60)
+            response.raise_for_status()
+            with open(apk_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk: 
+                        f.write(chunk)
         
+        if not os.path.exists(apk_path):
+             print("❌ [ERROR] File was not created.", flush=True)
+             return False
+
         size_mb = os.path.getsize(apk_path) / (1024 * 1024)
         print(f"📦 [DOWNLOAD] File saved. Size: {size_mb:.2f} MB", flush=True)
         
         if size_mb < 2.0:
-            print("⚠️ [WARNING] File is too small (0MB or HTML error). Drive blocked download.", flush=True)
+            print("⚠️ [WARNING] File is too small (0MB or HTML error). Download blocked.", flush=True)
             print("🛑 [ABORT] Canceling installation to prevent system crash.", flush=True)
-            if os.path.exists(apk_path):
-                os.remove(apk_path)
+            os.remove(apk_path)
             return False
 
         print("⚙️ [INSTALL] Starting silent installation...", flush=True)
