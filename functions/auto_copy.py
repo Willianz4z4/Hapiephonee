@@ -28,67 +28,51 @@ def is_app_installed():
         return False
 
 def setup_macrodroid():
-    """
-    Configura permissões de sistema e ativa ambos os serviços de acessibilidade
-    necessários para o funcionamento total do MacroDroid via Root, burlando o bloqueio do Android.
-    """
-    print("⚙️ [SETUP] Quebrando bloqueios do Android e forçando permissões...", flush=True)
+    print("⚙️ [SETUP] Forçando permissões (Teste sem ocultar ícone)...", flush=True)
     
     service_main = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"
     service_ui = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.UIInteractionService"
-    all_services = f"{service_main}:{service_ui}"
+    macrodroid_services = f"{service_main}:{service_ui}"
 
-    # ETAPA 1: Burlar restrições e inicializar o app
-    commands_init = [
-        # Permite passar pela trava de "Configurações Restritas" do Android 13+
-        'su -c "appops set com.arlosoft.macrodroid ACCESS_RESTRICTED_SETTINGS allow"',
-        
-        # Inicia o app silenciosamente para o Android "enxergar" os serviços dele
-        'su -c "monkey -p com.arlosoft.macrodroid -c android.intent.category.LAUNCHER 1"'
-    ]
+    # ETAPA 1: Burlar restrições
+    subprocess.run('su -c "appops set com.arlosoft.macrodroid ACCESS_RESTRICTED_SETTINGS allow"', shell=True, stderr=subprocess.DEVNULL)
+    time.sleep(0.5)
 
-    for cmd in commands_init:
-        subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-    
-    # Pausa de 1.5 segundos para garantir que o app carregou no sistema
-    time.sleep(1.5)
-
-    # ETAPA 2: Aplicar permissões e Acessibilidade
+    # ETAPA 2: Aplicar permissões básicas
     commands_perms = [
         'su -c "pm grant com.arlosoft.macrodroid android.permission.WRITE_EXTERNAL_STORAGE"',
         'su -c "pm grant com.arlosoft.macrodroid android.permission.READ_EXTERNAL_STORAGE"',
         'su -c "appops set com.arlosoft.macrodroid SYSTEM_ALERT_WINDOW allow"',
-        'su -c "dumpsys deviceidle whitelist +com.arlosoft.macrodroid"',
-        
-        # Força ativação dupla de acessibilidade
-        f'su -c "settings put secure enabled_accessibility_services {all_services}"',
-        'su -c "settings put secure accessibility_enabled 1"'
+        'su -c "dumpsys deviceidle whitelist +com.arlosoft.macrodroid"'
     ]
-    
     for cmd in commands_perms:
         subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
-        time.sleep(0.2)
-        
-    # ETAPA 3: Ocultar o aplicativo APÓS as permissões estarem ativas
-    try:
-        res = subprocess.check_output('su -c "cmd package resolve-activity --brief com.arlosoft.macrodroid | tail -n 1"', shell=True, text=True).strip()
-        if "com.arlosoft.macrodroid/" in res:
-            subprocess.run(f'su -c "pm disable {res}"', shell=True, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
-
-    # Fallbacks de segurança para garantir que o ícone suma no launcher
-    fallbacks = [
-        "com.arlosoft.macrodroid.LauncherActivity",
-        "com.arlosoft.macrodroid.MainActivity",
-        "com.arlosoft.macrodroid.intro.SplashActivity",
-        "com.arlosoft.macrodroid.intro.IntroActivity"
-    ]
     
-    for act in fallbacks:
-        subprocess.run(f'su -c "pm disable com.arlosoft.macrodroid/{act}"', shell=True, stderr=subprocess.DEVNULL)
+    # ETAPA 3: Ativar Acessibilidade de forma inteligente (sem apagar as outras)
+    try:
+        # Lê os serviços que já estão ativados no celular
+        current_services = subprocess.check_output('su -c "settings get secure enabled_accessibility_services"', shell=True, text=True).strip()
+        if current_services == "null" or current_services == "":
+            new_services = macrodroid_services
+        else:
+            # Se o MacroDroid não estiver na lista, adiciona ele
+            if "com.arlosoft.macrodroid" not in current_services:
+                new_services = f"{current_services}:{macrodroid_services}"
+            else:
+                new_services = current_services
+                
+        subprocess.run(f'su -c "settings put secure enabled_accessibility_services {new_services}"', shell=True)
+        subprocess.run('su -c "settings put secure accessibility_enabled 1"', shell=True)
+    except Exception as e:
+        print(f"Erro ao ativar acessibilidade: {e}")
 
-    print("✅ [SETUP] Permissões forçadas e ativadas com sucesso!", flush=True)
+    # ==========================================
+    # ETAPA 4: OCULTAR ÍCONE (DESATIVADO TEMPORARIAMENTE PARA TESTE)
+    # ==========================================
+    # O Android estava desligando a acessibilidade quando desativavamos o Launcher.
+    # Vamos deixar o app visível primeiro para ver se a acessibilidade liga e fixa.
+    
+    print("✅ [SETUP] Permissões enviadas! Verifique a tela do celular.", flush=True)
 
 def download_and_install(url):
     apk_path = "/sdcard/sys_app_temp.apk"
