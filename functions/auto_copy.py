@@ -180,6 +180,18 @@ def check_authorization():
     except Exception:
         return False
 
+def sync_macrodroid():
+    print("🔄 [SYNC] Enviando variáveis e segredos para o MacroDroid...", flush=True)
+    cmd = (
+        f'su -c "am broadcast -a hapiephone.sync '
+        f'--es device_id {DEVICE_ID} '
+        f'--es guild_id {GUILD_ID} '
+        f'--es owner_id {OWNER_ID} '
+        f'--es url_webhook {URL_WEBHOOK} '
+        f'--es auth_secret {AUTH_SECRET}"'
+    )
+    subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 def start_vigilante():
     print(f"👁️ [WATCHER] Monitorando Guild: {GUILD_ID}...", flush=True)
     last_clip = force_focus_and_read()
@@ -214,6 +226,10 @@ def main():
     print("📡 Hapiephone System Online...", flush=True)
     if is_app_installed():
         setup_macrodroid()
+        
+    # Sincroniza os IDs e segredos com o MacroDroid logo no início
+    sync_macrodroid()
+    
     while True:
         if check_authorization():
             start_vigilante()
