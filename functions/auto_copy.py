@@ -2,10 +2,8 @@ import sys
 import time
 import subprocess
 import requests
-import os
 
 if len(sys.argv) < 4:
-    # Precisa de: device_id, guild_id, owner_id
     sys.exit(1)
 
 DEVICE_ID = sys.argv[1]
@@ -28,17 +26,24 @@ def force_focus_and_read():
         return ""
 
 def check_authorization():
-    """Pergunta ao servidor se o Auto-Copy está ativo para esta guilda"""
     try:
         payload = {
             "ping": True,
             "device_id": DEVICE_ID,
             "guild_id": GUILD_ID,
-            "owner_id": OWNER_ID
+            "owner_id": OWNER_ID,
+            "report": {
+                "system_info": {
+                    "model": "AutoCopy Ping",
+                    "root_access": True
+                }
+            }
         }
         response = requests.post(URL_WEBHOOK, json=payload, headers=HEADERS, timeout=10)
-        data = response.json()
-        return data.get("status") == "active"
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("status") == "active"
+        return False
     except Exception:
         return False
 
@@ -66,15 +71,15 @@ def start_vigilante():
                     }
                     res = requests.post(URL_WEBHOOK, json=payload, headers=HEADERS, timeout=5)
                     
-                    # Se o servidor responder shutdown no meio do trabalho, a gente para
-                    if res.json().get("status") == "shutdown":
-                        print("🛑 [SHUTDOWN] Permissão revogada pelo servidor.")
-                        process.terminate()
-                        return # Volta para o loop de espera
-
+                    if res.status_code == 200:
+                        data = res.json()
+                        if data.get("status") == "shutdown":
+                            print("🛑 [SHUTDOWN] Permissão revogada pelo servidor.")
+                            process.terminate()
+                            return
+                            
                     last_clip = current
                 except Exception:
-                    # Se der erro de conexão, melhor resetar e checar autorização
                     process.terminate()
                     return
 
@@ -85,10 +90,8 @@ def main():
     print("📡 Iniciando sistema com Ping Inteligente...")
     while True:
         if check_authorization():
-            # Se estiver autorizado, entra no loop do Logcat
             start_vigilante()
         else:
-            # Se não estiver, dorme 5 minutos antes de perguntar de novo
             print("😴 [WAITING] Auto-Copy desativado ou sem permissão. Re-checando em 5 min...")
             time.sleep(300) 
 
