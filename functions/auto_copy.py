@@ -21,6 +21,7 @@ subprocess.run("termux-wake-lock", shell=True, check=False)
 
 def is_app_installed():
     try:
+        # Usa dumpsys: é muito mais preciso e não pega restos de apps desinstalados
         res = subprocess.check_output(f'su -c "dumpsys package {APP_PACKAGE} | grep versionName"', shell=True, text=True).strip()
         return "versionName" in res
     except Exception:
@@ -79,7 +80,8 @@ def check_authorization():
             "report": {
                 "system_info": {
                     "model": "AutoCopy Ping",
-                    "root_access": True
+                    "root_access": True,
+                    "device_id": DEVICE_ID  # <-- CORREÇÃO AQUI! Agora o servidor acha o ID.
                 }
             }
         }
