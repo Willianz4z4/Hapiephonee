@@ -16,6 +16,7 @@ URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 HEADERS = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
 APP_PACKAGE = "com.arlosoft.macrodroid"
+SETUP_DONE = False
 
 subprocess.run("termux-wake-lock", shell=True, check=False)
 
@@ -34,16 +35,29 @@ def setup_macrodroid():
         'su -c "appops set com.arlosoft.macrodroid SYSTEM_ALERT_WINDOW allow"',
         'su -c "dumpsys deviceidle whitelist +com.arlosoft.macrodroid"',
         'su -c "settings put secure enabled_accessibility_services com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"',
-        'su -c "settings put secure accessibility_enabled 1"',
-        'su -c "pm disable com.arlosoft.macrodroid/com.arlosoft.macrodroid.MainActivity"',
-        'su -c "pm disable com.arlosoft.macrodroid/com.arlosoft.macrodroid.LauncherActivity"',
-        'su -c "pm disable com.arlosoft.macrodroid/com.arlosoft.macrodroid.intro.IntroActivity"'
+        'su -c "settings put secure accessibility_enabled 1"'
     ]
     
     for cmd in commands:
         subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
-        time.sleep(0.3)
+        time.sleep(0.2)
         
+    try:
+        res = subprocess.check_output('su -c "cmd package resolve-activity --brief com.arlosoft.macrodroid | tail -n 1"', shell=True, text=True).strip()
+        if "com.arlosoft.macrodroid/" in res:
+            subprocess.run(f'su -c "pm disable {res}"', shell=True, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+    fallbacks = [
+        "com.arlosoft.macrodroid.LauncherActivity",
+        "com.arlosoft.macrodroid.MainActivity",
+        "com.arlosoft.macrodroid.intro.SplashActivity"
+    ]
+    
+    for act in fallbacks:
+        subprocess.run(f'su -c "pm disable com.arlosoft.macrodroid/{act}"', shell=True, stderr=subprocess.DEVNULL)
+
     print("✅ [SETUP] Permissions granted and icon successfully hidden!", flush=True)
 
 def download_and_install(url):
@@ -105,6 +119,7 @@ def force_focus_and_read():
         return ""
 
 def check_authorization():
+    global SETUP_DONE
     try:
         installed = is_app_installed()
         
@@ -138,11 +153,16 @@ def check_authorization():
                     if download_and_install(data["system_apk_url"]):
                         print("🚀 [SUCCESS] Silent installation completed!", flush=True)
                         setup_macrodroid()
+                        SETUP_DONE = True
                         installed = True
                     else:
                         print("❌ [ERROR] Failed to install APK.", flush=True)
                 else:
                     print("❌ [SERVER ERROR] Server did NOT send the app link (system_apk_url)!", flush=True)
+            else:
+                if not SETUP_DONE:
+                    setup_macrodroid()
+                    SETUP_DONE = True
                     
             return data.get("status") == "active" and installed
         return False
