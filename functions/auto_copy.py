@@ -33,7 +33,7 @@ def download_and_install(url):
         
         if "drive.google.com" in url or "docs.google.com" in url:
             print("⚠️ [WARNING] Google Drive link detected. Using gdown bypass...", flush=True)
-            res_dl = subprocess.run(f'gdown "{url}" -O {apk_path} --fuzzy', shell=True)
+            res_dl = subprocess.run(f'gdown "{url}" -O {apk_path}', shell=True)
             
             if res_dl.returncode != 0:
                 print("❌ [ERROR] gdown failed. Make sure it is installed: pip install gdown", flush=True)
