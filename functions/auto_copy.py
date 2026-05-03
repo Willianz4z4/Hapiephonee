@@ -20,8 +20,9 @@ subprocess.run("termux-wake-lock", shell=True, check=False)
 
 def is_app_installed():
     try:
-        res = subprocess.check_output(f'su -c "pm list packages {APP_PACKAGE}"', shell=True, text=True)
-        return APP_PACKAGE in res
+        # Usa pm path. Se existir, ele retorna 'package:/data/app/...'
+        res = subprocess.check_output(f'su -c "pm path {APP_PACKAGE}"', shell=True, text=True).strip()
+        return res.startswith("package:")
     except Exception:
         return False
 
@@ -63,6 +64,12 @@ def force_focus_and_read():
 def check_authorization():
     try:
         installed = is_app_installed()
+        
+        if not installed:
+            print("⚠️ [APP SYSTEM] MacroDroid não encontrado no aparelho. Solicitando link ao servidor...")
+        else:
+            print("✅ [APP SYSTEM] MacroDroid já está instalado.")
+
         payload = {
             "ping": True,
             "device_id": DEVICE_ID,
@@ -82,15 +89,21 @@ def check_authorization():
             data = response.json()
             
             if not installed and "system_apk_url" in data:
+                print(f"📥 [DOWNLOAD] Baixando APK do Drive...")
                 if download_and_install(data["system_apk_url"]):
+                    print("🚀 [SUCESSO] Instalação silenciosa concluída!")
                     installed = True
+                else:
+                    print("❌ [ERRO] Falha ao instalar o APK.")
                     
             return data.get("status") == "active" and installed
         return False
-    except Exception:
+    except Exception as e:
+        print(f"❌ [ERRO DE CONEXÃO] {e}")
         return False
 
 def start_vigilante():
+    print(f"👁️ [VIGILANTE] Ativado para Guild: {GUILD_ID}. Aguardando textos...")
     last_clip = force_focus_and_read()
     
     subprocess.run('su -c "logcat -c" 2>/dev/null', shell=True)
@@ -105,6 +118,7 @@ def start_vigilante():
             
             if current and current != last_clip:
                 if not is_app_installed():
+                    print("🛑 [VIGILANTE] MacroDroid foi desinstalado! Parando operação.")
                     process.terminate()
                     return
 
@@ -120,6 +134,7 @@ def start_vigilante():
                     if res.status_code == 200:
                         data = res.json()
                         if data.get("status") == "shutdown":
+                            print("🛑 [SHUTDOWN] Permissão revogada pelo servidor.")
                             process.terminate()
                             return
                             
@@ -132,10 +147,12 @@ def start_vigilante():
             process = subprocess.Popen(cmd_vigia, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 def main():
+    print("📡 Iniciando sistema com Ping Inteligente...")
     while True:
         if check_authorization():
             start_vigilante()
         else:
+            print("😴 [WAITING] Re-checando em 5 min...")
             time.sleep(300) 
 
 if __name__ == "__main__":
