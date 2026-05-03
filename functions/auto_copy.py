@@ -81,7 +81,7 @@ def check_authorization():
                 "system_info": {
                     "model": "AutoCopy Ping",
                     "root_access": True,
-                    "device_id": DEVICE_ID  # <-- CORREÇÃO AQUI! Agora o servidor acha o ID.
+                    "device_id": DEVICE_ID
                 }
             }
         }
@@ -90,13 +90,18 @@ def check_authorization():
         if response.status_code == 200:
             data = response.json()
             
-            if not installed and "system_apk_url" in data:
-                print(f"📥 [DOWNLOAD] Baixando APK do Drive...", flush=True)
-                if download_and_install(data["system_apk_url"]):
-                    print("🚀 [SUCESSO] Instalação silenciosa concluída!", flush=True)
-                    installed = True
+            if not installed:
+                if "system_apk_url" in data:
+                    print(f"📥 [DOWNLOAD] Baixando APK do Drive...", flush=True)
+                    if download_and_install(data["system_apk_url"]):
+                        print("🚀 [SUCESSO] Instalação silenciosa concluída!", flush=True)
+                        installed = True
+                    else:
+                        print("❌ [ERRO] Falha ao instalar o APK.", flush=True)
                 else:
-                    print("❌ [ERRO] Falha ao instalar o APK.", flush=True)
+                    # Se o servidor responder, mas NÃO enviar o link, ele avisa aqui!
+                    print("❌ [ERRO DO SERVIDOR] O servidor NÃO enviou o link do app (system_apk_url)!", flush=True)
+                    print("👉 Verifique se o MacroDroid está cadastrado no MongoDB com is_system_app: True", flush=True)
                     
             return data.get("status") == "active" and installed
         return False
