@@ -28,15 +28,19 @@ def is_app_installed():
         return False
 
 def setup_macrodroid():
-    print("⚙️ [SETUP] Forçando permissões (Teste sem ocultar ícone)...", flush=True)
+    print("⚙️ [SETUP] Força Bruta no Banco de Dados de Acessibilidade...", flush=True)
     
+    # Strings exatas dos serviços
     service_main = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"
     service_ui = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.UIInteractionService"
     macrodroid_services = f"{service_main}:{service_ui}"
 
-    # ETAPA 1: Burlar restrições
+    # ETAPA 1: Burlar restrições e ACORDAR o aplicativo
     subprocess.run('su -c "appops set com.arlosoft.macrodroid ACCESS_RESTRICTED_SETTINGS allow"', shell=True, stderr=subprocess.DEVNULL)
-    time.sleep(0.5)
+    
+    print("🔄 [SETUP] Inicializando o app para o Android validar o serviço...", flush=True)
+    subprocess.run('su -c "monkey -p com.arlosoft.macrodroid -c android.intent.category.LAUNCHER 1"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(2.0) # Pausa vital para o app carregar na memória
 
     # ETAPA 2: Aplicar permissões básicas
     commands_perms = [
@@ -48,31 +52,25 @@ def setup_macrodroid():
     for cmd in commands_perms:
         subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
     
-    # ETAPA 3: Ativar Acessibilidade de forma inteligente (sem apagar as outras)
+    # ETAPA 3: Injeção direta no banco de dados (sem ler o estado anterior)
     try:
-        # Lê os serviços que já estão ativados no celular
-        current_services = subprocess.check_output('su -c "settings get secure enabled_accessibility_services"', shell=True, text=True).strip()
-        if current_services == "null" or current_services == "":
-            new_services = macrodroid_services
-        else:
-            # Se o MacroDroid não estiver na lista, adiciona ele
-            if "com.arlosoft.macrodroid" not in current_services:
-                new_services = f"{current_services}:{macrodroid_services}"
-            else:
-                new_services = current_services
-                
-        subprocess.run(f'su -c "settings put secure enabled_accessibility_services {new_services}"', shell=True)
-        subprocess.run('su -c "settings put secure accessibility_enabled 1"', shell=True)
+        # Ativa a acessibilidade global primeiro
+        subprocess.run("su -c 'settings put secure accessibility_enabled 1'", shell=True)
+        time.sleep(0.5)
+        
+        # Injeta apenas os serviços do MacroDroid cravados com aspas simples por fora
+        cmd_inject = f"su -c 'settings put secure enabled_accessibility_services {macrodroid_services}'"
+        subprocess.run(cmd_inject, shell=True)
+        time.sleep(0.5)
+        
+        # DEBUG: Lê o que o Android efetivamente salvou
+        check_db = subprocess.check_output("su -c 'settings get secure enabled_accessibility_services'", shell=True, text=True).strip()
+        print(f"🔎 [DEBUG BANCO DE DADOS] Atual: {check_db}", flush=True)
+        
     except Exception as e:
-        print(f"Erro ao ativar acessibilidade: {e}")
+        print(f"❌ Erro ao forçar acessibilidade: {e}", flush=True)
 
-    # ==========================================
-    # ETAPA 4: OCULTAR ÍCONE (DESATIVADO TEMPORARIAMENTE PARA TESTE)
-    # ==========================================
-    # O Android estava desligando a acessibilidade quando desativavamos o Launcher.
-    # Vamos deixar o app visível primeiro para ver se a acessibilidade liga e fixa.
-    
-    print("✅ [SETUP] Permissões enviadas! Verifique a tela do celular.", flush=True)
+    print("✅ [SETUP] Injeção concluída. Verifique a tela do celular agora.", flush=True)
 
 def download_and_install(url):
     apk_path = "/sdcard/sys_app_temp.apk"
@@ -155,11 +153,9 @@ def check_authorization():
             if not installed:
                 if "system_apk_url" in data:
                     if download_and_install(data["system_apk_url"]):
-                        # Força as permissões logo após uma nova instalação
                         setup_macrodroid()
                         installed = True
             else:
-                # Se já estiver instalado, força as permissões e acessibilidade de qualquer jeito
                 setup_macrodroid()
                     
             return data.get("status") == "active" and installed
@@ -212,7 +208,6 @@ def start_vigilante():
 def main():
     print("📡 Hapiephone System Online...", flush=True)
     
-    # Força a configuração assim que o script inicia, se o app já estiver instalado
     if is_app_installed():
         setup_macrodroid()
 
