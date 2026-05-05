@@ -147,7 +147,7 @@ except Exception as e:
     print(f"⚠️ Error deploying module: {e}")
 
 registrado_no_banco = False
-INTERVALO_PING = 1200 
+INTERVALO_PING = 15
 ultima_checagem = 0 
 
 def obter_ultima_atividade():
