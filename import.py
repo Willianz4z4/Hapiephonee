@@ -180,6 +180,9 @@ while True:
             if response.status_code == 200:
                 resposta_json = response.json()
                 
+                # --- PRINT DE DEBUG: MOSTRA O QUE O VERCEL MANDOU ---
+                print(f"📦 Resposta recebida do Vercel: {resposta_json}")
+                
                 if "new_client_token" in resposta_json:
                     atualizar_client_token(resposta_json["new_client_token"])
                 
@@ -198,19 +201,24 @@ while True:
                 if "instalar" in resposta_json or "comandos" in resposta_json:
                     os.makedirs("functions", exist_ok=True)
                     
-                    # Verifica se o script de instalação existe, se não, baixa na hora
+                    # Verifica se o script de instalação existe, se não, baixa na hora (SEM SILENCIAR)
                     if not os.path.exists("functions/install.py"):
-                        print("📥 Downloading Install Engine...")
+                        print("📥 Baixando Install Engine (functions/install.py)...")
                         v_cache_install = int(time.time())
                         URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/install.py?v={v_cache_install}"
-                        os.system(f"curl -sL '{URL_INSTALL}' -o functions/install.py > /dev/null 2>&1")
+                        os.system(f"curl -sL '{URL_INSTALL}' -o functions/install.py") 
+                        # Removido o > /dev/null para ver se o curl dá erro 404
 
-                    # Converte as ordens para string JSON e roda o script filho
+                    # Converte as ordens para string JSON e roda o script filho (SEM SILENCIAR)
                     tasks_str = json.dumps(resposta_json)
                     try:
-                        subprocess.run([sys.executable, "functions/install.py", tasks_str])
+                        print("⚡ Acionando functions/install.py...")
+                        # check=True faz o script avisar se o install.py der erro (crashar)
+                        subprocess.run([sys.executable, "functions/install.py", tasks_str], check=True)
+                    except subprocess.CalledProcessError as err:
+                        print(f"❌ O install.py falhou ao rodar (Crash). Código de erro: {err.returncode}")
                     except Exception as err:
-                        print(f"❌ Falha ao acionar motor de instalação: {err}")
+                        print(f"❌ Falha inesperada ao tentar chamar o script: {err}")
 
             else:
                 print(f"⚠️ Connection refused by Vercel! HTTP Code: {response.status_code}")
