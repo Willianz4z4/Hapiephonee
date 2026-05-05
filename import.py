@@ -175,7 +175,8 @@ while True:
     
     if agora - ultima_acao >= INTERVALO_PING or not registrado_no_banco:
         try:
-            report_payload = report if not registrado_no_banco else {"system_info": {"device_id": device_id}}
+            # CORRIGIDO: Agora envia o relatório completo sempre, protegendo o banco de dados
+            report_payload = report 
             
             payload = {
                 "type": 1 if registrado_no_banco else 0, 
