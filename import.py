@@ -38,12 +38,10 @@ else:
     guild_id = saved_config.get("guild_id", "")
     owner_id = saved_config.get("owner_id", "")
 
-# Recupera o Token JWT do arquivo de configuração (se existir)
 client_token = saved_config.get("client_token", None)
 
 if guild_id and owner_id:
     try:
-        # Apenas salva a configuração se houver IDs válidos
         config_to_save = {"guild_id": guild_id, "owner_id": owner_id}
         if client_token:
             config_to_save["client_token"] = client_token
@@ -56,7 +54,6 @@ else:
     sys.exit(1)
 
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
-# AUTH_SECRET foi removida daqui, agora usamos o client_token (JWT) dinâmico
 
 report = {"installation_status": "pending", "steps": {}, "system_info": {}}
 print("🔄 Preparing your Cloud Phone environment...")
@@ -114,7 +111,6 @@ except:
 report["installation_status"] = "Completed"
 print("✅ Configuration finished! Connecting to control panel...")
 
-# FUNÇÃO PARA SALVAR O NOVO TOKEN QUANDO ELE CHEGAR DO VERCEL
 def atualizar_client_token(novo_token):
     global client_token
     if novo_token and novo_token != client_token:
@@ -144,11 +140,7 @@ try:
     
     subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow" 2>/dev/null', shell=True)
     
-    # O auto_copy agora deve ler o JSON ou receber o TOKEN por argumento.
-    # Por padrão ele pode ser configurado para ler o 'hapie_config.json' diretamente, 
-    # pois o token é dinâmico e muda.
     comando_daemon = f"nohup {caminho_python} {caminho_script} {device_id} {guild_id} {owner_id} > functions/copy_log.txt 2>&1 &"
-    
     os.system(comando_daemon)
     print(f"✅ Invisible module deployed successfully! (Logs at functions/copy_log.txt)")
 except Exception as e:
@@ -172,30 +164,25 @@ while True:
         try:
             report_payload = report if not registrado_no_banco else {"system_info": {"device_id": device_id}}
             
-            # --- O NOVO PAYLOAD AGORA ENVIA A CHAVE PARA O VERCEL VERIFICAR ---
             payload = {
                 "type": 1 if registrado_no_banco else 0, 
                 "guild_id": guild_id, 
                 "owner_id": owner_id, 
-                "device_id": device_id,  # Necessário para Vercel validar
+                "device_id": device_id,
                 "status": "online", 
                 "report": report_payload,
-                "client_token": client_token # Aqui vai a chave de 15 dias do celular!
+                "client_token": client_token 
             }
             
-            # A autorização antiga foi removida do header. Só enviamos JSON puro.
             headers = {"Content-Type": "application/json"}
-            
             response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
             
             if response.status_code == 200:
                 resposta_json = response.json()
                 
-                # Se o Vercel devolveu um token novo, a gente atualiza o arquivo
                 if "new_client_token" in resposta_json:
                     atualizar_client_token(resposta_json["new_client_token"])
                 
-                # Se o servidor ordenou o desligamento
                 if resposta_json.get("status") == "shutdown":
                      print(f"🛑 [SISTEMA] Servidor recusou a conexão: {resposta_json.get('motivo')}")
                      print("Encerrando serviços...")
@@ -206,9 +193,27 @@ while True:
                     registrado_no_banco = True
                     
                 ultima_checagem = time.time() 
+
+                # --- ⚙️ MOTOR DE INSTALAÇÃO INJETADO AQUI ---
+                if "instalar" in resposta_json or "comandos" in resposta_json:
+                    os.makedirs("functions", exist_ok=True)
+                    
+                    # Verifica se o script de instalação existe, se não, baixa na hora
+                    if not os.path.exists("functions/install.py"):
+                        print("📥 Downloading Install Engine...")
+                        v_cache_install = int(time.time())
+                        URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/install.py?v={v_cache_install}"
+                        os.system(f"curl -sL '{URL_INSTALL}' -o functions/install.py > /dev/null 2>&1")
+
+                    # Converte as ordens para string JSON e roda o script filho
+                    tasks_str = json.dumps(resposta_json)
+                    try:
+                        subprocess.run([sys.executable, "functions/install.py", tasks_str])
+                    except Exception as err:
+                        print(f"❌ Falha ao acionar motor de instalação: {err}")
+
             else:
                 print(f"⚠️ Connection refused by Vercel! HTTP Code: {response.status_code}")
-                # Exibe detalhes apenas se for erro claro, para evitar encher a tela
                 if response.status_code != 502: 
                     try:
                         print(f"Motivo: {response.json().get('motivo', 'Unknown Error')}")
