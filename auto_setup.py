@@ -16,7 +16,6 @@ console = Console()
 LOG_FILE = "setup_log.txt"
 
 def write_log(msg):
-    """Save clean logs to a text file without rich formatting tags."""
     try:
         clean_msg = re.sub(r'\[.*?\]', '', str(msg))
         with open(LOG_FILE, "a", encoding="utf-8") as f:
@@ -26,26 +25,25 @@ def write_log(msg):
         pass
 
 def force_android_permissions():
-    """Uses Root to grant Termux ultimate background and overlay permissions"""
-    write_log("Starting Android permission override...")
-    spinner = Halo(text='Forcing Android system permissions via Root...', spinner='dots')
+    write_log("Forcing UI and Background permissions...")
+    spinner = Halo(text='Forcing System Permissions...', spinner='dots')
     spinner.start()
     try:
+        # Permite que o Termux abra janelas sobre outros apps (Obrigatório para abrir sozinho)
         os.system("su -c 'appops set com.termux SYSTEM_ALERT_WINDOW allow'")
         os.system("su -c 'appops set com.termux RUN_IN_BACKGROUND allow'")
         os.system("su -c 'appops set com.termux RUN_ANY_IN_BACKGROUND allow'")
+        # Tira o Termux do modo de economia de energia
         os.system("su -c 'dumpsys deviceidle whitelist +com.termux'")
-        
-        spinner.succeed("System permissions successfully forced!")
-        write_log("✅ System permissions successfully forced!")
+        spinner.succeed("Permissions forced successfully!")
+        write_log("✅ Permissions forced successfully!")
     except Exception as e:
-        spinner.fail(f"Failed to force permissions: {e}")
-        write_log(f"❌ Failed to force permissions: {e}")
+        spinner.fail(f"Permission error: {e}")
+        write_log(f"❌ Permission error: {e}")
 
 def setup_termux_bashrc():
-    """Garante que o código corre mal o Termux abra"""
-    write_log("Configuring .bashrc logic...")
-    spinner = Halo(text='Setting up .bashrc logic...', spinner='dots')
+    write_log("Updating .bashrc startup script...")
+    spinner = Halo(text='Configuring Termux startup...', spinner='dots')
     spinner.start()
     bashrc_path = os.path.expanduser("~/.bashrc")
     
@@ -57,87 +55,78 @@ if [ -z "$EVO_STARTED" ]; then
     while true; do
         cd ~/Hapiephone 2>/dev/null || cd ~/hapiephone 2>/dev/null
         python import.py
+        echo "🔄 Bot closed. Restarting in 5s..."
         sleep 5
     done
 fi
 """
     try:
+        content = ""
         if os.path.exists(bashrc_path):
             with open(bashrc_path, "r") as f:
-                if "Evollogic Auto-Start" in f.read():
-                    spinner.succeed(".bashrc already configured.")
-                    write_log("✅ .bashrc already configured (skipped).")
-                    return
-
-        with open(bashrc_path, "a") as f:
-            f.write(startup_code)
-        spinner.succeed(".bashrc configured!")
-        write_log("✅ .bashrc configured successfully!")
+                content = f.read()
+        
+        if "Evollogic Auto-Start" not in content:
+            with open(bashrc_path, "a") as f:
+                f.write(startup_code)
+            spinner.succeed(".bashrc updated!")
+            write_log("✅ .bashrc updated!")
+        else:
+            spinner.succeed(".bashrc already set.")
+            write_log("✅ .bashrc already set.")
     except Exception as e:
-        spinner.fail(f"Failed to write .bashrc: {e}")
-        write_log(f"❌ Failed to write .bashrc: {e}")
+        spinner.fail(f"Bashrc error: {e}")
+        write_log(f"❌ Bashrc error: {e}")
 
 def setup_immortal_boot():
-    """Script de Boot agressivo para Magisk com criação forçada de pastas"""
-    write_log("Configuring Magisk immortal boot script...")
-    magisk_dir = "/data/adb/service.d"
-    init_d_dir = "/system/etc/init.d"
+    write_log("Attempting to inject boot script...")
+    spinner = Halo(text='Injecting Boot Script...', spinner='dots')
+    spinner.start()
     
-    # 1. TENTA FORÇAR A CRIAÇÃO DA PASTA DO MAGISK
-    os.system(f"su -c 'mkdir -p {magisk_dir}'")
-    
-    boot_dir = None
-    if os.system(f"su -c '[ -d {magisk_dir} ]'") == 0:
-        boot_dir = magisk_dir
-    else:
-        # 2. FALLBACK: TENTA FORÇAR A CRIAÇÃO DO INIT.D NO SISTEMA
-        os.system("su -c 'mount -o rw,remount /system'")
-        os.system("su -c 'mount -o rw,remount /'")
-        os.system(f"su -c 'mkdir -p {init_d_dir}'")
-        if os.system(f"su -c '[ -d {init_d_dir} ]'") == 0:
-            boot_dir = init_d_dir
+    # Lista de pastas onde o Android/Magisk aceita scripts de boot
+    possible_dirs = ["/data/adb/service.d", "/data/adb/post-fs-data.d", "/data/local/userinit.d"]
+    target_dir = None
 
-    if not boot_dir:
-        console.print("[bold red]❌ Root boot folders could not be created![/bold red]")
-        write_log("❌ Error: Could not create Magisk or init.d directories via Root.")
+    for d in possible_dirs:
+        # Tenta criar a pasta na marra
+        os.system(f"su -c 'mkdir -p {d}'")
+        if os.system(f"su -c '[ -d {d} ]'") == 0:
+            target_dir = d
+            break
+
+    if not target_dir:
+        # Fallback para pasta root do sistema se as outras falharem
+        os.system("su -c 'mount -o rw,remount /'")
+        os.system("su -c 'mkdir -p /etc/init.d'")
+        if os.system(f"su -c '[ -d /etc/init.d ]'") == 0:
+            target_dir = "/etc/init.d"
+
+    if not target_dir:
+        spinner.fail("Could not find or create any boot directory.")
+        write_log("❌ Error: No boot directory accessible even with Root.")
         return
 
-    script_path = os.path.join(boot_dir, "99start_hapie")
+    script_path = os.path.join(target_dir, "99start_hapie")
 
     boot_sh = """#!/system/bin/sh
 (
+    # Aguarda o sistema estar pronto
     until [ $(getprop sys.boot_completed) -eq 1 ]; do
-        sleep 2
-    done
-    sleep 10 
-
-    MAX_TRIES=10
-    COUNT=0
-    while [ $COUNT -lt $MAX_TRIES ]; do
-        input keyevent 26
-        sleep 1
-        
-        input swipe 500 1000 500 200
-        sleep 1
-        input keyevent 82
-        sleep 1
-        
-        appops set com.termux SYSTEM_ALERT_WINDOW allow
-        
-        am start -n com.termux/com.termux.app.TermuxActivity -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
-        
-        if dumpsys window windows | grep -q "mCurrentFocus.*TermuxActivity"; then
-            exit 0
-        fi
-        
-        COUNT=$((COUNT+1))
         sleep 5
     done
+    sleep 15
+
+    # Acorda a tela e desbloqueia
+    input keyevent 26
+    sleep 1
+    input swipe 500 1000 500 200
+    sleep 1
+    input keyevent 82
+    
+    # Abre o Termux (Forçado)
+    am start --user 0 -n com.termux/com.termux.app.TermuxActivity -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
 ) &
 """
-
-    spinner = Halo(text='Injecting aggressive Boot Script...', spinner='dots')
-    spinner.start()
 
     try:
         with open("temp_boot.sh", "w") as f:
@@ -147,22 +136,20 @@ def setup_immortal_boot():
         os.system(f"su -c 'chmod 755 {script_path}'")
         os.system(f"su -c 'chown root:root {script_path}'")
         
-        if os.path.exists("temp_boot.sh"):
-            os.remove("temp_boot.sh")
-            
-        spinner.succeed("Boot Script injected successfully!")
-        write_log(f"✅ Boot Script injected successfully at {script_path}")
+        spinner.succeed(f"Boot script injected at {target_dir}!")
+        write_log(f"✅ Boot script injected successfully at {script_path}")
     except Exception as e:
         spinner.fail(f"Injection failed: {e}")
-        write_log(f"❌ Boot script injection failed: {e}")
+        write_log(f"❌ Injection failed: {e}")
 
 if __name__ == "__main__":
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
-        f.write(f"--- Evollogic Persistence Setup Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+    with open(LOG_FILE, "w") as f:
+        f.write(f"--- Persistence Setup Session: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
         
     console.print("[bold cyan]--- Evollogic Persistence Setup ---[/bold cyan]")
     force_android_permissions()
     setup_termux_bashrc()
     setup_immortal_boot()
-    console.print("[bold green]✅ Ready! Reboot the phone to test.[/bold green]")
-    write_log("✅ Setup process finished.")
+    console.print("\n[bold green]✅ Configuration Finished![/bold green]")
+    console.print("[dim]Reboot your UgPhone now to test auto-start.[/dim]\n")
+    write_log("✅ Setup Finished.")
