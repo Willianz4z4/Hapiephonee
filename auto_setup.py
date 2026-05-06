@@ -16,6 +16,7 @@ console = Console()
 LOG_FILE = "setup_log.txt"
 
 def write_log(msg):
+    """Save clean logs to a text file without rich formatting tags."""
     try:
         clean_msg = re.sub(r'\[.*?\]', '', str(msg))
         with open(LOG_FILE, "a", encoding="utf-8") as f:
@@ -108,23 +109,35 @@ def setup_immortal_boot():
 
     script_path = os.path.join(target_dir, "99start_hapie")
 
+    # SCRIPT SH COM O "MONKEY" E LOG DE DEBUG NA RAIZ DO CELULAR
     boot_sh = """#!/system/bin/sh
 (
+    exec > /sdcard/boot_debug_hapie.txt 2>&1
+    echo "[$(date)] 🚀 Magisk Boot Script Iniciado!"
+
     # Aguarda o sistema estar pronto
-    until [ $(getprop sys.boot_completed) -eq 1 ]; do
+    until [ "$(getprop sys.boot_completed)" = "1" ]; do
         sleep 5
     done
+    
+    echo "[$(date)] ⏳ Sistema carregado. Aguardando a interface grafica (15s)..."
     sleep 15
 
-    # Acorda a tela e desbloqueia
+    echo "[$(date)] 📱 Tentando acordar a tela..."
     input keyevent 26
     sleep 1
     input swipe 500 1000 500 200
     sleep 1
     input keyevent 82
+    sleep 1
     
-    # Abre o Termux (Forçado)
-    am start --user 0 -n com.termux/com.termux.app.TermuxActivity -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
+    echo "[$(date)] 🔓 Forcando permissoes de sobreposicao..."
+    appops set com.termux SYSTEM_ALERT_WINDOW allow
+    
+    echo "[$(date)] 🐒 Usando o Monkey para espancar o sistema e forcar a abertura do Termux..."
+    monkey -p com.termux -c android.intent.category.LAUNCHER 1
+    
+    echo "[$(date)] ✅ Fim do script de boot."
 ) &
 """
 
