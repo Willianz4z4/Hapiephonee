@@ -78,15 +78,31 @@ fi
         write_log(f"❌ Failed to write .bashrc: {e}")
 
 def setup_immortal_boot():
-    """Script de Boot agressivo para Magisk com quebra de lockscreen"""
+    """Script de Boot agressivo para Magisk com criação forçada de pastas"""
     write_log("Configuring Magisk immortal boot script...")
     magisk_dir = "/data/adb/service.d"
-    script_path = os.path.join(magisk_dir, "99start_hapie")
+    init_d_dir = "/system/etc/init.d"
+    
+    # 1. TENTA FORÇAR A CRIAÇÃO DA PASTA DO MAGISK
+    os.system(f"su -c 'mkdir -p {magisk_dir}'")
+    
+    boot_dir = None
+    if os.system(f"su -c '[ -d {magisk_dir} ]'") == 0:
+        boot_dir = magisk_dir
+    else:
+        # 2. FALLBACK: TENTA FORÇAR A CRIAÇÃO DO INIT.D NO SISTEMA
+        os.system("su -c 'mount -o rw,remount /system'")
+        os.system("su -c 'mount -o rw,remount /'")
+        os.system(f"su -c 'mkdir -p {init_d_dir}'")
+        if os.system(f"su -c '[ -d {init_d_dir} ]'") == 0:
+            boot_dir = init_d_dir
 
-    if os.system(f"su -c '[ -d {magisk_dir} ]'") != 0:
-        console.print("[bold red]❌ Magisk service.d not found! Is the phone rooted?[/bold red]")
-        write_log("❌ Error: Magisk service.d not found.")
+    if not boot_dir:
+        console.print("[bold red]❌ Root boot folders could not be created![/bold red]")
+        write_log("❌ Error: Could not create Magisk or init.d directories via Root.")
         return
+
+    script_path = os.path.join(boot_dir, "99start_hapie")
 
     boot_sh = """#!/system/bin/sh
 (
@@ -141,7 +157,6 @@ def setup_immortal_boot():
         write_log(f"❌ Boot script injection failed: {e}")
 
 if __name__ == "__main__":
-    # Limpa o log antigo para uma nova sessão limpa
     with open(LOG_FILE, "w", encoding="utf-8") as f:
         f.write(f"--- Evollogic Persistence Setup Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n")
         
