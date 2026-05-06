@@ -1,5 +1,6 @@
 import os
 import json
+import subprocess
 
 try:
     from rich.console import Console
@@ -19,7 +20,45 @@ def check_permission():
     except Exception:
         return True
 
+def setup_termux_bashrc():
+    """Injects the auto-start command directly into Termux's brain (.bashrc)"""
+    spinner = Halo(text='Configuring Termux auto-start (.bashrc)...', spinner='dots')
+    spinner.start()
+    try:
+        bashrc_path = os.path.expanduser("~/.bashrc")
+        
+        # This code runs every time Termux opens
+        trigger_code = """
+# === Hapiephone Auto-Start ===
+if [ -z "$HAPIE_RUNNING" ]; then
+    export HAPIE_RUNNING=1
+    clear
+    echo "🚀 Starting Hapiephone in 3 seconds... (Press CTRL+C to cancel)"
+    sleep 3
+    while true; do
+        cd ~/Hapiephone 2>/dev/null || cd ~/hapiephone 2>/dev/null
+        python import.py
+        echo "🔄 Restarting in 5 seconds..."
+        sleep 5
+    done
+fi
+"""
+        # Prevent duplicate injections
+        if os.path.exists(bashrc_path):
+            with open(bashrc_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            if "Hapiephone Auto-Start" in content:
+                spinner.succeed("Termux auto-start already configured in .bashrc.")
+                return
+        
+        with open(bashrc_path, "a", encoding="utf-8") as f:
+            f.write(trigger_code)
+        spinner.succeed("Termux auto-start injected successfully!")
+    except Exception as e:
+        spinner.fail(f"Failed to configure Termux: {e}")
+
 def setup_root_boot():
+    """Sets up Magisk to wake the screen and launch Termux on boot"""
     if not check_permission():
         console.print("[bold yellow]⚠️ Auto-restart permission denied in config.json.[/bold yellow]")
         return
@@ -45,19 +84,21 @@ until [ $(getprop sys.boot_completed) -eq 1 ]; do
     sleep 2
 done
 
+# Wake up screen (UgPhone safe sequence)
 input keyevent 26
 sleep 1
 input keyevent 82
 sleep 1
 
-am start -n com.termux/com.termux.app.TermuxActivity
-sleep 6
+# Kill Termux if it's stuck in background from previous session
+am force-stop com.termux
+sleep 2
 
-input text "while true; do clear; cd ~/Hapiephone; python import.py; sleep 5; done"
-input keyevent 66
+# Launch Termux (This will trigger the .bashrc script automatically)
+am start -n com.termux/com.termux.app.TermuxActivity
 """
 
-    spinner = Halo(text='Injecting visible boot script via Root...', spinner='dots')
+    spinner = Halo(text='Injecting screen wake script via Root...', spinner='dots')
     spinner.start()
 
     try:
@@ -71,9 +112,12 @@ input keyevent 66
         if os.path.exists("temp_boot.sh"):
             os.remove("temp_boot.sh")
             
-        spinner.succeed(f"Foreground Immortal System activated! File saved at: {script_path}")
+        spinner.succeed(f"Foreground Auto-Boot activated! File saved at: {script_path}")
     except Exception as e:
         spinner.fail(f"Error configuring boot: {e}")
 
 if __name__ == "__main__":
+    console.print("\n[bold cyan]--- System Persistency Setup ---[/bold cyan]")
+    setup_termux_bashrc()
     setup_root_boot()
+    console.print("[bold green]✅ All persistency modules loaded. Phone will auto-start on reboot.[/bold green]\n")
