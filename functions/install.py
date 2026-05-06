@@ -4,14 +4,15 @@ import json
 import subprocess
 from datetime import datetime
 
-# Caminho do arquivo onde tudo será salvo
-LOG_FILE = "functions/install_log.txt"
+# Define o diretório local e seguro do Termux (NÃO exige permissão de armazenamento)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(BASE_DIR, "install_log.txt")
 
 def log(msg):
-    """Exibe a mensagem na tela e salva no arquivo de log"""
+    """Exibe a mensagem na tela e salva no arquivo de log local"""
     print(msg)
     try:
-        with open(LOG_FILE, "a") as f:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
             data_hora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             f.write(f"[{data_hora}] {msg}\n")
     except:
@@ -25,8 +26,13 @@ def run_su(cmd):
     return result
 
 def install_apk(url, vision):
-    tmp_path = "/sdcard/Download/temp_install.apk"
+    # Salvando direto na memória interna do Termux (Zero bloqueios)
+    tmp_path = os.path.join(BASE_DIR, "temp_install.apk")
+    
     log("📥 Iniciando download do APK...")
+    
+    if os.path.exists(tmp_path):
+        os.remove(tmp_path)
     
     if "drive.google.com" in url:
         os.system(f"gdown '{url}' -O {tmp_path} --fuzzy -q")
@@ -34,7 +40,7 @@ def install_apk(url, vision):
         os.system(f"curl -sL '{url}' -o {tmp_path}")
 
     if os.path.exists(tmp_path):
-        log("⚙️ Instalando pacote no sistema...")
+        log("⚙️ Instalando pacote no sistema via Root...")
         run_su(f"pm install -r {tmp_path}")
         
         cmd_get_pkg = f"aapt dump badging {tmp_path} | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
@@ -58,10 +64,14 @@ def inject_data(data_url, package_name):
     if not data_url or not package_name:
         return
     
-    tmp_data = "/sdcard/Download/data_inject.tar.gz"
+    # Salvando os dados no Termux
+    tmp_data = os.path.join(BASE_DIR, "data_inject.tar.gz")
     target_path = f"/data/data/{package_name}"
     
     log(f"📁 Baixando e injetando dados (.tar.gz) para {package_name}...")
+    
+    if os.path.exists(tmp_data):
+        os.remove(tmp_data)
     
     if "drive.google.com" in data_url:
         os.system(f"gdown '{data_url}' -O {tmp_data} --fuzzy -q")
