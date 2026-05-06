@@ -90,25 +90,54 @@ try:
 except:
     report["steps"]["pip_packages"] = "Failed"
 
-def get_data(command):
+
+# --- NOVO SISTEMA DE LEITURA (Anti API 0) ---
+def get_prop(command):
+    """Lê informações do sistema DE FORMA LIMPA (sem usar o Root)"""
     try:
-        return subprocess.check_output(f"su -c '{command}' 2>/dev/null", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        return subprocess.check_output(command, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+    except:
+        return "Unknown"
+
+def get_root_data(command):
+    """Usa Root apenas para as travas de segurança do ID"""
+    try:
+        return subprocess.check_output(f"su -c '{command}'", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
     except:
         return "Unknown"
 
 try:
-    has_root = True if get_data("echo root_ok") == "root_ok" else False
-    model = get_data("getprop ro.product.model")
-    android_version = get_data("getprop ro.build.version.release")
-    device_id = get_data("settings get secure android_id")
-    region = get_data("getprop persist.sys.locale")
-    if region == "Unknown" or not region: region = get_data("getprop ro.product.locale")
-    cpu_abi = get_data("getprop ro.product.cpu.abi")
+    has_root = True if get_root_data("echo root_ok") == "root_ok" else False
+    
+    # Busca o hardware diretamente no sistema Android
+    model = get_prop("getprop ro.product.model")
+    android_version = get_prop("getprop ro.build.version.release")
+    region = get_prop("getprop persist.sys.locale")
+    if region == "Unknown" or not region: 
+        region = get_prop("getprop ro.product.locale")
+    
+    cpu_abi = get_prop("getprop ro.product.cpu.abi")
     processor = "64 bits" if "64" in cpu_abi else ("32 bits" if cpu_abi != "Unknown" and cpu_abi else "Unknown")
 
-    report["system_info"] = {"root_access": has_root, "model": model, "android_version": android_version, "device_id": device_id, "region": region, "processor": processor}
+    # Busca o ID de segurança com root (ou sem root se falhar)
+    device_id = get_root_data("settings get secure android_id")
+    if device_id == "Unknown" or not device_id:
+        device_id = get_prop("settings get secure android_id")
+
+    # Limpeza para evitar que a API leia versões quebradas (ex: 11.0.1 -> 11)
+    if android_version != "Unknown" and "." in android_version:
+        android_version = android_version.split(".")[0]
+
+    report["system_info"] = {
+        "root_access": has_root, 
+        "model": model, 
+        "android_version": android_version, 
+        "device_id": device_id, 
+        "region": region, 
+        "processor": processor
+    }
     report["steps"]["data_collection"] = "Success"
-except:
+except Exception as e:
     report["steps"]["data_collection"] = "Failed"
     device_id = "Unknown"
 
@@ -121,13 +150,11 @@ def atualizar_client_token(novo_token):
         client_token = novo_token
         try:
             config = {}
-            # Verifica se o arquivo existe antes de tentar ler (Evita o Errno 2)
             if os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, "r") as f:
                     config = json.load(f)
             config["client_token"] = client_token
             
-            # Salva o arquivo forçadamente
             with open(CONFIG_FILE, "w") as f:
                 json.dump(config, f)
             print("🔑 [AUTH] Nova licença de segurança instalada no aparelho.")
@@ -137,8 +164,6 @@ def atualizar_client_token(novo_token):
 print("🚀 Starting background services (Auto-Copy)...")
 try:
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
-    
-    # Cria a pasta via sistema operacional (Evita o Errno 2)
     os.system(f"mkdir -p {FUNCTIONS_DIR}")
     
     copy_script_path = os.path.join(FUNCTIONS_DIR, "auto_copy.py")
@@ -160,14 +185,8 @@ except Exception as e:
     print(f"⚠️ Error deploying module: {e}")
 
 registrado_no_banco = False
-INTERVALO_PING = 15 # Deixei 15 segundos para ser rápido!
+INTERVALO_PING = 15 
 ultima_checagem = 0 
-
-def obter_ultima_atividade():
-    try:
-        if os.path.exists("last_activity.txt"): return os.path.getmtime("last_activity.txt")
-    except: pass
-    return 0
 
 while True:
     agora = time.time()
@@ -175,7 +194,6 @@ while True:
     
     if agora - ultima_acao >= INTERVALO_PING or not registrado_no_banco:
         try:
-            # CORRIGIDO: Agora envia o relatório completo sempre, protegendo o banco de dados
             report_payload = report 
             
             payload = {
