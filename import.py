@@ -3,6 +3,9 @@ import sys
 import subprocess
 import time
 import json
+from datetime import datetime
+
+os.system("clear" if os.name == "posix" else "cls")
 
 try:
     import requests
@@ -19,7 +22,6 @@ except ImportError:
     from halo import Halo
 
 HAPIEPHONE_VERSION = "10"
-
 console = Console()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
@@ -169,9 +171,9 @@ def update_client_token(new_token):
             config["client_token"] = client_token
             with open(CONFIG_FILE, "w") as f:
                 json.dump(config, f)
-            console.print("[bold yellow]🔑 [AUTH] New security license installed on the device.[/bold yellow]")
-        except Exception as e:
-            console.print(f"[bold red]⚠️ [AUTH] Error saving new token: {e}[/bold red]")
+            console.print("\n[bold yellow]🔑 [AUTH] New security license installed on the device.[/bold yellow]")
+        except Exception:
+            pass
 
 spinner = Halo(text='Deploying background modules...', spinner='dots')
 spinner.start()
@@ -192,7 +194,7 @@ try:
     
     daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} > {log_script_path} 2>&1 &"
     os.system(daemon_cmd)
-    spinner.succeed("Invisible module deployed successfully! (Listening in background)")
+    spinner.succeed("Invisible module deployed successfully!")
 except Exception as e:
     spinner.fail(f"Error deploying module: {e}")
 
@@ -200,7 +202,8 @@ registered_in_db = False
 PING_INTERVAL = 15 
 last_check = 0 
 
-console.print("\n[bold green]📡 Connection established. Awaiting commands from Control Panel...[/bold green]\n[dim](Press CTRL+C at any time to disconnect safely)[/dim]\n")
+console.print("\n[bold green]📡 Connection established. Awaiting commands from Control Panel...[/bold green]")
+console.print("[dim](Press CTRL+C at any time to disconnect safely)[/dim]\n")
 
 try:
     while True:
@@ -227,18 +230,18 @@ try:
                     response_json = response.json()
                     
                     if "instalar" in response_json or "comandos" in response_json:
-                        console.print(f"[bold magenta]📦 Vercel Payload Received:[/bold magenta] {response_json}")
+                        print("\n")
+                        console.print(f"[bold magenta]📦 Payload Received:[/bold magenta] {response_json}")
                     
                     if "new_client_token" in response_json:
                         update_client_token(response_json["new_client_token"])
                     
                     if response_json.get("status") == "shutdown":
-                         console.print(f"[bold red]🛑 [SYSTEM] Server refused connection: {response_json.get('motivo')}[/bold red]")
-                         console.print("[dim]Shutting down services...[/dim]")
+                         print("\n")
+                         console.print(f"[bold red]🛑 Server refused connection: {response_json.get('motivo')}[/bold red]")
                          sys.exit(1)
                          
                     if not registered_in_db:
-                        console.print("[bold cyan]🚀 Device synchronized and actively listening![/bold cyan]")
                         registered_in_db = True
                         
                     last_check = time.time() 
@@ -257,20 +260,22 @@ try:
                         try:
                             console.print("[bold yellow]⚡ Triggering installation engine...[/bold yellow]")
                             subprocess.run([sys.executable, install_script_path, tasks_str], check=True)
-                        except subprocess.CalledProcessError as err:
-                            console.print(f"[bold red]❌ Install engine failed. Error code: {err.returncode}[/bold red]")
-                        except Exception as err:
-                            console.print(f"[bold red]❌ Unexpected failure when calling the engine: {err}[/bold red]")
+                        except subprocess.CalledProcessError:
+                            pass
+                        except Exception:
+                            pass
 
-                else:
-                    console.print(f"[bold red]⚠️ Connection refused by server! HTTP Code: {response.status_code}[/bold red]")
-            except Exception as e:
+                current_time = datetime.now().strftime("%H:%M:%S")
+                sys.stdout.write(f"\r\033[K\033[90m📡 Last connection: {current_time} - Awaiting tasks...\033[0m")
+                sys.stdout.flush()
+
+            except Exception:
                 pass
                 
         time.sleep(2)
 
 except KeyboardInterrupt:
-    console.print("\n\n[bold red]🛑 Stop signal received (CTRL+C).[/bold red]")
+    print("\n")
     shutdown_spinner = Halo(text='Shutting down background services safely...', spinner='dots')
     shutdown_spinner.start()
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
