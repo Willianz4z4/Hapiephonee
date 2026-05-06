@@ -3,3 +3,6 @@ dnspython
 flask
 python-dotenv
 gdown
+rich
+halo
+colorama
