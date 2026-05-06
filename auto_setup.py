@@ -45,21 +45,19 @@ until [ $(getprop sys.boot_completed) -eq 1 ]; do
     sleep 2
 done
 
-(
-    export PREFIX=/data/data/com.termux/files/usr
-    export HOME=/data/data/com.termux/files/home
-    export LD_LIBRARY_PATH=/data/data/com.termux/files/usr/lib
-    export PATH=/data/data/com.termux/files/usr/bin:/system/bin:/system/xbin
+input keyevent 26
+sleep 1
+input keyevent 82
+sleep 1
 
-    while true; do
-        cd $HOME/Hapiephone
-        python import.py
-        sleep 10
-    done
-) &
+am start -n com.termux/com.termux.app.TermuxActivity
+sleep 6
+
+input text "while true; do clear; cd ~/Hapiephone; python import.py; sleep 5; done"
+input keyevent 66
 """
 
-    spinner = Halo(text='Injecting immortal boot script via Root...', spinner='dots')
+    spinner = Halo(text='Injecting visible boot script via Root...', spinner='dots')
     spinner.start()
 
     try:
@@ -73,7 +71,7 @@ done
         if os.path.exists("temp_boot.sh"):
             os.remove("temp_boot.sh")
             
-        spinner.succeed(f"Immortal System activated! File saved at: {script_path}")
+        spinner.succeed(f"Foreground Immortal System activated! File saved at: {script_path}")
     except Exception as e:
         spinner.fail(f"Error configuring boot: {e}")
 
