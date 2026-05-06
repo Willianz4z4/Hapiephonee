@@ -106,6 +106,18 @@ def get_root_data(command):
     except:
         return "Unknown"
 
+# --- CORREÇÃO: Função obter_ultima_atividade adicionada ---
+def obter_ultima_atividade():
+    """Lê o timestamp da última ação para evitar flood. Retorna 0 se falhar."""
+    caminho_timestamp = os.path.join(FUNCTIONS_DIR, "last_activity.txt")
+    try:
+        if os.path.exists(caminho_timestamp):
+            with open(caminho_timestamp, "r") as f:
+                return float(f.read().strip())
+        return 0.0
+    except Exception:
+        return 0.0
+
 try:
     has_root = True if get_root_data("echo root_ok") == "root_ok" else False
     
@@ -207,6 +219,7 @@ while True:
             }
             
             headers = {"Content-Type": "application/json"}
+            # Ele envia as requisições pro seu Vercel (onde está o webhook que você fixou)
             response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
             
             if response.status_code == 200:
