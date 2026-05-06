@@ -20,21 +20,21 @@ def check_permission():
     except Exception:
         return True
 
-def setup_termux_bashrc():
-    """Injects the auto-start command directly into Termux's brain (.bashrc)"""
-    spinner = Halo(text='Configuring Termux auto-start (.bashrc)...', spinner='dots')
+def setup_termux_auto_run():
+    """Configura o cérebro do Termux (.bashrc) para rodar o bot mal a app abra"""
+    spinner = Halo(text='Configuring Termux auto-run startup...', spinner='dots')
     spinner.start()
     try:
         bashrc_path = os.path.expanduser("~/.bashrc")
         
-        # This code runs every time Termux opens
-        trigger_code = """
-# === Hapiephone Auto-Start ===
-if [ -z "$HAPIE_RUNNING" ]; then
-    export HAPIE_RUNNING=1
+        # Comando que será injetado no início do Termux
+        startup_cmd = """
+# === Evollogic Auto-Start ===
+if [ -z "$EVO_STARTED" ]; then
+    export EVO_STARTED=1
     clear
-    echo "🚀 Starting Hapiephone in 3 seconds... (Press CTRL+C to cancel)"
-    sleep 3
+    echo "🚀 Initializing Hapiephone Engine..."
+    sleep 2
     while true; do
         cd ~/Hapiephone 2>/dev/null || cd ~/hapiephone 2>/dev/null
         python import.py
@@ -43,24 +43,23 @@ if [ -z "$HAPIE_RUNNING" ]; then
     done
 fi
 """
-        # Prevent duplicate injections
+        # Verifica se já existe para não duplicar
         if os.path.exists(bashrc_path):
-            with open(bashrc_path, "r", encoding="utf-8") as f:
-                content = f.read()
-            if "Hapiephone Auto-Start" in content:
-                spinner.succeed("Termux auto-start already configured in .bashrc.")
-                return
-        
-        with open(bashrc_path, "a", encoding="utf-8") as f:
-            f.write(trigger_code)
-        spinner.succeed("Termux auto-start injected successfully!")
+            with open(bashrc_path, "r") as f:
+                if "Evollogic Auto-Start" in f.read():
+                    spinner.succeed("Termux startup already configured.")
+                    return
+
+        with open(bashrc_path, "a") as f:
+            f.write(startup_cmd)
+        spinner.succeed("Termux startup injected into .bashrc!")
     except Exception as e:
-        spinner.fail(f"Failed to configure Termux: {e}")
+        spinner.fail(f"Error configuring .bashrc: {e}")
 
 def setup_root_boot():
-    """Sets up Magisk to wake the screen and launch Termux on boot"""
+    """Configura o Magisk para 'puxar' o Termux para a frente ao ligar"""
     if not check_permission():
-        console.print("[bold yellow]⚠️ Auto-restart permission denied in config.json.[/bold yellow]")
+        console.print("[bold yellow]⚠️ Auto-restart permission disabled.[/bold yellow]")
         return
 
     magisk_dir = "/data/adb/service.d"
@@ -74,50 +73,46 @@ def setup_root_boot():
         os.system("su -c 'mount -o rw,remount /system'")
     
     if not boot_dir:
-        console.print("[bold red]❌ Root boot folder not found. Check if Magisk is active.[/bold red]")
+        console.print("[bold red]❌ Root boot directory not found.[/bold red]")
         return
 
     script_path = os.path.join(boot_dir, "99start_hapie")
         
-    boot_script_content = """#!/system/bin/sh
+    # Script que o Android corre no boot
+    boot_content = """#!/system/bin/sh
+# Aguarda o sistema carregar completamente
 until [ $(getprop sys.boot_completed) -eq 1 ]; do
-    sleep 2
+    sleep 3
 done
 
-# Wake up screen (UgPhone safe sequence)
+# Simula ligar a tela e deslizar (para garantir que a UI está ativa)
 input keyevent 26
 sleep 1
 input keyevent 82
 sleep 1
 
-# Kill Termux if it's stuck in background from previous session
-am force-stop com.termux
-sleep 2
-
-# Launch Termux (This will trigger the .bashrc script automatically)
-am start -n com.termux/com.termux.app.TermuxActivity
+# Força a abertura do Termux em primeiro plano
+am start --user 0 -n com.termux/com.termux.app.TermuxActivity
 """
 
-    spinner = Halo(text='Injecting screen wake script via Root...', spinner='dots')
+    spinner = Halo(text='Injecting Magisk boot trigger...', spinner='dots')
     spinner.start()
 
     try:
-        with open("temp_boot.sh", "w", encoding="utf-8") as f:
-            f.write(boot_script_content)
+        with open("temp_boot.sh", "w") as f:
+            f.write(boot_content)
         
+        # Move para a pasta do Magisk com permissões totais
         os.system(f"su -c 'mv temp_boot.sh {script_path}'")
         os.system(f"su -c 'chmod 755 {script_path}'")
         os.system(f"su -c 'chown root:root {script_path}'")
         
-        if os.path.exists("temp_boot.sh"):
-            os.remove("temp_boot.sh")
-            
-        spinner.succeed(f"Foreground Auto-Boot activated! File saved at: {script_path}")
+        spinner.succeed(f"Boot trigger active at: {script_path}")
     except Exception as e:
-        spinner.fail(f"Error configuring boot: {e}")
+        spinner.fail(f"Boot injection failed: {e}")
 
 if __name__ == "__main__":
-    console.print("\n[bold cyan]--- System Persistency Setup ---[/bold cyan]")
-    setup_termux_bashrc()
+    console.print("[bold cyan]Updating Persistency Modules...[/bold cyan]")
+    setup_termux_auto_run()
     setup_root_boot()
-    console.print("[bold green]✅ All persistency modules loaded. Phone will auto-start on reboot.[/bold green]\n")
+    console.print("[bold green]✅ Done! The app will now open automatically on reboot.[/bold green]\n")
