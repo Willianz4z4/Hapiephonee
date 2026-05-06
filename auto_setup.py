@@ -2,6 +2,7 @@ import os
 import json
 import subprocess
 import re
+import time
 from datetime import datetime
 
 try:
@@ -16,7 +17,6 @@ console = Console()
 LOG_FILE = "setup_log.txt"
 
 def write_log(msg):
-    """Save clean logs to a text file without rich formatting tags."""
     try:
         clean_msg = re.sub(r'\[.*?\]', '', str(msg))
         with open(LOG_FILE, "a", encoding="utf-8") as f:
@@ -30,11 +30,9 @@ def force_android_permissions():
     spinner = Halo(text='Forcing System Permissions...', spinner='dots')
     spinner.start()
     try:
-        # Permite que o Termux abra janelas sobre outros apps (Obrigatório para abrir sozinho)
         os.system("su -c 'appops set com.termux SYSTEM_ALERT_WINDOW allow'")
         os.system("su -c 'appops set com.termux RUN_IN_BACKGROUND allow'")
         os.system("su -c 'appops set com.termux RUN_ANY_IN_BACKGROUND allow'")
-        # Tira o Termux do modo de economia de energia
         os.system("su -c 'dumpsys deviceidle whitelist +com.termux'")
         spinner.succeed("Permissions forced successfully!")
         write_log("✅ Permissions forced successfully!")
@@ -77,83 +75,68 @@ fi
             write_log("✅ .bashrc already set.")
     except Exception as e:
         spinner.fail(f"Bashrc error: {e}")
-        write_log(f"❌ Bashrc error: {e}")
 
-def setup_immortal_boot():
-    write_log("Attempting to inject boot script...")
-    spinner = Halo(text='Injecting Boot Script...', spinner='dots')
+def install_termux_boot():
+    write_log("Setting up Termux:Boot engine...")
+    spinner = Halo(text='Installing Termux:Boot Engine...', spinner='dots')
     spinner.start()
     
-    # Lista de pastas onde o Android/Magisk aceita scripts de boot
-    possible_dirs = ["/data/adb/service.d", "/data/adb/post-fs-data.d", "/data/local/userinit.d"]
-    target_dir = None
-
-    for d in possible_dirs:
-        # Tenta criar a pasta na marra
-        os.system(f"su -c 'mkdir -p {d}'")
-        if os.system(f"su -c '[ -d {d} ]'") == 0:
-            target_dir = d
-            break
-
-    if not target_dir:
-        # Fallback para pasta root do sistema se as outras falharem
-        os.system("su -c 'mount -o rw,remount /'")
-        os.system("su -c 'mkdir -p /etc/init.d'")
-        if os.system(f"su -c '[ -d /etc/init.d ]'") == 0:
-            target_dir = "/etc/init.d"
-
-    if not target_dir:
-        spinner.fail("Could not find or create any boot directory.")
-        write_log("❌ Error: No boot directory accessible even with Root.")
+    apk_url = "https://f-droid.org/repo/com.termux.boot_7.apk"
+    apk_path = "/sdcard/termux_boot.apk"
+    
+    os.system(f"curl -sL '{apk_url}' -o {apk_path} > /dev/null 2>&1")
+    
+    if not os.path.exists(apk_path):
+        spinner.fail("Failed to download Termux:Boot.")
         return
 
-    script_path = os.path.join(target_dir, "99start_hapie")
+    os.system(f"su -c 'pm install -r {apk_path} > /dev/null 2>&1'")
+    os.system(f"rm {apk_path}") 
+    
+    os.system("su -c 'appops set com.termux.boot SYSTEM_ALERT_WINDOW allow'")
+    os.system("su -c 'appops set com.termux.boot RUN_IN_BACKGROUND allow'")
+    os.system("su -c 'dumpsys deviceidle whitelist +com.termux.boot'")
 
-    # SCRIPT SH COM O "MONKEY" E LOG DE DEBUG NA RAIZ DO CELULAR
-    boot_sh = """#!/system/bin/sh
-(
-    exec > /sdcard/boot_debug_hapie.txt 2>&1
-    echo "[$(date)] 🚀 Magisk Boot Script Iniciado!"
-
-    # Aguarda o sistema estar pronto
-    until [ "$(getprop sys.boot_completed)" = "1" ]; do
-        sleep 5
-    done
+    boot_dir = os.path.expanduser("~/.termux/boot")
+    os.system(f"mkdir -p {boot_dir}")
     
-    echo "[$(date)] ⏳ Sistema carregado. Aguardando a interface grafica (15s)..."
-    sleep 15
-
-    echo "[$(date)] 📱 Tentando acordar a tela..."
-    input keyevent 26
-    sleep 1
-    input swipe 500 1000 500 200
-    sleep 1
-    input keyevent 82
-    sleep 1
-    
-    echo "[$(date)] 🔓 Forcando permissoes de sobreposicao..."
-    appops set com.termux SYSTEM_ALERT_WINDOW allow
-    
-    echo "[$(date)] 🐒 Usando o Monkey para espancar o sistema e forcar a abertura do Termux..."
-    monkey -p com.termux -c android.intent.category.LAUNCHER 1
-    
-    echo "[$(date)] ✅ Fim do script de boot."
-) &
+    script_path = os.path.join(boot_dir, "start_hapie.sh")
+    boot_sh = """#!/data/data/com.termux/files/usr/bin/sh
+termux-wake-lock
+sleep 10
+# Acorda a tela
+su -c 'input keyevent 26'
+sleep 1
+su -c 'input swipe 500 1000 500 200'
+sleep 1
+su -c 'input keyevent 82'
+sleep 1
+# Puxa o Termux Principal para a tela
+su -c 'am start --user 0 -n com.termux/com.termux.app.TermuxActivity'
 """
-
+    
     try:
-        with open("temp_boot.sh", "w") as f:
+        with open(script_path, "w") as f:
             f.write(boot_sh)
+        os.system(f"chmod +x {script_path}")
         
-        os.system(f"su -c 'mv temp_boot.sh {script_path}'")
-        os.system(f"su -c 'chmod 755 {script_path}'")
-        os.system(f"su -c 'chown root:root {script_path}'")
+        # REGISTRO: Abre o app pela primeira vez para ativar o sistema de Boot
+        os.system("su -c 'am start -n com.termux.boot/com.termux.boot.BootActivity > /dev/null 2>&1'")
         
-        spinner.succeed(f"Boot script injected at {target_dir}!")
-        write_log(f"✅ Boot script injected successfully at {script_path}")
+        # Aguarda 3 segundos para o Android processar a abertura do aplicativo
+        time.sleep(3)
+        
+        # OCULTAR: Desativa APENAS o ícone do aplicativo, mantendo o processo fantasma rodando
+        os.system("su -c 'pm disable com.termux.boot/com.termux.boot.BootActivity > /dev/null 2>&1'")
+        
+        # Volta o foco para o Termux principal
+        os.system("su -c 'am start -n com.termux/com.termux.app.TermuxActivity > /dev/null 2>&1'")
+
+        spinner.succeed("Termux:Boot installed, registered and hidden!")
+        write_log(f"✅ Termux:Boot engine active and hidden. Script at {script_path}")
     except Exception as e:
-        spinner.fail(f"Injection failed: {e}")
-        write_log(f"❌ Injection failed: {e}")
+        spinner.fail(f"Failed to setup Termux:Boot: {e}")
+        write_log(f"❌ Failed to setup Termux:Boot: {e}")
 
 if __name__ == "__main__":
     with open(LOG_FILE, "w") as f:
@@ -162,7 +145,8 @@ if __name__ == "__main__":
     console.print("[bold cyan]--- Evollogic Persistence Setup ---[/bold cyan]")
     force_android_permissions()
     setup_termux_bashrc()
-    setup_immortal_boot()
-    console.print("\n[bold green]✅ Configuration Finished![/bold green]")
+    install_termux_boot()
+    
+    console.print("\n[bold green]✅ Ghost Configuration Finished![/bold green]")
     console.print("[dim]Reboot your UgPhone now to test auto-start.[/dim]\n")
     write_log("✅ Setup Finished.")
