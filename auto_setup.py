@@ -12,6 +12,23 @@ except ImportError:
 
 console = Console()
 
+def force_android_permissions():
+    """Uses Root to grant Termux ultimate background and overlay permissions"""
+    spinner = Halo(text='Forcing Android system permissions via Root...', spinner='dots')
+    spinner.start()
+    try:
+        # Permissão para aparecer sobre outros apps (SYSTEM_ALERT_WINDOW)
+        os.system("su -c 'appops set com.termux SYSTEM_ALERT_WINDOW allow'")
+        # Permissão para rodar em segundo plano sem restrições
+        os.system("su -c 'appops set com.termux RUN_IN_BACKGROUND allow'")
+        os.system("su -c 'appops set com.termux RUN_ANY_IN_BACKGROUND allow'")
+        # Remove o Termux da otimização de bateria do Android (Impede o sistema de matar o app)
+        os.system("su -c 'dumpsys deviceidle whitelist +com.termux'")
+        
+        spinner.succeed("System permissions successfully forced!")
+    except Exception as e:
+        spinner.fail(f"Failed to force permissions: {e}")
+
 def setup_termux_bashrc():
     """Garante que o código corre mal o Termux abra"""
     spinner = Halo(text='Setting up .bashrc logic...', spinner='dots')
@@ -19,30 +36,32 @@ def setup_termux_bashrc():
     bashrc_path = os.path.expanduser("~/.bashrc")
     
     startup_code = """
-# === Hapiephone Auto-Start ===
-if [ -z "$HAPIE_RUNNING" ]; then
-    export HAPIE_RUNNING=1
+# === Evollogic Auto-Start ===
+if [ -z "$EVO_STARTED" ]; then
+    export EVO_STARTED=1
     clear
     while true; do
         cd ~/Hapiephone 2>/dev/null || cd ~/hapiephone 2>/dev/null
         python import.py
-        echo "🔄 Restarting in 5s..."
         sleep 5
     done
 fi
 """
-    if os.path.exists(bashrc_path):
-        with open(bashrc_path, "r") as f:
-            if "Hapiephone Auto-Start" in f.read():
-                spinner.succeed(".bashrc already configured.")
-                return
+    try:
+        if os.path.exists(bashrc_path):
+            with open(bashrc_path, "r") as f:
+                if "Evollogic Auto-Start" in f.read():
+                    spinner.succeed(".bashrc already configured.")
+                    return
 
-    with open(bashrc_path, "a") as f:
-        f.write(startup_code)
-    spinner.succeed(".bashrc configured!")
+        with open(bashrc_path, "a") as f:
+            f.write(startup_code)
+        spinner.succeed(".bashrc configured!")
+    except Exception as e:
+        spinner.fail(f"Failed to write .bashrc: {e}")
 
 def setup_immortal_boot():
-    """Script de Boot agressivo para Magisk"""
+    """Script de Boot agressivo para Magisk com quebra de lockscreen"""
     magisk_dir = "/data/adb/service.d"
     script_path = os.path.join(magisk_dir, "99start_hapie")
 
@@ -51,25 +70,36 @@ def setup_immortal_boot():
         return
 
     # SCRIPT SH QUE VAI CORRER NO ANDROID
-    # Ele tenta abrir o Termux a cada 5 segundos até ter sucesso
     boot_sh = """#!/system/bin/sh
 (
-    # Aguarda o sistema estabilizar
-    sleep 20 
+    # Aguarda o sistema estabilizar 100%
+    until [ $(getprop sys.boot_completed) -eq 1 ]; do
+        sleep 2
+    done
+    sleep 10 
 
-    # Loop de tentativa de abertura
+    # Loop de tentativa de abertura (Tenta 10 vezes)
     MAX_TRIES=10
     COUNT=0
     while [ $COUNT -lt $MAX_TRIES ]; do
         # Tenta acordar a tela
         input keyevent 26
+        sleep 1
+        
+        # Arrasta a tela para cima (Desbloqueia o cadeado do Android)
+        input swipe 500 1000 500 200
+        sleep 1
         input keyevent 82
+        sleep 1
         
-        # Abre o Termux
-        am start --user 0 -n com.termux/com.termux.app.TermuxActivity
+        # Garante as permissões de novo antes de abrir
+        appops set com.termux SYSTEM_ALERT_WINDOW allow
         
-        # Verifica se o processo do Termux está visível
-        if dumpsys window windows | grep -q "com.termux"; then
+        # Força a abertura do Termux usando a intenção principal do Android
+        am start -n com.termux/com.termux.app.TermuxActivity -a android.intent.action.MAIN -c android.intent.category.LAUNCHER
+        
+        # Verifica se a tela atual no celular é a do Termux
+        if dumpsys window windows | grep -q "mCurrentFocus.*TermuxActivity"; then
             exit 0
         fi
         
@@ -89,12 +119,17 @@ def setup_immortal_boot():
         os.system(f"su -c 'mv temp_boot.sh {script_path}'")
         os.system(f"su -c 'chmod 755 {script_path}'")
         os.system(f"su -c 'chown root:root {script_path}'")
+        
+        if os.path.exists("temp_boot.sh"):
+            os.remove("temp_boot.sh")
+            
         spinner.succeed("Boot Script injected successfully!")
     except Exception as e:
         spinner.fail(f"Injection failed: {e}")
 
 if __name__ == "__main__":
-    console.print("[bold cyan]Initializing Persistence Setup...[/bold cyan]")
+    console.print("[bold cyan]--- Evollogic Persistence Setup ---[/bold cyan]")
+    force_android_permissions()
     setup_termux_bashrc()
     setup_immortal_boot()
     console.print("[bold green]✅ Ready! Reboot the phone to test.[/bold green]")
