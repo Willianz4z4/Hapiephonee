@@ -7,7 +7,13 @@ from datetime import datetime
 
 SAVE_FILE = os.path.expanduser("~/last_opened_apps.json")
 DEBUG_LOG = os.path.expanduser("~/debug_apps.log")
-IGNORE_PKGS = ["com.termux", "com.termux.boot", "com.android.systemui", "android"]
+IGNORE_PKGS = [
+    "com.termux", 
+    "com.termux.boot", 
+    "com.android.systemui", 
+    "android",
+    "com.og.launcher"
+]
 
 def write_log(msg):
     with open(DEBUG_LOG, "a", encoding="utf-8") as f:
@@ -18,7 +24,7 @@ def run_su(cmd):
     return subprocess.getoutput(f"su -c '{cmd}'")
 
 def get_currently_open_apps():
-    cmd = "dumpsys activity activities | grep 'ActivityRecord{'"
+    cmd = "dumpsys activity tasks | grep 'realActivity='"
     output = run_su(cmd)
     
     apps_to_restore = []
@@ -26,9 +32,9 @@ def get_currently_open_apps():
     write_log(f"RAW DUMPSYS OUTPUT:\n{output}\n")
     
     for line in output.split('\n'):
-        if " u0 " in line:
+        if "realActivity=" in line:
             try:
-                target = line.split(" u0 ")[1].split(" ")[0]
+                target = line.split("realActivity=")[1].strip()
                 pkg_name = target.split("/")[0]
                 
                 if "/" in target and pkg_name not in IGNORE_PKGS:
