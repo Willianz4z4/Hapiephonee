@@ -1,8 +1,8 @@
 import os
 import json
 import subprocess
-import time
 import sys
+import time
 
 SAVE_FILE = os.path.expanduser("~/last_opened_apps.json")
 
@@ -31,10 +31,24 @@ def save_state():
     if apps:
         with open(SAVE_FILE, "w") as f:
             json.dump(apps, f)
-        print(f"✅ Checkpoint: {len(apps)} apps saved for restoration.")
-        print(f"📱 Apps: {apps}")
+        print(f"✅ Checkpoint updated: {apps}")
     else:
         print("⚠️ No foreground app detected to save.")
+
+def monitor_apps():
+    print("👁️ Monitoring Android activity events...")
+    
+    logcat_cmd = ["su", "-c", "logcat -b events am_resume_activity:I am_pause_activity:I *:S"]
+    process = subprocess.Popen(logcat_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True)
+
+    try:
+        for line in process.stdout:
+            if "am_" in line:
+                time.sleep(0.5)
+                save_state()
+    except KeyboardInterrupt:
+        process.terminate()
+        print("\n🛑 Monitoring stopped.")
 
 def restore_state():
     if not os.path.exists(SAVE_FILE):
@@ -58,7 +72,10 @@ def restore_state():
         print(f"❌ Restoration error: {e}")
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "restore":
-        restore_state()
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "restore":
+            restore_state()
+        elif sys.argv[1] == "monitor":
+            monitor_apps()
     else:
         save_state()
