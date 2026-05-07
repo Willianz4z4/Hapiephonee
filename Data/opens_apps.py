@@ -34,7 +34,6 @@ def load_json():
 
 def get_currently_open_apps():
     output = run_su("dumpsys activity activities")
-    
     focused_app = ""
     background_apps = set()
     
@@ -47,10 +46,14 @@ def get_currently_open_apps():
                     focused_app = target
             except Exception:
                 pass
-                
-        if "ActivityRecord{" in line and " u0 " in line:
+        
+        if ("ActivityRecord{" in line or "is_bubble" in line) and " u0 " in line:
             try:
-                target = line.split(" u0 ")[1].split(" ")[0]
+                if "ActivityRecord{" in line:
+                    target = line.split(" u0 ")[1].split(" ")[0]
+                else:
+                    target = line.split("realActivity=")[1].split(" ")[0]
+                
                 pkg_name = target.split("/")[0]
                 if "/" in target and pkg_name not in IGNORE_PKGS:
                     background_apps.add(target)
@@ -65,7 +68,7 @@ def get_currently_open_apps():
 
 def save_state():
     focused, background = get_currently_open_apps()
-    old_data = load_json()
+    current_data = load_json()
     new_data = {}
     
     if focused:
@@ -74,80 +77,60 @@ def save_state():
     for bg in background:
         new_data[bg] = {"state": "background", "score": 0}
         
-    for pkg, data in old_data.items():
+    for pkg, info in current_data.items():
         if pkg not in new_data:
-            new_data[pkg] = data
+            info["state"] = "background"
+            new_data[pkg] = info
             
-    write_log(f"SAVING STATE: {new_data}")
-    
     with open(SAVE_FILE, "w") as f:
         json.dump(new_data, f, indent=4)
-        
-    print(f"Checkpoint updated. Tracking {len(new_data)} apps.")
+    
+    write_log(f"SAVED: {new_data}")
 
 def monitor_apps():
-    print(f"Monitoring Android activity events... (Logging to {DEBUG_LOG})")
-    write_log("STARTED MONITORING")
-    
-    logcat_cmd = [
-        "su", "-c", 
-        "logcat -b events am_create_activity:I am_destroy_activity:I am_resume_activity:I am_pause_activity:I wm_activity_resume:I *:S"
-    ]
+    print(f"Monitoring activities... Logging to {DEBUG_LOG}")
+    logcat_cmd = ["su", "-c", "logcat -b events am_create_activity:I am_resume_activity:I wm_activity_resume:I *:S"]
     process = subprocess.Popen(logcat_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True)
-
     last_trigger = 0
 
     try:
         for line in process.stdout:
-            if "am_" in line or "wm_" in line:
-                now = time.time()
-                if now - last_trigger > 2.5:
-                    write_log(f"TRIGGER: {line.strip()}")
-                    time.sleep(1)
-                    save_state()
-                    last_trigger = time.time()
+            now = time.time()
+            if now - last_trigger > 3:
+                save_state()
+                last_trigger = now
     except KeyboardInterrupt:
         process.terminate()
-        write_log("STOPPED MONITORING")
-        print("\nMonitoring stopped.")
 
 def restore_state():
     data = load_json()
     if not data:
-        print("No apps to restore.")
+        print("No apps found.")
         return
 
-    valid_apps = {}
+    updated_data = {}
     for pkg, info in data.items():
         info["score"] += 1
         if info["score"] <= 5:
-            valid_apps[pkg] = info
-        else:
-            write_log(f"DROPPED APP (Score > 5): {pkg}")
+            updated_data[pkg] = info
 
     with open(SAVE_FILE, "w") as f:
-        json.dump(valid_apps, f, indent=4)
+        json.dump(updated_data, f, indent=4)
 
-    bg_apps = [pkg for pkg, info in valid_apps.items() if info["state"] == "background"]
-    focus_apps = [pkg for pkg, info in valid_apps.items() if info["state"] == "focused"]
+    bg_apps = [p for p, i in updated_data.items() if i["state"] == "background"]
+    focus_apps = [p for p, i in updated_data.items() if i["state"] == "focused"]
 
-    print(f"Restoring {len(bg_apps)} background apps...")
     for app in bg_apps:
-        print(f"Opening Background: {app}")
+        print(f"Restoring Background: {app}")
         run_su(f"am start -n {app}")
-        time.sleep(2)
+        time.sleep(1.5)
         
-    print(f"Restoring {len(focus_apps)} focused apps...")
     for app in focus_apps:
-        print(f"Opening Focused: {app}")
+        print(f"Restoring Focus: {app}")
         run_su(f"am start -n {app}")
         time.sleep(2)
-
-    print("Returning focus to Termux...")
-    run_su("am start -n com.termux/com.termux.app.TermuxActivity")
-    time.sleep(1)
         
-    print("Restoration sequence complete.")
+    print("Restore complete. Focused app is now on top.")
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
