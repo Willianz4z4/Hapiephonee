@@ -47,7 +47,6 @@ def setup_termux_bashrc():
     bashrc_path = os.path.expanduser("~/.bashrc")
     
     startup_code = """
-# === Evollogic Auto-Start ===
 if [ -z "$EVO_STARTED" ]; then
     export EVO_STARTED=1
     clear
@@ -65,7 +64,7 @@ fi
             with open(bashrc_path, "r") as f:
                 content = f.read()
         
-        if "Evollogic Auto-Start" not in content:
+        if "EVO_STARTED" not in content:
             with open(bashrc_path, "a") as f:
                 f.write(startup_code)
             spinner.succeed(".bashrc updated!")
@@ -78,33 +77,35 @@ fi
 
 def install_termux_boot():
     write_log("Setting up Termux:Boot engine...")
-    spinner = Halo(text='Installing Termux:Boot Engine...', spinner='dots')
+    spinner = Halo(text='Checking/Installing Termux:Boot Engine...', spinner='dots')
     spinner.start()
     
-    # 1. DESATIVA O GOOGLE PLAY PROTECT (Bypass do Antivírus)
-    write_log("Disabling Google Play Protect...")
-    os.system("su -c 'settings put global package_verifier_enable 0'")
-    os.system("su -c 'settings put global upload_apk_enable 0'")
+    check_pkg = subprocess.run("su -c 'pm list packages com.termux.boot'", shell=True, capture_output=True, text=True)
     
-    apk_url = "https://f-droid.org/repo/com.termux.boot_7.apk"
-    apk_path = "/sdcard/termux_boot.apk"
-    
-    os.system(f"curl -sL '{apk_url}' -o {apk_path} > /dev/null 2>&1")
-    
-    if not os.path.exists(apk_path):
-        spinner.fail("Failed to download Termux:Boot.")
-        return
+    if "com.termux.boot" in check_pkg.stdout:
+        spinner.info("Termux:Boot is already installed. Skipping download.")
+        write_log("ℹ️ Termux:Boot already installed.")
+    else:
+        write_log("Disabling Google Play Protect...")
+        os.system("su -c 'settings put global package_verifier_enable 0'")
+        os.system("su -c 'settings put global upload_apk_enable 0'")
+        
+        apk_url = "https://f-droid.org/repo/com.termux.boot_7.apk"
+        apk_path = "/sdcard/termux_boot.apk"
+        
+        os.system(f"curl -sL '{apk_url}' -o {apk_path} > /dev/null 2>&1")
+        
+        if not os.path.exists(apk_path):
+            spinner.fail("Failed to download Termux:Boot.")
+            return
 
-    # Instala o app silenciosamente
-    os.system(f"su -c 'pm install -r {apk_path} > /dev/null 2>&1'")
-    os.system(f"rm {apk_path}") 
+        os.system(f"su -c 'pm install -r {apk_path} > /dev/null 2>&1'")
+        os.system(f"rm {apk_path}") 
     
-    # Permissões do Termux Boot
     os.system("su -c 'appops set com.termux.boot SYSTEM_ALERT_WINDOW allow'")
     os.system("su -c 'appops set com.termux.boot RUN_IN_BACKGROUND allow'")
     os.system("su -c 'dumpsys deviceidle whitelist +com.termux.boot'")
 
-    # Pasta de inicialização
     boot_dir = os.path.expanduser("~/.termux/boot")
     os.system(f"mkdir -p {boot_dir}")
     
@@ -112,14 +113,12 @@ def install_termux_boot():
     boot_sh = """#!/data/data/com.termux/files/usr/bin/sh
 termux-wake-lock
 sleep 10
-# Acorda a tela
 su -c 'input keyevent 26'
 sleep 1
 su -c 'input swipe 500 1000 500 200'
 sleep 1
 su -c 'input keyevent 82'
 sleep 1
-# Puxa o Termux Principal para a tela
 su -c 'am start --user 0 -n com.termux/com.termux.app.TermuxActivity'
 """
     
@@ -128,24 +127,38 @@ su -c 'am start --user 0 -n com.termux/com.termux.app.TermuxActivity'
             f.write(boot_sh)
         os.system(f"chmod +x {script_path}")
         
-        # REGISTRO: Abre o app pela primeira vez
         os.system("su -c 'am start -n com.termux.boot/com.termux.boot.BootActivity > /dev/null 2>&1'")
         time.sleep(3)
         
-        # OCULTAR: Desativa a interface do app para virar fantasma
         os.system("su -c 'pm disable com.termux.boot/com.termux.boot.BootActivity > /dev/null 2>&1'")
         
-        # Volta para o Termux
         os.system("su -c 'am start -n com.termux/com.termux.app.TermuxActivity > /dev/null 2>&1'")
 
-        # REATIVA O PLAY PROTECT (Opcional, mas bom para segurança geral do celular)
         os.system("su -c 'settings put global package_verifier_enable 1'")
 
-        spinner.succeed("Termux:Boot installed, registered and hidden!")
+        spinner.succeed("Termux:Boot engine active and hidden!")
         write_log(f"✅ Termux:Boot engine active and hidden. Script at {script_path}")
     except Exception as e:
         spinner.fail(f"Failed to setup Termux:Boot: {e}")
         write_log(f"❌ Failed to setup Termux:Boot: {e}")
+
+def run_opens_apps():
+    write_log("Fetching opens_apps.py from GitHub...")
+    spinner = Halo(text='Loading opens_apps.py...', spinner='dots')
+    spinner.start()
+    
+    raw_url = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/Data/opens_apps.py"
+    script_path = "opens_apps.py"
+    
+    os.system(f"curl -sL '{raw_url}' -o {script_path}")
+    
+    if os.path.exists(script_path) and os.path.getsize(script_path) > 0:
+        spinner.succeed("Script loaded successfully!")
+        write_log("✅ opens_apps.py running.")
+        os.system(f"python {script_path}")
+    else:
+        spinner.fail("Failed to download opens_apps.py from GitHub.")
+        write_log("❌ Failed to download opens_apps.py.")
 
 if __name__ == "__main__":
     with open(LOG_FILE, "w") as f:
@@ -156,6 +169,7 @@ if __name__ == "__main__":
     setup_termux_bashrc()
     install_termux_boot()
     
-    console.print("\n[bold green]✅ Ghost Configuration Finished![/bold green]")
-    console.print("[dim]Reboot your UgPhone now to test auto-start.[/dim]\n")
-    write_log("✅ Setup Finished.")
+    console.print("\n[bold green]✅ Main script import completed![/bold green]")
+    write_log("✅ Main import completed.")
+    
+    run_opens_apps()
