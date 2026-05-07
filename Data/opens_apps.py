@@ -25,30 +25,48 @@ def run_su(cmd):
 
 def get_currently_open_apps():
     output = run_su("dumpsys activity activities")
-    apps_to_restore = set()
+    
+    focused_app = ""
+    background_apps = set()
     
     for line in output.split('\n'):
-        if "ActivityRecord{" in line and " u0 " in line:
+        if "ResumedActivity:" in line and " u0 " in line:
             try:
-                part = line.split(" u0 ")[1]
-                target = part.split(" ")[0]
+                target = line.split(" u0 ")[1].split(" ")[0]
                 pkg_name = target.split("/")[0]
                 
                 if "/" in target and pkg_name not in IGNORE_PKGS:
-                    apps_to_restore.add(target)
+                    focused_app = target
             except Exception:
-                continue
+                pass
                 
-    return list(apps_to_restore)
+        if "ActivityRecord{" in line and " u0 " in line:
+            try:
+                target = line.split(" u0 ")[1].split(" ")[0]
+                pkg_name = target.split("/")[0]
+                
+                if "/" in target and pkg_name not in IGNORE_PKGS:
+                    background_apps.add(target)
+            except Exception:
+                pass
+
+    bg_list = list(background_apps)
+    if focused_app in bg_list:
+        bg_list.remove(focused_app)
+        
+    return {
+        "focused": focused_app,
+        "background": bg_list
+    }
 
 def save_state():
-    apps = get_currently_open_apps()
-    write_log(f"SAVING STATE: {apps}")
+    apps_data = get_currently_open_apps()
+    write_log(f"SAVING STATE: {apps_data}")
     
-    if apps:
+    if apps_data["focused"] or apps_data["background"]:
         with open(SAVE_FILE, "w") as f:
-            json.dump(apps, f)
-        print(f"Checkpoint updated: {apps}")
+            json.dump(apps_data, f, indent=4)
+        print(f"Checkpoint updated:\nFocus: {apps_data['focused']}\nBackground: {apps_data['background']}")
     else:
         print("Checkpoint clear or background apps ignored.")
 
@@ -85,16 +103,24 @@ def restore_state():
 
     try:
         with open(SAVE_FILE, "r") as f:
-            apps = json.load(f)
+            apps_data = json.load(f)
         
-        if not apps:
+        focused = apps_data.get("focused", "")
+        background = apps_data.get("background", [])
+        
+        if not focused and not background:
             print("No apps to restore.")
             return
 
-        print(f"Restoring {len(apps)} apps...")
-        for app in apps:
-            print(f"Opening: {app}")
+        print(f"Restoring {len(background)} background apps...")
+        for app in background:
+            print(f"Opening Background: {app}")
             run_su(f"am start -n {app}")
+            time.sleep(2)
+            
+        if focused:
+            print(f"Restoring Focused App: {focused}")
+            run_su(f"am start -n {focused}")
             time.sleep(2)
             
         os.remove(SAVE_FILE)
