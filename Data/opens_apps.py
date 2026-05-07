@@ -75,12 +75,8 @@ def save_state():
         new_data[focused] = {"state": "focused", "score": 0}
         
     for bg in background:
-        new_data[bg] = {"state": "background", "score": 0}
-        
-    for pkg, info in current_data.items():
-        if pkg not in new_data:
-            info["state"] = "background"
-            new_data[pkg] = info
+        existing_score = current_data.get(bg, {}).get("score", 0)
+        new_data[bg] = {"state": "background", "score": existing_score}
             
     with open(SAVE_FILE, "w") as f:
         json.dump(new_data, f, indent=4)
@@ -109,16 +105,20 @@ def restore_state():
         return
 
     updated_data = {}
+    bg_apps = []
+    focus_apps = []
+
     for pkg, info in data.items():
         info["score"] += 1
         if info["score"] <= 5:
             updated_data[pkg] = info
+            if info["state"] == "background":
+                bg_apps.append(pkg)
+            else:
+                focus_apps.append(pkg)
 
     with open(SAVE_FILE, "w") as f:
         json.dump(updated_data, f, indent=4)
-
-    bg_apps = [p for p, i in updated_data.items() if i["state"] == "background"]
-    focus_apps = [p for p, i in updated_data.items() if i["state"] == "focused"]
 
     for app in bg_apps:
         print(f"Restoring Background: {app}")
