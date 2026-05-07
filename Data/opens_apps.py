@@ -5,13 +5,13 @@ import sys
 import time
 
 SAVE_FILE = os.path.expanduser("~/last_opened_apps.json")
-IGNORE_PKGS = ["com.termux", "com.termux.boot"]
+IGNORE_PKGS = ["com.termux", "com.termux.boot", "com.android.systemui", "android"]
 
 def run_su(cmd):
     return subprocess.getoutput(f"su -c '{cmd}'")
 
 def get_currently_open_apps():
-    cmd = "dumpsys activity activities | grep 'mResumedActivity'"
+    cmd = "dumpsys activity activities | grep -E 'mResumedActivity|mFocusedApp'"
     output = run_su(cmd)
     
     apps_to_restore = []
@@ -31,21 +31,21 @@ def get_currently_open_apps():
 
 def save_state():
     apps = get_currently_open_apps()
-    if apps:
-        with open(SAVE_FILE, "w") as f:
-            json.dump(apps, f)
-        print(f"Checkpoint updated: {apps}")
-    else:
-        print("No foreground app detected to save.")
+    with open(SAVE_FILE, "w") as f:
+        json.dump(apps, f)
+    print(f"Checkpoint updated: {apps}")
 
 def monitor_apps():
     print("Monitoring Android activity events...")
-    logcat_cmd = ["su", "-c", "logcat -b events am_resume_activity:I am_pause_activity:I *:S"]
+    logcat_cmd = [
+        "su", "-c", 
+        "logcat -b events am_resume_activity:I wm_activity_resume:I wm_on_resume_called:I *:S"
+    ]
     process = subprocess.Popen(logcat_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True)
 
     try:
         for line in process.stdout:
-            if "am_" in line:
+            if "am_" in line or "wm_" in line:
                 time.sleep(0.5)
                 save_state()
     except KeyboardInterrupt:
@@ -61,6 +61,10 @@ def restore_state():
         with open(SAVE_FILE, "r") as f:
             apps = json.load(f)
         
+        if not apps:
+            print("No apps to restore.")
+            return
+
         print(f"Restoring {len(apps)} apps...")
         for app in apps:
             print(f"Opening: {app}")
