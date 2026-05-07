@@ -11,8 +11,9 @@ def run_su(cmd):
     return subprocess.getoutput(f"su -c '{cmd}'")
 
 def get_currently_open_apps():
-    # CORREÇÃO: Busca expandida para telas divididas e Androids recentes (-i para ignorar maiúsculas/minúsculas)
-    cmd = "dumpsys activity activities | grep -iE 'resumedactivity|pausedactivity|topresumedactivity|focusedapp'"
+    # CORREÇÃO DEFINITIVA: Baseada na tabela de diagnóstico do Android.
+    # Agora procura em todo o gerenciador de atividades pelas métricas mais precisas.
+    cmd = "dumpsys activity | grep -iE 'mresumedactivity|mfocusedapp|recent #0|mfocusedactivity|topresumedactivity'"
     output = run_su(cmd)
     
     apps_to_restore = []
@@ -20,7 +21,6 @@ def get_currently_open_apps():
     matches = re.findall(r'([a-zA-Z0-9_]+\.[a-zA-Z0-9_.]+/[a-zA-Z0-9_.]+)', output)
     
     for match in matches:
-        # Evita salvar o Termux, interface do sistema e a Tela Inicial (Launchers)
         if "com.android.systemui" not in match and "com.termux" not in match and "launcher" not in match.lower():
             apps_to_restore.append(match.strip())
             
