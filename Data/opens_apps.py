@@ -24,26 +24,22 @@ def run_su(cmd):
     return subprocess.getoutput(f"su -c '{cmd}'")
 
 def get_currently_open_apps():
-    cmd = "dumpsys activity tasks | grep 'realActivity='"
-    output = run_su(cmd)
-    
-    apps_to_restore = []
-    
-    write_log(f"RAW DUMPSYS OUTPUT:\n{output}\n")
+    output = run_su("dumpsys activity activities")
+    apps_to_restore = set()
     
     for line in output.split('\n'):
-        if "realActivity=" in line:
+        if "ActivityRecord{" in line and " u0 " in line:
             try:
-                target = line.split("realActivity=")[1].strip()
+                part = line.split(" u0 ")[1]
+                target = part.split(" ")[0]
                 pkg_name = target.split("/")[0]
                 
                 if "/" in target and pkg_name not in IGNORE_PKGS:
-                    apps_to_restore.append(target)
-            except Exception as e:
-                write_log(f"PARSE ERROR on line '{line}': {e}")
+                    apps_to_restore.add(target)
+            except Exception:
                 continue
                 
-    return list(set(apps_to_restore))
+    return list(apps_to_restore)
 
 def save_state():
     apps = get_currently_open_apps()
@@ -59,14 +55,13 @@ def monitor_apps():
     
     logcat_cmd = [
         "su", "-c", 
-        "logcat -b events am_create_activity:I am_destroy_activity:I am_resume_activity:I wm_activity_resume:I *:S"
+        "logcat -b events am_create_activity:I am_destroy_activity:I am_resume_activity:I am_pause_activity:I wm_activity_resume:I *:S"
     ]
     process = subprocess.Popen(logcat_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True)
 
     try:
         for line in process.stdout:
             if "am_" in line or "wm_" in line:
-                write_log(f"TRIGGER: {line.strip()}")
                 time.sleep(1)
                 save_state()
     except KeyboardInterrupt:
