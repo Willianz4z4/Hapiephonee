@@ -11,17 +11,17 @@ def run_su(cmd):
     return subprocess.getoutput(f"su -c '{cmd}'")
 
 def get_currently_open_apps():
-    cmd = "dumpsys activity activities | grep -E 'mResumedActivity|mLastPausedActivity'"
+    # CORREÇÃO: Busca expandida para telas divididas e Androids recentes (-i para ignorar maiúsculas/minúsculas)
+    cmd = "dumpsys activity activities | grep -iE 'resumedactivity|pausedactivity|topresumedactivity|focusedapp'"
     output = run_su(cmd)
     
     apps_to_restore = []
     
-    # CORREÇÃO: O Regex agora exige que haja pelo menos um ponto (.) antes da barra (/)
-    # Isso garante que ele pegue pacotes Android (ex: com.whatsapp/.Main) e ignore pastas (ex: data/data)
     matches = re.findall(r'([a-zA-Z0-9_]+\.[a-zA-Z0-9_.]+/[a-zA-Z0-9_.]+)', output)
     
     for match in matches:
-        if "com.android.systemui" not in match and "com.termux" not in match:
+        # Evita salvar o Termux, interface do sistema e a Tela Inicial (Launchers)
+        if "com.android.systemui" not in match and "com.termux" not in match and "launcher" not in match.lower():
             apps_to_restore.append(match.strip())
             
     return list(set(apps_to_restore))
