@@ -45,9 +45,12 @@ def save_state():
     apps = get_currently_open_apps()
     write_log(f"SAVING STATE: {apps}")
     
-    with open(SAVE_FILE, "w") as f:
-        json.dump(apps, f)
-    print(f"Checkpoint updated: {apps}")
+    if apps:
+        with open(SAVE_FILE, "w") as f:
+            json.dump(apps, f)
+        print(f"Checkpoint updated: {apps}")
+    else:
+        print("Checkpoint clear or background apps ignored.")
 
 def monitor_apps():
     print(f"Monitoring Android activity events... (Logging to {DEBUG_LOG})")
@@ -59,11 +62,17 @@ def monitor_apps():
     ]
     process = subprocess.Popen(logcat_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True)
 
+    last_trigger = 0
+
     try:
         for line in process.stdout:
             if "am_" in line or "wm_" in line:
-                time.sleep(1)
-                save_state()
+                now = time.time()
+                if now - last_trigger > 2.5:
+                    write_log(f"TRIGGER: {line.strip()}")
+                    time.sleep(1)
+                    save_state()
+                    last_trigger = time.time()
     except KeyboardInterrupt:
         process.terminate()
         write_log("STOPPED MONITORING")
