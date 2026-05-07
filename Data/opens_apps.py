@@ -16,7 +16,9 @@ def get_currently_open_apps():
     
     apps_to_restore = []
     
-    matches = re.findall(r'([a-zA-Z0-9_.]+/[a-zA-Z0-9_.]+)', output)
+    # CORREÇÃO: O Regex agora exige que haja pelo menos um ponto (.) antes da barra (/)
+    # Isso garante que ele pegue pacotes Android (ex: com.whatsapp/.Main) e ignore pastas (ex: data/data)
+    matches = re.findall(r'([a-zA-Z0-9_]+\.[a-zA-Z0-9_.]+/[a-zA-Z0-9_.]+)', output)
     
     for match in matches:
         if "com.android.systemui" not in match and "com.termux" not in match:
