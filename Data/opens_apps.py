@@ -22,7 +22,7 @@ VALID_COMPONENT_REGEX = re.compile(r'^[a-zA-Z0-9_.\$]+/[a-zA-Z0-9_.\$]+$')
 class AndroidShell:
     """Gerencia um terminal Root persistente para altíssima performance"""
     def __init__(self):
-        # CORREÇÃO: Usando a biblioteca nativa do Python (shutil) para evitar erros do comando "which"
+        # CORREÇÃO: Usando shutil.which do próprio Python. O erro "FileNotFoundError" acaba aqui!
         su_bin = "tsu" if shutil.which("tsu") else "su"
         
         self.process = subprocess.Popen(
