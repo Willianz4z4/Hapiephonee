@@ -22,7 +22,6 @@ VALID_COMPONENT_REGEX = re.compile(r'^[a-zA-Z0-9_.\$]+/[a-zA-Z0-9_.\$]+$')
 class AndroidShell:
     """Gerencia um terminal Root persistente para altíssima performance"""
     def __init__(self):
-        # CORREÇÃO: Usando shutil.which do próprio Python. O erro "FileNotFoundError" acaba aqui!
         su_bin = "tsu" if shutil.which("tsu") else "su"
         
         self.process = subprocess.Popen(
@@ -35,9 +34,13 @@ class AndroidShell:
         )
         
     def run(self, cmd):
-        self.process.stdin.write(cmd + "\n")
-        self.process.stdin.write("echo __EOF__\n")
-        self.process.stdin.flush()
+        try:
+            self.process.stdin.write(cmd + "\n")
+            self.process.stdin.write("echo __EOF__\n")
+            self.process.stdin.flush()
+        except BrokenPipeError:
+            logging.error("❌ A conexão Root foi interrompida pelo sistema.")
+            return ""
         
         output = []
         while True:
@@ -48,9 +51,18 @@ class AndroidShell:
         return "\n".join(output)
         
     def close(self):
-        self.process.stdin.write("exit\n")
-        self.process.stdin.flush()
-        self.process.wait()
+        try:
+            # Só tenta mandar 'exit' se o processo ainda estiver vivo
+            if self.process.poll() is None:
+                self.process.stdin.write("exit\n")
+                self.process.stdin.flush()
+        except BrokenPipeError:
+            pass # Ignora o erro se a porta já estiver fechada
+        finally:
+            try:
+                self.process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
 
 def get_currently_open_apps(shell):
     cmd = "/system/bin/dumpsys activity activities | grep -iE 'mresumedactivity|mfocusedapp|recent #0|mfocusedactivity|topresumedactivity'"
