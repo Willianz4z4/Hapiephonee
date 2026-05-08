@@ -66,8 +66,8 @@ class AndroidShell:
             pass
 
 def get_currently_open_apps(shell):
-    # CORREÇÃO: Adicionado 'mlastpausedactivity' para pegar o app que você acabou de minimizar!
-    cmd = "/system/bin/dumpsys activity activities | grep -iE 'mresumedactivity|mlastpausedactivity|mfocusedapp|mfocusedactivity|topresumedactivity'"
+    # ESTRATÉGIA MÁXIMA: Busca nas janelas ativas E nos últimos 5 abertos no histórico!
+    cmd = "/system/bin/dumpsys window windows | grep -iE 'mcurrentfocus|mfocusedapp'; /system/bin/dumpsys activity recents | grep -i 'realactivity' | head -n 5"
     output = shell.run(cmd)
     
     apps_to_restore = []
