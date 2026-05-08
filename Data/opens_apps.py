@@ -6,6 +6,7 @@ import re
 import argparse
 import logging
 import sys
+import shutil
 from pathlib import Path
 
 # Configuração de Logs
@@ -21,7 +22,8 @@ VALID_COMPONENT_REGEX = re.compile(r'^[a-zA-Z0-9_.\$]+/[a-zA-Z0-9_.\$]+$')
 class AndroidShell:
     """Gerencia um terminal Root persistente para altíssima performance"""
     def __init__(self):
-        su_bin = "tsu" if subprocess.call(["which", "tsu"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0 else "su"
+        # CORREÇÃO: Usando a biblioteca nativa do Python (shutil) para evitar erros do comando "which"
+        su_bin = "tsu" if shutil.which("tsu") else "su"
         
         self.process = subprocess.Popen(
             [su_bin, "-c", "sh"],
