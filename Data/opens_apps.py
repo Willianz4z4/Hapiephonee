@@ -38,31 +38,33 @@ class AndroidShell:
             self.process.stdin.write(cmd + "\n")
             self.process.stdin.write("echo __EOF__\n")
             self.process.stdin.flush()
-        except BrokenPipeError:
-            logging.error("❌ A conexão Root foi interrompida pelo sistema.")
+        except Exception:
             return ""
         
         output = []
-        while True:
-            line = self.process.stdout.readline()
-            if not line or "__EOF__" in line:
-                break
-            output.append(line.strip())
+        try:
+            while True:
+                line = self.process.stdout.readline()
+                if not line or "__EOF__" in line:
+                    break
+                output.append(line.strip())
+        except Exception:
+            pass
+            
         return "\n".join(output)
         
     def close(self):
+        # MODO BLINDADO: Fecha as conexões à força e mata o processo, ignorando erros de Pipe.
         try:
-            # Só tenta mandar 'exit' se o processo ainda estiver vivo
-            if self.process.poll() is None:
-                self.process.stdin.write("exit\n")
-                self.process.stdin.flush()
-        except BrokenPipeError:
-            pass # Ignora o erro se a porta já estiver fechada
-        finally:
-            try:
-                self.process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
+            if self.process.stdin:
+                self.process.stdin.close()
+            if self.process.stdout:
+                self.process.stdout.close()
+            if self.process.stderr:
+                self.process.stderr.close()
+            self.process.kill()
+        except Exception:
+            pass
 
 def get_currently_open_apps(shell):
     cmd = "/system/bin/dumpsys activity activities | grep -iE 'mresumedactivity|mfocusedapp|recent #0|mfocusedactivity|topresumedactivity'"
