@@ -54,7 +54,6 @@ class AndroidShell:
         return "\n".join(output)
         
     def close(self):
-        # MODO BLINDADO: Fecha as conexões à força e mata o processo, ignorando erros de Pipe.
         try:
             if self.process.stdin:
                 self.process.stdin.close()
@@ -67,7 +66,8 @@ class AndroidShell:
             pass
 
 def get_currently_open_apps(shell):
-    cmd = "/system/bin/dumpsys activity activities | grep -iE 'mresumedactivity|mfocusedapp|recent #0|mfocusedactivity|topresumedactivity'"
+    # CORREÇÃO: Adicionado 'mlastpausedactivity' para pegar o app que você acabou de minimizar!
+    cmd = "/system/bin/dumpsys activity activities | grep -iE 'mresumedactivity|mlastpausedactivity|mfocusedapp|mfocusedactivity|topresumedactivity'"
     output = shell.run(cmd)
     
     apps_to_restore = []
