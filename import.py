@@ -39,12 +39,13 @@ if os.path.exists(CONFIG_FILE):
     except:
         pass
 
+# 1. CORREÇÃO DA LEITURA DE IDs: Pegando Guild ID e Owner ID em ordem
 if len(sys.argv) > 2:
-    guild_id = sys.argv[1]
-    owner_id = sys.argv[2]
+    guild_id = str(sys.argv[1]).strip()
+    owner_id = str(sys.argv[2]).strip()
 elif len(sys.argv) > 1:
-    guild_id = sys.argv[1]
-    owner_id = sys.argv[1] 
+    guild_id = str(sys.argv[1]).strip()
+    owner_id = saved_config.get("owner_id", "")
 else:
     guild_id = saved_config.get("guild_id", "")
     owner_id = saved_config.get("owner_id", "")
@@ -127,12 +128,22 @@ def get_last_activity():
 
 try:
     has_root = True if get_root_data("echo root_ok") == "root_ok" else False
+    
+    # 2. BLOQUEIO E AVISO EM VERMELHO SE NÃO TIVER ROOT
+    if not has_root:
+        spinner.fail("Root Permission Check Failed")
+        console.print("\n[bold white on red] ❌ ERRO CRÍTICO: DISPOSITIVO SEM ROOT [/bold white on red]")
+        console.print("[bold red]O sistema Hapiephone precisa de privilégios de administrador para funcionar corretamente.[/bold red]")
+        console.print("[bold red]👉 Ative o botão 'Root' nas configurações do seu celular/UgPhone e tente novamente,[/bold red]")
+        console.print("[bold red]ou entre em contato com o suporte![/bold red]\n")
+        sys.exit(1)
+
     model = get_prop("getprop ro.product.model")
     android_version = get_prop("getprop ro.build.version.release")
     region = get_prop("getprop persist.sys.locale")
-    if region == "Unknown" or not region: 
+    if region == "Unknown" or not region:
         region = get_prop("getprop ro.product.locale")
-    
+
     cpu_abi = get_prop("getprop ro.product.cpu.abi")
     processor = "64 bits" if "64" in cpu_abi else ("32 bits" if cpu_abi != "Unknown" and cpu_abi else "Unknown")
 
@@ -144,11 +155,11 @@ try:
         android_version = android_version.split(".")[0]
 
     report["system_info"] = {
-        "root_access": has_root, 
-        "model": model, 
-        "android_version": android_version, 
-        "device_id": device_id, 
-        "region": region, 
+        "root_access": has_root,
+        "model": model,
+        "android_version": android_version,
+        "device_id": device_id,
+        "region": region,
         "processor": processor
     }
     report["steps"]["data_collection"] = "Success"
@@ -180,18 +191,18 @@ spinner.start()
 try:
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
     os.system(f"mkdir -p {FUNCTIONS_DIR}")
-    
+
     copy_script_path = os.path.join(FUNCTIONS_DIR, "auto_copy.py")
     log_script_path = os.path.join(FUNCTIONS_DIR, "copy_log.txt")
     os.system(f"rm -rf {copy_script_path} > /dev/null 2>&1")
-    
+
     v_cache = int(time.time())
     URL_COPY_PY = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/auto_copy.py?v={v_cache}"
     os.system(f"curl -sL '{URL_COPY_PY}' -o {copy_script_path} > /dev/null 2>&1")
-    
+
     python_path = sys.executable
     subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow" 2>/dev/null', shell=True)
-    
+
     daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} > {log_script_path} 2>&1 &"
     os.system(daemon_cmd)
     spinner.succeed("Invisible module deployed successfully!")
@@ -205,7 +216,7 @@ try:
     v_cache_setup = int(time.time())
     URL_SETUP_PY = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/auto_setup.py?v={v_cache_setup}"
     os.system(f"curl -sL '{URL_SETUP_PY}' -o {auto_setup_path} > /dev/null 2>&1")
-    
+
     if os.path.exists(auto_setup_path):
         subprocess.run([sys.executable, auto_setup_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         spinner.succeed("Persistent boot configured successfully!")
@@ -215,8 +226,8 @@ except Exception:
     spinner.fail("Error configuring persistent boot.")
 
 registered_in_db = False
-PING_INTERVAL = 15 
-last_check = 0 
+PING_INTERVAL = 15
+last_check = 0
 
 console.print("\n[bold green]📡 Connection established. Awaiting commands from Control Panel...[/bold green]")
 console.print("[dim](Press CTRL+C at any time to disconnect safely)[/dim]\n")
@@ -225,52 +236,52 @@ try:
     while True:
         now = time.time()
         last_action = max(last_check, get_last_activity())
-        
+
         if now - last_action >= PING_INTERVAL or not registered_in_db:
             try:
                 payload = {
-                    "type": 1 if registered_in_db else 0, 
-                    "guild_id": guild_id, 
-                    "owner_id": owner_id, 
-                    "device_id": device_id,
-                    "status": "online", 
+                    "type": 1 if registered_in_db else 0,
+                    "guild_id": str(guild_id),
+                    "owner_id": str(owner_id),
+                    "device_id": str(device_id),
+                    "status": "online",
                     "report": report,
                     "client_token": client_token,
                     "version": HAPIEPHONE_VERSION
                 }
-                
+
                 headers = {"Content-Type": "application/json"}
                 response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
-                
+
                 if response.status_code == 200:
                     response_json = response.json()
-                    
+
                     if "instalar" in response_json or "comandos" in response_json:
                         print("\n")
                         console.print(f"[bold magenta]📦 Payload Received:[/bold magenta] {response_json}")
-                    
+
                     if "new_client_token" in response_json:
                         update_client_token(response_json["new_client_token"])
-                    
+
                     if response_json.get("status") == "shutdown":
                          print("\n")
                          console.print(f"[bold red]🛑 Server refused connection: {response_json.get('motivo')}[/bold red]")
                          sys.exit(1)
-                         
+
                     if not registered_in_db:
                         registered_in_db = True
-                        
-                    last_check = time.time() 
+
+                    last_check = time.time()
 
                     if "instalar" in response_json or "comandos" in response_json:
                         os.system(f"mkdir -p {FUNCTIONS_DIR}")
                         install_script_path = os.path.join(FUNCTIONS_DIR, "install.py")
-                        
+
                         if not os.path.exists(install_script_path):
                             with Halo(text='Downloading Install Engine...', spinner='dots'):
                                 v_cache_install = int(time.time())
                                 URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/install.py?v={v_cache_install}"
-                                os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}") 
+                                os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}")
 
                         tasks_str = json.dumps(response_json)
                         try:
@@ -287,7 +298,7 @@ try:
 
             except Exception:
                 pass
-                
+
         time.sleep(2)
 
 except KeyboardInterrupt:
