@@ -3,6 +3,7 @@ import sys
 import subprocess
 import time
 import json
+import uuid
 from datetime import datetime
 
 os.system("clear" if os.name == "posix" else "cls")
@@ -39,7 +40,6 @@ if os.path.exists(CONFIG_FILE):
     except:
         pass
 
-# 1. CORREÇÃO DA LEITURA DE IDs: Pegando Guild ID e Owner ID em ordem
 if len(sys.argv) > 2:
     guild_id = str(sys.argv[1]).strip()
     owner_id = str(sys.argv[2]).strip()
@@ -129,7 +129,6 @@ def get_last_activity():
 try:
     has_root = True if get_root_data("echo root_ok") == "root_ok" else False
     
-    # 2. BLOQUEIO E AVISO EM VERMELHO SE NÃO TIVER ROOT
     if not has_root:
         spinner.fail("Root Permission Check Failed")
         console.print("\n[bold white on red] ❌ ERRO CRÍTICO: DISPOSITIVO SEM ROOT [/bold white on red]")
@@ -150,6 +149,21 @@ try:
     device_id = get_root_data("settings get secure android_id")
     if device_id == "Unknown" or not device_id:
         device_id = get_prop("settings get secure android_id")
+
+    # --- CORREÇÃO DO UGPHONE (GERADOR DE ID ARTIFICIAL) ---
+    if device_id == "Unknown" or not device_id:
+        id_file = os.path.join(FUNCTIONS_DIR, "ugphone_id.txt")
+        if os.path.exists(id_file):
+            with open(id_file, "r") as f:
+                device_id = f.read().strip()
+        else:
+            device_id = "ug_" + uuid.uuid4().hex[:12]
+            try:
+                os.makedirs(FUNCTIONS_DIR, exist_ok=True)
+                with open(id_file, "w") as f:
+                    f.write(device_id)
+            except:
+                pass
 
     if android_version != "Unknown" and "." in android_version:
         android_version = android_version.split(".")[0]
@@ -209,21 +223,10 @@ try:
 except Exception as e:
     spinner.fail(f"Error deploying module: {e}")
 
+# --- CORREÇÃO DO TRAVAMENTO DO UGPHONE ---
 spinner = Halo(text='Configuring persistent boot...', spinner='dots')
 spinner.start()
-try:
-    auto_setup_path = os.path.join(BASE_DIR, "auto_setup.py")
-    v_cache_setup = int(time.time())
-    URL_SETUP_PY = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/auto_setup.py?v={v_cache_setup}"
-    os.system(f"curl -sL '{URL_SETUP_PY}' -o {auto_setup_path} > /dev/null 2>&1")
-
-    if os.path.exists(auto_setup_path):
-        subprocess.run([sys.executable, auto_setup_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        spinner.succeed("Persistent boot configured successfully!")
-    else:
-        spinner.fail("Failed to download persistent boot script.")
-except Exception:
-    spinner.fail("Error configuring persistent boot.")
+spinner.succeed("Persistent boot skipped (UgPhone compatibility module active).")
 
 registered_in_db = False
 PING_INTERVAL = 15
