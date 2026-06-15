@@ -68,7 +68,43 @@ else:
 URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 report = {"installation_status": "pending", "steps": {}, "system_info": {}}
 
-spinner = Halo(text='Preparing Cloud Phone environment...', spinner='dots')
+# =======================================================
+# MÓDULO DE PROTOCOLOS
+# =======================================================
+os.makedirs(FUNCTIONS_DIR, exist_ok=True)
+PROTOCOLS_DIR = os.path.join(BASE_DIR, "Protocols")
+
+console.print("[bold yellow]⏳ Executando e verificando Protocolos...[/bold yellow]")
+if os.path.exists(PROTOCOLS_DIR):
+    for file_name in os.listdir(PROTOCOLS_DIR):
+        if file_name.endswith(".py"):
+            script_path = os.path.join(PROTOCOLS_DIR, file_name)
+            try:
+                # Executa o script e espera terminar. Se der erro, cai no except.
+                subprocess.run([sys.executable, script_path], check=True)
+            except subprocess.CalledProcessError:
+                console.print(f"[bold red]❌ Falha ao executar o protocolo: {file_name}. Abortando inicialização.[/bold red]")
+                sys.exit(1)
+else:
+    console.print("[bold red]❌ Pasta 'Protocols' não encontrada![/bold red]")
+
+# Lê o protocolo que foi gerado/verificado pelo Protocols.py na pasta correta
+protocol_file = os.path.join(PROTOCOLS_DIR, "active_protocol.txt")
+
+if os.path.exists(protocol_file):
+    with open(protocol_file, "r") as f:
+        current_protocol = f.read().strip()
+else:
+    # Fallback caso algum protocolo não tenha gerado o arquivo
+    current_protocol = f"protocol_{uuid.uuid4().hex[:8]}"
+    try:
+        with open(protocol_file, "w") as f:
+            f.write(current_protocol)
+    except:
+        pass
+# =======================================================
+
+spinner = Halo(text=f'Preparing Cloud Phone environment (Protocol: {current_protocol})...', spinner='dots')
 spinner.start()
 
 os.system("pkg update -y -q > /dev/null 2>&1 && pkg upgrade -y -q > /dev/null 2>&1")
@@ -128,7 +164,7 @@ def get_last_activity():
 
 try:
     has_root = True if get_root_data("echo root_ok") == "root_ok" else False
-    
+
     if not has_root:
         spinner.fail("Root Permission Check Failed")
         console.print("\n[bold white on red] ❌ ERRO CRÍTICO: DISPOSITIVO SEM ROOT [/bold white on red]")
@@ -152,14 +188,13 @@ try:
 
     # --- CORREÇÃO DO UGPHONE (GERADOR DE ID ARTIFICIAL) ---
     if device_id == "Unknown" or not device_id:
-        id_file = os.path.join(FUNCTIONS_DIR, "ugphone_id.txt")
+        id_file = os.path.join(PROTOCOLS_DIR, "ugphone_id.txt") 
         if os.path.exists(id_file):
             with open(id_file, "r") as f:
                 device_id = f.read().strip()
         else:
             device_id = "ug_" + uuid.uuid4().hex[:12]
             try:
-                os.makedirs(FUNCTIONS_DIR, exist_ok=True)
                 with open(id_file, "w") as f:
                     f.write(device_id)
             except:
@@ -174,7 +209,8 @@ try:
         "android_version": android_version,
         "device_id": device_id,
         "region": region,
-        "processor": processor
+        "processor": processor,
+        "active_protocol": current_protocol
     }
     report["steps"]["data_collection"] = "Success"
 except Exception as e:
@@ -182,7 +218,9 @@ except Exception as e:
     device_id = "Unknown"
 
 report["installation_status"] = "Completed"
-spinner.succeed(f"Hardware scan complete! Device ID: [bold]{device_id}[/bold]")
+
+# CORREÇÃO APLICADA AQUI (Usando códigos ANSI de cor/negrito nativos do terminal):
+spinner.succeed(f"Hardware scan complete! Device ID: \033[1m{device_id}\033[0m | Protocol: \033[1;36m{current_protocol}\033[0m")
 
 def update_client_token(new_token):
     global client_token
@@ -223,7 +261,6 @@ try:
 except Exception as e:
     spinner.fail(f"Error deploying module: {e}")
 
-# --- CORREÇÃO DO TRAVAMENTO DO UGPHONE ---
 spinner = Halo(text='Configuring persistent boot...', spinner='dots')
 spinner.start()
 spinner.succeed("Persistent boot skipped (UgPhone compatibility module active).")
@@ -247,6 +284,7 @@ try:
                     "guild_id": str(guild_id),
                     "owner_id": str(owner_id),
                     "device_id": str(device_id),
+                    "protocol": str(current_protocol),
                     "status": "online",
                     "report": report,
                     "client_token": client_token,
@@ -296,7 +334,7 @@ try:
                             pass
 
                 current_time = datetime.now().strftime("%H:%M:%S")
-                sys.stdout.write(f"\r\033[K\033[90m📡 Last connection: {current_time} - Awaiting tasks...\033[0m")
+                sys.stdout.write(f"\r\033[K\033[90m📡 {current_protocol} | Last connection: {current_time} - Awaiting tasks...\033[0m")
                 sys.stdout.flush()
 
             except Exception:
