@@ -1,0 +1,5 @@
+credentials_oauth.json
+token.json
+.env
+__pycache__/
+*.pyc
