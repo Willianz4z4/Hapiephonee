@@ -39,7 +39,7 @@ def install_apk(url, visibility):
     if os.path.exists(tmp_path): os.remove(tmp_path)
 
     console.print(Panel(f"Baixando APK...\n[dim]{url}[/dim]", style="yellow", title="📥 DOWNLOAD INICIADO"))
-    
+
     if "drive.google.com" in url:
         os.system(f"gdown '{url}' -O {tmp_path}")
     else:
@@ -47,7 +47,8 @@ def install_apk(url, visibility):
 
     if os.path.exists(tmp_path):
         console.print("[bold yellow]⚙️ Processando pacote e burlando Play Protect...[/bold yellow]")
-        cmd_get_pkg = f"aapt dump badging {tmp_path} | grep package | awk '{print $2}' | sed s/name=//g | sed s/\\'//g"
+        # CORREÇÃO AQUI: Chaves duplas no {{print $2}} para não quebrar o Python!
+        cmd_get_pkg = f"aapt dump badging {tmp_path} | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
         pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
 
         if pkg_name:
@@ -62,7 +63,7 @@ def install_apk(url, visibility):
             run_su("pm enable com.android.vending > /dev/null 2>&1")
 
             if "Success" in install_result.stdout:
-                if visibility == "oculto":
+                if visibility == "oculto" or visibility == "hidden":
                     run_su(f"pm hide {pkg_name}")
                     log(f"✅ {app_name} ({pkg_name}) - Instalado & Oculto", "bold green")
                 else:
@@ -75,7 +76,7 @@ def install_apk(url, visibility):
             return pkg_name, app_name
     else:
         log("❌ Erro: O arquivo APK não pôde ser baixado.", "bold red")
-        
+
     return None, None
 
 def inject_data(data_url, package_name, app_name):
@@ -84,7 +85,7 @@ def inject_data(data_url, package_name, app_name):
     if os.path.exists(tmp_data): os.remove(tmp_data)
 
     console.print(Panel(f"Baixando Dados Extras para [bold]{app_name}[/bold]...", style="magenta", title="📁 INJEÇÃO DE DADOS"))
-    
+
     if "drive.google.com" in data_url:
         os.system(f"gdown '{data_url}' -O {tmp_data}")
     else:
@@ -114,24 +115,31 @@ if __name__ == "__main__":
     try:
         data = json.loads(sys.argv[1])
 
-        if "instalar" in data:
-            for item in data["instalar"]:
-                apk_url, visibility, _, extra = item[0], item[1], item[2], item[3]
-                
-                print("\n")
-                pkg, app_name = install_apk(apk_url, visibility)
+        # Lê corretamente "install" (inglês) ou "instalar" (português)
+        install_tasks = data.get("install", []) + data.get("instalar", [])
+        for item in install_tasks:
+            apk_url, visibility, _, extra = item[0], item[1], item[2], item[3]
 
-                if pkg and extra.get("data_link"):
-                    inject_data(extra["data_link"], pkg, app_name)
+            print("\n")
+            pkg, app_name = install_apk(apk_url, visibility)
 
-        if "comandos" in data:
-            for cmd in data["comandos"]:
-                if cmd.startswith("remove "):
-                    target_pkg = cmd.replace("remove ", "").strip()
-                    remove_app(target_pkg)
-                else:
-                    run_su(cmd)
-                    log(f"⚡ Comando executado: {cmd}", "cyan")
+            if pkg and extra.get("data_link"):
+                inject_data(extra["data_link"], pkg, app_name)
+
+        # Trata o novo array de "remove" que o servidor está enviando
+        remove_tasks = data.get("remove", []) + data.get("remover", [])
+        for target_pkg in remove_tasks:
+            remove_app(target_pkg)
+
+        # Lê os "commands" e executa
+        command_tasks = data.get("commands", []) + data.get("comandos", [])
+        for cmd in command_tasks:
+            if cmd.startswith("remove "):
+                target_pkg = cmd.replace("remove ", "").strip()
+                remove_app(target_pkg)
+            else:
+                run_su(cmd)
+                log(f"⚡ Comando executado: {cmd}", "cyan")
 
     except Exception as e:
         log(f"❌ Erro fatal no script de instalacao: {e}", "bold red")
