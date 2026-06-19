@@ -80,7 +80,6 @@ if os.path.exists(PROTOCOLS_DIR):
         if file_name.endswith(".py"):
             script_path = os.path.join(PROTOCOLS_DIR, file_name)
             try:
-                # Executa o script e espera terminar. Se der erro, cai no except.
                 subprocess.run([sys.executable, script_path], check=True)
             except subprocess.CalledProcessError:
                 console.print(f"[bold red]❌ Falha ao executar o protocolo: {file_name}. Abortando inicialização.[/bold red]")
@@ -88,14 +87,12 @@ if os.path.exists(PROTOCOLS_DIR):
 else:
     console.print("[bold red]❌ Pasta 'Protocols' não encontrada![/bold red]")
 
-# Lê o protocolo que foi gerado/verificado pelo Protocols.py na pasta correta
 protocol_file = os.path.join(PROTOCOLS_DIR, "active_protocol.txt")
 
 if os.path.exists(protocol_file):
     with open(protocol_file, "r") as f:
         current_protocol = f.read().strip()
 else:
-    # Fallback caso algum protocolo não tenha gerado o arquivo
     current_protocol = f"protocol_{uuid.uuid4().hex[:8]}"
     try:
         with open(protocol_file, "w") as f:
@@ -168,9 +165,6 @@ try:
     if not has_root:
         spinner.fail("Root Permission Check Failed")
         console.print("\n[bold white on red] ❌ ERRO CRÍTICO: DISPOSITIVO SEM ROOT [/bold white on red]")
-        console.print("[bold red]O sistema Hapiephone precisa de privilégios de administrador para funcionar corretamente.[/bold red]")
-        console.print("[bold red]👉 Ative o botão 'Root' nas configurações do seu celular/UgPhone e tente novamente,[/bold red]")
-        console.print("[bold red]ou entre em contato com o suporte![/bold red]\n")
         sys.exit(1)
 
     model = get_prop("getprop ro.product.model")
@@ -186,9 +180,8 @@ try:
     if device_id == "Unknown" or not device_id:
         device_id = get_prop("settings get secure android_id")
 
-    # --- CORREÇÃO DO UGPHONE (GERADOR DE ID ARTIFICIAL) ---
     if device_id == "Unknown" or not device_id:
-        id_file = os.path.join(PROTOCOLS_DIR, "ugphone_id.txt") 
+        id_file = os.path.join(PROTOCOLS_DIR, "ugphone_id.txt")
         if os.path.exists(id_file):
             with open(id_file, "r") as f:
                 device_id = f.read().strip()
@@ -219,7 +212,6 @@ except Exception as e:
 
 report["installation_status"] = "Completed"
 
-# CORREÇÃO APLICADA AQUI (Usando códigos ANSI de cor/negrito nativos do terminal):
 spinner.succeed(f"Hardware scan complete! Device ID: \033[1m{device_id}\033[0m | Protocol: \033[1;36m{current_protocol}\033[0m")
 
 def update_client_token(new_token):
@@ -297,10 +289,13 @@ try:
                 if response.status_code == 200:
                     response_json = response.json()
 
-                    if "instalar" in response_json or "comandos" in response_json:
+                    # ==========================================
+                    # SISTEMA DE LOG: PRINTA TUDO O QUE RECEBE
+                    # ==========================================
+                    if response_json:
                         print("\n")
-                        console.print(f"[bold magenta]📦 Payload Received:[/bold magenta] {response_json}")
-
+                        console.print(f"[bold cyan]📥 RAW PAYLOAD RECEBIDO DO SERVIDOR:[/bold cyan] {response_json}")
+                    
                     if "new_client_token" in response_json:
                         update_client_token(response_json["new_client_token"])
 
@@ -314,7 +309,13 @@ try:
 
                     last_check = time.time()
 
-                    if "instalar" in response_json or "comandos" in response_json:
+                    # ==========================================
+                    # CORREÇÃO DO BUG DAS LINGUAGENS AQUI!
+                    # Verifica tanto em inglês quanto em português
+                    # ==========================================
+                    has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos"])
+
+                    if has_tasks:
                         os.system(f"mkdir -p {FUNCTIONS_DIR}")
                         install_script_path = os.path.join(FUNCTIONS_DIR, "install.py")
 
