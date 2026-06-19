@@ -27,10 +27,10 @@ def log(msg, color="cyan", write_file=True):
             pass
 
 def run_su(cmd):
-    return subprocess.run(f"su -c '{cmd}'", shell=True, capture_output=True, text=True)
+    return subprocess.run("su -c '" + cmd + "'", shell=True, capture_output=True, text=True)
 
 def get_app_name(tmp_path, default_pkg):
-    cmd = f"aapt dump badging {tmp_path} | grep 'application-label:' | head -n 1 | cut -d\\' -f2"
+    cmd = "aapt dump badging " + str(tmp_path) + " | grep 'application-label:' | head -n 1 | cut -d\\' -f2"
     app_name = subprocess.getoutput(cmd).strip()
     return app_name if app_name else default_pkg
 
@@ -41,14 +41,15 @@ def install_apk(url, visibility):
     console.print(Panel(f"Baixando APK...\n[dim]{url}[/dim]", style="yellow", title="📥 DOWNLOAD INICIADO"))
 
     if "drive.google.com" in url:
-        os.system(f"gdown '{url}' -O {tmp_path}")
+        os.system("gdown '" + url + "' -O " + tmp_path)
     else:
-        os.system(f"curl -L '{url}' -o {tmp_path}")
+        os.system("curl -L '" + url + "' -o " + tmp_path)
 
     if os.path.exists(tmp_path):
         console.print("[bold yellow]⚙️ Processando pacote e burlando Play Protect...[/bold yellow]")
-        # AQUI ESTÁ A CORREÇÃO: Chaves duplas no awk!
-        cmd_get_pkg = f"aapt dump badging {tmp_path} | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
+        
+        # CORREÇÃO BLINDADA: Sem f-strings!
+        cmd_get_pkg = "aapt dump badging " + str(tmp_path) + " | grep package | awk '{print $2}' | sed s/name=//g | sed s/\\'//g"
         pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
 
         if pkg_name:
@@ -57,17 +58,17 @@ def install_apk(url, visibility):
             run_su("pm disable-user --user 0 com.android.vending > /dev/null 2>&1")
             run_su("settings put global package_verifier_enable 0")
 
-            install_result = run_su(f"pm install -r -g -d {tmp_path}")
+            install_result = run_su("pm install -r -g -d " + str(tmp_path))
 
             run_su("settings put global package_verifier_enable 1")
             run_su("pm enable com.android.vending > /dev/null 2>&1")
 
             if "Success" in install_result.stdout:
                 if visibility == "oculto" or visibility == "hidden":
-                    run_su(f"pm hide {pkg_name}")
+                    run_su("pm hide " + pkg_name)
                     log(f"✅ {app_name} ({pkg_name}) - Instalado & Oculto", "bold green")
                 else:
-                    run_su(f"pm unhide {pkg_name}")
+                    run_su("pm unhide " + pkg_name)
                     log(f"✅ {app_name} ({pkg_name}) - Instalado com Sucesso", "bold green")
             else:
                 log(f"❌ Falha ao instalar {app_name}: {install_result.stderr}", "bold red")
@@ -81,23 +82,23 @@ def install_apk(url, visibility):
 
 def inject_data(data_url, package_name, app_name):
     tmp_data = os.path.join(BASE_DIR, "data_inject.tar.gz")
-    target_path = f"/data/data/{package_name}"
+    target_path = "/data/data/" + package_name
     if os.path.exists(tmp_data): os.remove(tmp_data)
 
     console.print(Panel(f"Baixando Dados Extras para [bold]{app_name}[/bold]...", style="magenta", title="📁 INJEÇÃO DE DADOS"))
 
     if "drive.google.com" in data_url:
-        os.system(f"gdown '{data_url}' -O {tmp_data}")
+        os.system("gdown '" + data_url + "' -O " + tmp_data)
     else:
-        os.system(f"curl -L '{data_url}' -o {tmp_data}")
+        os.system("curl -L '" + data_url + "' -o " + tmp_data)
 
     if os.path.exists(tmp_data):
         console.print("[bold yellow]⚙️ Descompactando scripts e permissões...[/bold yellow]")
-        run_su(f"am force-stop {package_name}")
-        extraction = run_su(f"tar -xzf {tmp_data} -C {target_path}")
+        run_su("am force-stop " + package_name)
+        extraction = run_su("tar -xzf " + tmp_data + " -C " + target_path)
 
         if extraction.returncode == 0:
-            run_su(f"chown -R $(stat -c %u {target_path}):$(stat -c %g {target_path}) {target_path}")
+            run_su("chown -R $(stat -c %u " + target_path + "):$(stat -c %g " + target_path + ") " + target_path)
             log(f"✅ Dados injetados com perfeição em {target_path}", "bold green")
         else:
             log(f"❌ Erro ao extrair dados: {extraction.stderr}", "bold red")
@@ -105,7 +106,7 @@ def inject_data(data_url, package_name, app_name):
         os.remove(tmp_data)
 
 def remove_app(package_name):
-    run_su(f"pm uninstall {package_name}")
+    run_su("pm uninstall " + package_name)
     log(f"🗑️ {package_name} - Removido com sucesso", "bold red")
 
 if __name__ == "__main__":
