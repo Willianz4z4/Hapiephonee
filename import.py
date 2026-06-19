@@ -65,7 +65,7 @@ else:
     console.print("[bold red]❌ Authentication IDs missing. Exiting.[/bold red]")
     sys.exit(1)
 
-URL_WEBHOOK = "https://yacht-isp-remedies-optimum.trycloudflare.com/webhook"
+URL_WEBHOOK = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/webhook"
 report = {"installation_status": "pending", "steps": {}, "system_info": {}}
 
 # =======================================================
