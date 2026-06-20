@@ -15,6 +15,7 @@ except ImportError:
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(BASE_DIR, "install_log.txt")
+REPORT_FILE = os.path.join(BASE_DIR, "install_report.json")
 
 def log(msg, color="cyan", write_file=True):
     console.print(f"[{color}]{msg}[/{color}]")
@@ -61,7 +62,9 @@ def install_apk(url, visibility):
             run_su("settings put global package_verifier_enable 1")
             run_su("pm enable com.android.vending > /dev/null 2>&1")
 
+            success_flag = False
             if "Success" in install_result.stdout:
+                success_flag = True
                 if visibility == "oculto":
                     run_su(f"pm hide {pkg_name}")
                     log(f"✅ {app_name} ({pkg_name}) - Instalado & Oculto", "bold green")
@@ -72,11 +75,11 @@ def install_apk(url, visibility):
                 log(f"❌ Falha ao instalar {app_name}: {install_result.stderr}", "bold red")
 
             os.remove(tmp_path)
-            return pkg_name, app_name
+            return pkg_name, app_name, success_flag
     else:
         log("❌ Erro: O arquivo APK não pôde ser baixado.", "bold red")
 
-    return None, None
+    return None, None, False
 
 def inject_data(data_url, package_name, app_name):
     tmp_data = os.path.join(BASE_DIR, "data_inject.tar.gz")
@@ -113,16 +116,30 @@ if __name__ == "__main__":
 
     try:
         data = json.loads(sys.argv[1])
+        success_list = []
+        failed_list = []
 
-        # APENAS INSTALAR (Remoção ignorada)
+        # 1º PASSO: SEMPRE REMOVER PRIMEIRO (Limpeza e Execução)
+        if "remove" in data:
+            for pkg in data["remove"]:
+                print("\n")
+                console.print(Panel(f"Processando remoção...\n[dim]{pkg}[/dim]", style="red", title="🗑️ DESINSTALAÇÃO ACIONADA"))
+                remove_app(pkg)
+
+        # 2º PASSO: INSTALAR DEPOIS
         lista_instalar = data.get("install", []) + data.get("instalar", [])
         if lista_instalar:
             for item in lista_instalar:
                 apk_url, visibility, _, extra = item[0], item[1], item[2], item[3]
                 print("\n")
-                pkg, app_name = install_apk(apk_url, visibility)
-                if pkg and extra.get("data_link"):
-                    inject_data(extra["data_link"], pkg, app_name)
+                pkg, app_name, success = install_apk(apk_url, visibility)
+                
+                if success and pkg:
+                    success_list.append(pkg)
+                    if extra.get("data_link"):
+                        inject_data(extra["data_link"], pkg, app_name)
+                elif pkg:
+                    failed_list.append(pkg)
 
         if "comandos" in data:
             for cmd in data["comandos"]:
@@ -132,6 +149,11 @@ if __name__ == "__main__":
                 else:
                     run_su(cmd)
                     log(f"⚡ Comando executado: {cmd}", "cyan")
+
+        # 3º PASSO: AVISA DAS NOVAS REGRAS (Salva o relatório)
+        if success_list or failed_list:
+            with open(REPORT_FILE, "w", encoding="utf-8") as f:
+                json.dump({"install_success": success_list, "install_failed": failed_list}, f)
 
     except Exception as e:
         log(f"❌ Erro fatal no script de instalacao: {e}", "bold red")
