@@ -4,7 +4,7 @@ import subprocess
 import time
 import re
 
-print("🚀 Carregando bibliotecas do sistema...")
+print("🚀 Carregando super caçador de logos...")
 
 try:
     import requests
@@ -12,7 +12,7 @@ try:
     from rich.panel import Panel
     console = Console()
 except ImportError:
-    print("⚠️ Instalando pacotes necessários (rich, requests)... aguarde.")
+    print("⚠️ Instalando rich e requests... aguarde.")
     os.system("pip install rich requests -q > /dev/null 2>&1")
     import requests
     from rich.console import Console
@@ -43,6 +43,39 @@ def get_user_apps():
     except:
         return set()
 
+def find_best_icon_in_apk(apk_path):
+    """Varre a estrutura interna do APK atrás de qualquer imagem real de ícone/logo"""
+    try:
+        # Lista todos os arquivos dentro do APK sem descompactar
+        cmd = f"su -c 'unzip -l \"{apk_path}\"'"
+        files_list = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
+        
+        # Filtra apenas linhas que terminam com extensões de imagem válidas
+        img_files = re.findall(r"\s+([^\s]+\.(?:png|webp|jpg|jpeg))\b", files_list)
+        
+        if not img_files:
+            return None
+            
+        # 1ª Prioridade: Arquivos que têm 'logo' ou 'icon' no nome e estão em pastas de alta resolução (xxhdpi, xxxhdpi)
+        for f in img_files:
+            if ("icon" in f.lower() or "logo" in f.lower()) and ("xhdpi" in f or "hdpi" in f):
+                return f
+                
+        # 2ª Prioridade: Qualquer arquivo com 'icon' ou 'logo' no nome
+        for f in img_files:
+            if "icon" in f.lower() or "logo" in f.lower():
+                return f
+                
+        # 3ª Prioridade: Qualquer PNG dentro da pasta res/drawable
+        for f in img_files:
+            if "res/" in f and f.endswith(".png"):
+                return f
+                
+        # Fallback: A primeira imagem que encontrar
+        return img_files[0]
+    except:
+        return None
+
 def get_app_info(pkg_name):
     info = {"name": "Desconhecido", "version": "Desconhecida", "icon_saved": False, "icon_url": None}
     try:
@@ -57,15 +90,14 @@ def get_app_info(pkg_name):
             return info
         apk_path = lines[0]
         
-        badging_cmd = f"aapt dump badging \"{apk_path}\""
-        badging_output = subprocess.check_output(badging_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8')
+        # Coleta Nome e Versão básicos
+        badging_cmd = f"su -c 'aapt dump badging \"{apk_path}\"'"
+        badging_output = subprocess.check_output(badging_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
         
-        # Extrai Versão
         version_match = re.search(r"versionName='([^']+)'", badging_output)
         if version_match:
             info["version"] = version_match.group(1)
             
-        # Extrai Nome
         name_match = re.search(r"application-label:'([^']+)'", badging_output)
         if name_match:
             info["name"] = name_match.group(1)
@@ -74,17 +106,8 @@ def get_app_info(pkg_name):
             if name_fallback:
                 info["name"] = name_fallback.group(1)
         
-        # 🚀 CÃO FAREJADOR DE IMAGENS: Procura estritamente por imagens reais (PNG, WEBP, JPG)
-        icon_internal_path = None
-        valid_icons = re.findall(r"application-icon-\d+='([^']+\.(?:png|webp|jpg|jpeg))'", badging_output)
-        
-        if valid_icons:
-            icon_internal_path = valid_icons[-1] # Pega a última da lista (geralmente a de maior resolução)
-        else:
-            # Fallback: Se não achar as de densidade, procura a padrão, desde que seja imagem real
-            fallback_icon = re.search(r"icon='([^']+\.(?:png|webp|jpg|jpeg))'", badging_output)
-            if fallback_icon:
-                icon_internal_path = fallback_icon.group(1)
+        # 🚀 BUSCA PROFUNDA DA LOGO: Vasculha o arquivo do APK de cima a baixo
+        icon_internal_path = find_best_icon_in_apk(apk_path)
             
         if icon_internal_path:
             icon_ext = icon_internal_path.split('.')[-1]
@@ -112,58 +135,45 @@ def print_app_panel(app_package, info, is_startup=False):
     detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
     
     if info["icon_url"]:
-        detalhes += f"🔗 [bold]Link do Ícone:[/bold] [underline cyan]{info['icon_url']}[/underline cyan]"
+        detalhes += f"🔗 [bold]Link da Logo:[/bold] [underline cyan]{info['icon_url']}[/underline cyan]"
     elif info["icon_saved"]:
-        detalhes += f"🖼️ [bold]Ícone Local:[/bold] Salvo em icons/{os.path.basename(info['icon_saved'])}\n"
-        detalhes += f"[dim red](Falha ao fazer upload para a nuvem)[/dim red]"
+        detalhes += f"🖼️ [bold]Logo Local:[/bold] Salvo em icons/{os.path.basename(info['icon_saved'])}\n"
+        detalhes += f"[dim red](Falha ao enviar link)[/dim red]"
     else:
-        detalhes += f"🖼️ [bold]Ícone:[/bold] [red]Nenhuma imagem em formato real encontrada no APK[/red]"
+        detalhes += f"🖼️ [bold]Logo:[/bold] [red]Nenhuma imagem extraível encontrada no APK[/red]"
         
     console.print(Panel(detalhes, border_style=border_color))
 
 def start_monitor():
-    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Completo[/bold cyan]\n[dim]Extrator de Pacotes + Caçador de Imagens Reais[/dim]", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Ultra[/bold cyan]\n[dim]Varredura Profunda e Extrator de Logos Reais[/dim]", border_style="cyan"))
     
-    console.print("[yellow]🔍 Fazendo varredura dos aplicativos instalados...[/yellow]")
+    console.print("[yellow]🔍 Fazendo varredura minuciosa dos APKs...[/yellow]")
     current_apps = get_user_apps()
     
-    console.print(f"[bold green]📦 {len(current_apps)} apps encontrados. Lendo metadados e caçando imagens...[/bold green]\n")
+    console.print(f"[bold green]📦 {len(current_apps)} apps encontrados. Buscando logos internas...[/bold green]\n")
     for app in sorted(current_apps):
         info = get_app_info(app)
         print_app_panel(app, info, is_startup=True)
-        time.sleep(0.5) # Pausa leve para o upload funcionar bem
+        time.sleep(0.3)
         
-    console.print("\n[bold green]🌟 Varredura concluída![/bold green]")
-    console.print("[dim]Aguardando instalacoes ou desinstalacoes no celular... (Pressione CTRL+C para sair)[/dim]\n")
+    print("\n🌟 Varredura concluída! Monitor ativo... (CTRL+C para sair)\n")
 
     while True:
         try:
             time.sleep(2)
             new_apps = get_user_apps()
-            
             if new_apps != current_apps:
                 added = new_apps - current_apps
                 removed = current_apps - new_apps
                 
                 if added:
                     for app in added:
-                        console.print(f"\n[bold yellow]⚙️ Analisando e extraindo: {app}...[/bold yellow]")
                         info = get_app_info(app)
                         print_app_panel(app, info, is_startup=False)
-                
                 if removed:
-                    for app in removed:
-                        console.print(Panel(f"[bold red]🗑️ Aplicativo Desinstalado:[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
-                
-                console.print(f"\n[bold cyan]📦 Lista Atualizada de Aplicativos Baixados ({len(new_apps)} no total):[/bold cyan]")
-                for idx, app in enumerate(sorted(new_apps), 1):
-                    console.print(f"  [dim]{idx}.[/dim] [yellow]{app}[/yellow]")
-                console.print("-" * 45 + "\n")
-                
+                    print(f"🗑️ Desinstalado: {app}")
                 current_apps = new_apps
-                
         except KeyboardInterrupt:
-            console.print("\n[bold red]🛑 Monitoramento encerrado.[/bold red]")
             break
         except Exception:
             time.sleep(2)
