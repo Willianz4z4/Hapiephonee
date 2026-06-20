@@ -44,34 +44,25 @@ def get_user_apps():
         return set()
 
 def find_best_icon_in_apk(apk_path):
-    """Varre a estrutura interna do APK atrás de qualquer imagem real de ícone/logo"""
     try:
-        # Lista todos os arquivos dentro do APK sem descompactar
-        cmd = f"su -c 'unzip -l \"{apk_path}\"'"
+        # Usa o unzip normal do Termux (sem su -c)
+        cmd = f"unzip -l \"{apk_path}\""
         files_list = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
         
-        # Filtra apenas linhas que terminam com extensões de imagem válidas
         img_files = re.findall(r"\s+([^\s]+\.(?:png|webp|jpg|jpeg))\b", files_list)
         
         if not img_files:
             return None
             
-        # 1ª Prioridade: Arquivos que têm 'logo' ou 'icon' no nome e estão em pastas de alta resolução (xxhdpi, xxxhdpi)
         for f in img_files:
-            if ("icon" in f.lower() or "logo" in f.lower()) and ("xhdpi" in f or "hdpi" in f):
+            if ("icon" in f.lower() or "logo" in f.lower()) and ("xxhdpi" in f or "xhdpi" in f):
                 return f
-                
-        # 2ª Prioridade: Qualquer arquivo com 'icon' ou 'logo' no nome
         for f in img_files:
             if "icon" in f.lower() or "logo" in f.lower():
                 return f
-                
-        # 3ª Prioridade: Qualquer PNG dentro da pasta res/drawable
         for f in img_files:
             if "res/" in f and f.endswith(".png"):
                 return f
-                
-        # Fallback: A primeira imagem que encontrar
         return img_files[0]
     except:
         return None
@@ -90,8 +81,8 @@ def get_app_info(pkg_name):
             return info
         apk_path = lines[0]
         
-        # Coleta Nome e Versão básicos
-        badging_cmd = f"su -c 'aapt dump badging \"{apk_path}\"'"
+        # 🔥 O SEGREDO: aapt rodando pelo Termux, sem su -c
+        badging_cmd = f"aapt dump badging \"{apk_path}\""
         badging_output = subprocess.check_output(badging_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
         
         version_match = re.search(r"versionName='([^']+)'", badging_output)
@@ -106,14 +97,13 @@ def get_app_info(pkg_name):
             if name_fallback:
                 info["name"] = name_fallback.group(1)
         
-        # 🚀 BUSCA PROFUNDA DA LOGO: Vasculha o arquivo do APK de cima a baixo
         icon_internal_path = find_best_icon_in_apk(apk_path)
             
         if icon_internal_path:
             icon_ext = icon_internal_path.split('.')[-1]
             icon_dest = os.path.join(ICONS_DIR, f"{pkg_name}.{icon_ext}")
             
-            unzip_cmd = f"su -c 'unzip -p \"{apk_path}\" \"{icon_internal_path}\"' > \"{icon_dest}\""
+            unzip_cmd = f"unzip -p \"{apk_path}\" \"{icon_internal_path}\" > \"{icon_dest}\""
             os.system(unzip_cmd)
             
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
@@ -145,12 +135,13 @@ def print_app_panel(app_package, info, is_startup=False):
     console.print(Panel(detalhes, border_style=border_color))
 
 def start_monitor():
-    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Ultra[/bold cyan]\n[dim]Varredura Profunda e Extrator de Logos Reais[/dim]", border_style="cyan"))
+    os.system("clear" if os.name == "posix" else "cls")
+    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Ultra[/bold cyan]\n[dim]Correção de Leitura e Extrator de Logos[/dim]", border_style="cyan"))
     
     console.print("[yellow]🔍 Fazendo varredura minuciosa dos APKs...[/yellow]")
     current_apps = get_user_apps()
     
-    console.print(f"[bold green]📦 {len(current_apps)} apps encontrados. Buscando logos internas...[/bold green]\n")
+    console.print(f"[bold green]📦 {len(current_apps)} apps encontrados. Buscando dados e logos...[/bold green]\n")
     for app in sorted(current_apps):
         info = get_app_info(app)
         print_app_panel(app, info, is_startup=True)
@@ -171,7 +162,8 @@ def start_monitor():
                         info = get_app_info(app)
                         print_app_panel(app, info, is_startup=False)
                 if removed:
-                    print(f"🗑️ Desinstalado: {app}")
+                    for app in removed:
+                        console.print(Panel(f"[bold red]🗑️ Aplicativo Desinstalado:[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
                 current_apps = new_apps
         except KeyboardInterrupt:
             break
