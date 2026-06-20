@@ -114,7 +114,14 @@ if __name__ == "__main__":
     try:
         data = json.loads(sys.argv[1])
 
-        # CORREÇÃO DA TRADUÇÃO: Puxa o 'install' e o 'instalar'
+        # 1º PASSO: SEMPRE REMOVER PRIMEIRO (Limpeza)
+        if "remove" in data:
+            for pkg in data["remove"]:
+                print("\n")
+                console.print(Panel(f"Processando remoção...\n[dim]{pkg}[/dim]", style="red", title="🗑️ DESINSTALAÇÃO ACIONADA"))
+                remove_app(pkg)
+
+        # 2º PASSO: INSTALAR DEPOIS (Clean Install)
         lista_instalar = data.get("install", []) + data.get("instalar", [])
         if lista_instalar:
             for item in lista_instalar:
@@ -123,13 +130,6 @@ if __name__ == "__main__":
                 pkg, app_name = install_apk(apk_url, visibility)
                 if pkg and extra.get("data_link"):
                     inject_data(extra["data_link"], pkg, app_name)
-
-        # CORREÇÃO PARA MOSTRAR A DESINSTALAÇÃO
-        if "remove" in data:
-            for pkg in data["remove"]:
-                print("\n")
-                console.print(Panel(f"Processando remoção...\n[dim]{pkg}[/dim]", style="red", title="🗑️ DESINSTALAÇÃO ACIONADA"))
-                remove_app(pkg)
 
         if "comandos" in data:
             for cmd in data["comandos"]:
