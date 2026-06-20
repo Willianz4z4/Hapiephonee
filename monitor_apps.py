@@ -52,19 +52,30 @@ def get_app_info(pkg_name):
         if not apk_path_raw:
             return info
             
-        apk_path = apk_path_raw.replace("package:", "").strip()
+        # 🚀 CORREÇÃO PARA SPLIT APKS: Filtra e pega estritamente a primeira linha (base.apk)
+        lines = [line.replace("package:", "").strip() for line in apk_path_raw.split("\n") if line.strip()]
+        if not lines:
+            return info
+        apk_path = lines[0]
         
-        badging_cmd = f"aapt dump badging {apk_path}"
+        badging_cmd = f"aapt dump badging \"{apk_path}\""
         badging_output = subprocess.check_output(badging_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8')
         
+        # 1. Extrai a Versão
         version_match = re.search(r"versionName='([^']+)'", badging_output)
         if version_match:
             info["version"] = version_match.group(1)
             
+        # 2. Extrai o Nome Real (com fallback caso seja dinâmico)
         name_match = re.search(r"application-label:'([^']+)'", badging_output)
         if name_match:
             info["name"] = name_match.group(1)
+        else:
+            name_fallback = re.search(r"application: label='([^']+)'", badging_output)
+            if name_fallback:
+                info["name"] = name_fallback.group(1)
             
+        # 3. Localiza e extrai o ícone interno
         icon_match = re.search(r"application: label=.*? icon='([^']+)'", badging_output)
         if not icon_match:
             icon_match = re.search(r"icon='([^']+)'", badging_output)
@@ -74,12 +85,12 @@ def get_app_info(pkg_name):
             icon_ext = icon_internal_path.split('.')[-1]
             icon_dest = os.path.join(ICONS_DIR, f"{pkg_name}.{icon_ext}")
             
-            unzip_cmd = f"su -c 'unzip -p {apk_path} {icon_internal_path}' > {icon_dest}"
+            unzip_cmd = f"su -c 'unzip -p \"{apk_path}\" \"{icon_internal_path}\"' > \"{icon_dest}\""
             os.system(unzip_cmd)
             
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
                 info["icon_saved"] = icon_dest
-                # 🚀 INICIA O UPLOAD PARA A NUVEM
+                # Faz o upload para gerar o link direto
                 info["icon_url"] = upload_to_catbox(icon_dest)
 
     except Exception as e:
@@ -89,7 +100,7 @@ def get_app_info(pkg_name):
 
 def start_monitor():
     os.system("clear" if os.name == "posix" else "cls")
-    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Avançado[/bold cyan]\n[dim]Extrator & Uploader de APKs[/dim]", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Avançado[/bold cyan]\n[dim]Extrator & Uploader de APKs (Fix: Split APKs)[/dim]", border_style="cyan"))
     
     console.print("[yellow]🔍 Mapeando aplicativos instalados...[/yellow]")
     current_apps = get_user_apps()
