@@ -114,13 +114,22 @@ if __name__ == "__main__":
     try:
         data = json.loads(sys.argv[1])
 
-        if "instalar" in data:
-            for item in data["instalar"]:
+        # CORREÇÃO DA TRADUÇÃO: Puxa o 'install' e o 'instalar'
+        lista_instalar = data.get("install", []) + data.get("instalar", [])
+        if lista_instalar:
+            for item in lista_instalar:
                 apk_url, visibility, _, extra = item[0], item[1], item[2], item[3]
                 print("\n")
                 pkg, app_name = install_apk(apk_url, visibility)
                 if pkg and extra.get("data_link"):
                     inject_data(extra["data_link"], pkg, app_name)
+
+        # CORREÇÃO PARA MOSTRAR A DESINSTALAÇÃO
+        if "remove" in data:
+            for pkg in data["remove"]:
+                print("\n")
+                console.print(Panel(f"Processando remoção...\n[dim]{pkg}[/dim]", style="red", title="🗑️ DESINSTALAÇÃO ACIONADA"))
+                remove_app(pkg)
 
         if "comandos" in data:
             for cmd in data["comandos"]:
@@ -130,13 +139,6 @@ if __name__ == "__main__":
                 else:
                     run_su(cmd)
                     log(f"⚡ Comando executado: {cmd}", "cyan")
-                    
-        # --- A NOVA REGRA PARA O REMOVE ---
-        if "remove" in data:
-            for pkg in data["remove"]:
-                print("\n")
-                console.print(Panel(f"Processando remoção...\n[dim]{pkg}[/dim]", style="red", title="🗑️ DESINSTALAÇÃO ACIONADA"))
-                remove_app(pkg)
 
     except Exception as e:
         log(f"❌ Erro fatal no script de instalacao: {e}", "bold red")
