@@ -39,7 +39,7 @@ def install_apk(url, visibility):
     if os.path.exists(tmp_path): os.remove(tmp_path)
 
     console.print(Panel(f"Baixando APK...\n[dim]{url}[/dim]", style="yellow", title="📥 DOWNLOAD INICIADO"))
-    
+
     if "drive.google.com" in url:
         os.system(f"gdown '{url}' -O {tmp_path}")
     else:
@@ -75,7 +75,7 @@ def install_apk(url, visibility):
             return pkg_name, app_name
     else:
         log("❌ Erro: O arquivo APK não pôde ser baixado.", "bold red")
-        
+
     return None, None
 
 def inject_data(data_url, package_name, app_name):
@@ -84,7 +84,7 @@ def inject_data(data_url, package_name, app_name):
     if os.path.exists(tmp_data): os.remove(tmp_data)
 
     console.print(Panel(f"Baixando Dados Extras para [bold]{app_name}[/bold]...", style="magenta", title="📁 INJEÇÃO DE DADOS"))
-    
+
     if "drive.google.com" in data_url:
         os.system(f"gdown '{data_url}' -O {tmp_data}")
     else:
@@ -114,14 +114,7 @@ if __name__ == "__main__":
     try:
         data = json.loads(sys.argv[1])
 
-        # 1º PASSO: SEMPRE REMOVER PRIMEIRO (Limpeza)
-        if "remove" in data:
-            for pkg in data["remove"]:
-                print("\n")
-                console.print(Panel(f"Processando remoção...\n[dim]{pkg}[/dim]", style="red", title="🗑️ DESINSTALAÇÃO ACIONADA"))
-                remove_app(pkg)
-
-        # 2º PASSO: INSTALAR DEPOIS (Clean Install)
+        # APENAS INSTALAR (Remoção ignorada)
         lista_instalar = data.get("install", []) + data.get("instalar", [])
         if lista_instalar:
             for item in lista_instalar:
