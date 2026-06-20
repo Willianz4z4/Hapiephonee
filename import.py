@@ -28,7 +28,7 @@ console = Console()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
-REPORT_FILE = os.path.join(FUNCTIONS_DIR, "install_report.json") # <-- ARQUIVO DO RELATORIO
+REPORT_FILE = os.path.join(FUNCTIONS_DIR, "install_report.json")
 
 saved_config = {}
 
@@ -69,9 +69,6 @@ else:
 URL_WEBHOOK = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/webhook"
 report = {"installation_status": "pending", "steps": {}, "system_info": {}}
 
-# =======================================================
-# MÓDULO DE PROTOCOLOS
-# =======================================================
 os.makedirs(FUNCTIONS_DIR, exist_ok=True)
 PROTOCOLS_DIR = os.path.join(BASE_DIR, "Protocols")
 
@@ -100,7 +97,6 @@ else:
             f.write(current_protocol)
     except:
         pass
-# =======================================================
 
 spinner = Halo(text=f'Preparing Cloud Phone environment (Protocol: {current_protocol})...', spinner='dots')
 spinner.start()
@@ -272,9 +268,6 @@ try:
 
         if now - last_action >= PING_INTERVAL or not registered_in_db:
             try:
-                # =================================================
-                # LENDO O RELATÓRIO DE INSTALAÇÃO DO INSTALL.PY
-                # =================================================
                 install_success = []
                 install_failed = []
                 
@@ -284,12 +277,9 @@ try:
                             relatorio = json.load(f)
                             install_success = relatorio.get("install_success", [])
                             install_failed = relatorio.get("install_failed", [])
-                        
-                        # Apaga o arquivo para não mandar repetido!
                         os.remove(REPORT_FILE)
                     except Exception:
                         pass
-                # =================================================
 
                 payload = {
                     "type": 1 if registered_in_db else 0,
@@ -301,7 +291,6 @@ try:
                     "report": report,
                     "client_token": client_token,
                     "version": HAPIEPHONE_VERSION,
-                    # INJETANDO O RESULTADO AQUI
                     "install_success": install_success,
                     "install_failed": install_failed
                 }
