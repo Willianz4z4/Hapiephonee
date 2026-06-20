@@ -28,6 +28,8 @@ console = Console()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
+
+# AQUI ESTÁ A CORREÇÃO: O REPORT_FILE DEVE APONTAR PARA DENTRO DE "functions"
 REPORT_FILE = os.path.join(FUNCTIONS_DIR, "install_report.json")
 
 saved_config = {}
@@ -271,15 +273,18 @@ try:
                 install_success = []
                 install_failed = []
                 
+                # AQUI ELE VAI LER DA PASTA CORRETA: "functions/install_report.json"
                 if os.path.exists(REPORT_FILE):
                     try:
                         with open(REPORT_FILE, "r", encoding="utf-8") as f:
                             relatorio = json.load(f)
                             install_success = relatorio.get("install_success", [])
                             install_failed = relatorio.get("install_failed", [])
+                        print(f"\n[LOCAL DEBUG] 📂 Relatório encontrado! Enviando p/ servidor:")
+                        print(f"Sucesso: {install_success} | Falha: {install_failed}")
                         os.remove(REPORT_FILE)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"\n[ERRO LOCAL] ❌ Falha ao ler relatório: {e}")
 
                 payload = {
                     "type": 1 if registered_in_db else 0,
@@ -301,16 +306,12 @@ try:
                 if response.status_code == 200:
                     response_json = response.json()
 
-                    if response_json:
-                        print("\n")
-                        console.print(f"[bold cyan]📥 RAW PAYLOAD RECEBIDO DO SERVIDOR:[/bold cyan] {response_json}")
-
                     if "new_client_token" in response_json:
                         update_client_token(response_json["new_client_token"])
 
                     if response_json.get("status") == "shutdown":
                          print("\n")
-                         console.print(f"[bold red]🛑 Server refused connection: {response_json.get('motivo')}[/bold red]")
+                         console.print(f"[bold red]🛑 Server refused connection: {response_json.get('reason', 'Unknown reason')}[/bold red]")
                          sys.exit(1)
 
                     if not registered_in_db:
@@ -332,7 +333,7 @@ try:
 
                         tasks_str = json.dumps(response_json)
                         try:
-                            console.print("[bold yellow]⚡ Triggering installation engine...[/bold yellow]")
+                            console.print("\n[bold yellow]⚡ Triggering installation engine...[/bold yellow]")
                             subprocess.run([sys.executable, install_script_path, tasks_str], check=True)
                         except subprocess.CalledProcessError:
                             pass
