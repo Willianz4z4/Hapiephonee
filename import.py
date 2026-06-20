@@ -28,8 +28,6 @@ console = Console()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
-
-# AQUI ESTÁ A CORREÇÃO: O REPORT_FILE DEVE APONTAR PARA DENTRO DE "functions"
 REPORT_FILE = os.path.join(FUNCTIONS_DIR, "install_report.json")
 
 saved_config = {}
@@ -273,7 +271,6 @@ try:
                 install_success = []
                 install_failed = []
                 
-                # AQUI ELE VAI LER DA PASTA CORRETA: "functions/install_report.json"
                 if os.path.exists(REPORT_FILE):
                     try:
                         with open(REPORT_FILE, "r", encoding="utf-8") as f:
@@ -325,20 +322,18 @@ try:
                         os.system(f"mkdir -p {FUNCTIONS_DIR}")
                         install_script_path = os.path.join(FUNCTIONS_DIR, "install.py")
 
-                        if not os.path.exists(install_script_path):
-                            with Halo(text='Downloading Install Engine...', spinner='dots'):
-                                v_cache_install = int(time.time())
-                                URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/install.py?v={v_cache_install}"
-                                os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}")
+                        # MODIFICAÇÃO AQUI: SEMPRE BAIXA PARA ATUALIZAR O MOTOR DE INSTALAÇÃO
+                        with Halo(text='Updating Install Engine...', spinner='dots'):
+                            v_cache_install = int(time.time())
+                            URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/install.py?v={v_cache_install}"
+                            os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}")
 
                         tasks_str = json.dumps(response_json)
                         try:
                             console.print("\n[bold yellow]⚡ Triggering installation engine...[/bold yellow]")
                             subprocess.run([sys.executable, install_script_path, tasks_str], check=True)
-                        except subprocess.CalledProcessError:
-                            pass
-                        except Exception:
-                            pass
+                        except Exception as err_install:
+                            console.print(f"[bold red]❌ O motor de instalacao travou: {err_install}[/bold red]")
 
                 current_time = datetime.now().strftime("%H:%M:%S")
                 sys.stdout.write(f"\r\033[K\033[90m📡 {current_protocol} | Last connection: {current_time} - Awaiting tasks...\033[0m")
