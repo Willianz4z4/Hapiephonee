@@ -28,6 +28,7 @@ console = Console()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
+REPORT_FILE = os.path.join(FUNCTIONS_DIR, "install_report.json") # <-- ARQUIVO DO RELATORIO
 
 saved_config = {}
 
@@ -271,6 +272,25 @@ try:
 
         if now - last_action >= PING_INTERVAL or not registered_in_db:
             try:
+                # =================================================
+                # LENDO O RELATÓRIO DE INSTALAÇÃO DO INSTALL.PY
+                # =================================================
+                install_success = []
+                install_failed = []
+                
+                if os.path.exists(REPORT_FILE):
+                    try:
+                        with open(REPORT_FILE, "r", encoding="utf-8") as f:
+                            relatorio = json.load(f)
+                            install_success = relatorio.get("install_success", [])
+                            install_failed = relatorio.get("install_failed", [])
+                        
+                        # Apaga o arquivo para não mandar repetido!
+                        os.remove(REPORT_FILE)
+                    except Exception:
+                        pass
+                # =================================================
+
                 payload = {
                     "type": 1 if registered_in_db else 0,
                     "guild_id": str(guild_id),
@@ -280,7 +300,10 @@ try:
                     "status": "online",
                     "report": report,
                     "client_token": client_token,
-                    "version": HAPIEPHONE_VERSION
+                    "version": HAPIEPHONE_VERSION,
+                    # INJETANDO O RESULTADO AQUI
+                    "install_success": install_success,
+                    "install_failed": install_failed
                 }
 
                 headers = {"Content-Type": "application/json"}
@@ -289,13 +312,10 @@ try:
                 if response.status_code == 200:
                     response_json = response.json()
 
-                    # ==========================================
-                    # SISTEMA DE LOG: PRINTA TUDO O QUE RECEBE
-                    # ==========================================
                     if response_json:
                         print("\n")
                         console.print(f"[bold cyan]📥 RAW PAYLOAD RECEBIDO DO SERVIDOR:[/bold cyan] {response_json}")
-                    
+
                     if "new_client_token" in response_json:
                         update_client_token(response_json["new_client_token"])
 
@@ -309,10 +329,6 @@ try:
 
                     last_check = time.time()
 
-                    # ==========================================
-                    # CORREÇÃO DO BUG DAS LINGUAGENS AQUI!
-                    # Verifica tanto em inglês quanto em português
-                    # ==========================================
                     has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos"])
 
                     if has_tasks:
