@@ -2,3 +2,4 @@ curl
 openssl
 tsu
 termux-api
+aapt

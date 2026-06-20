@@ -51,6 +51,15 @@ def install_apk(url, visibility):
         cmd_get_pkg = f"aapt dump badging {tmp_path} | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
         pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
 
+        # ==========================================
+        # 🚨 TRAVA DE SEGURANÇA: VERIFICA SE O AAPT EXISTE
+        # ==========================================
+        if "not found" in pkg_name or not pkg_name:
+            log("❌ ERRO FATAL: Comando 'aapt' não encontrado no Termux!", "bold red")
+            log("Execute no celular: pkg install aapt -y", "bold yellow")
+            os.remove(tmp_path)
+            return None, None, False
+
         if pkg_name:
             app_name = get_app_name(tmp_path, pkg_name)
 
@@ -119,14 +128,12 @@ if __name__ == "__main__":
         success_list = []
         failed_list = []
 
-        # 1º PASSO: SEMPRE REMOVER PRIMEIRO (Limpeza e Execução)
         if "remove" in data:
             for pkg in data["remove"]:
                 print("\n")
                 console.print(Panel(f"Processando remoção...\n[dim]{pkg}[/dim]", style="red", title="🗑️ DESINSTALAÇÃO ACIONADA"))
                 remove_app(pkg)
 
-        # 2º PASSO: INSTALAR DEPOIS
         lista_instalar = data.get("install", []) + data.get("instalar", [])
         if lista_instalar:
             for item in lista_instalar:
@@ -150,7 +157,6 @@ if __name__ == "__main__":
                     run_su(cmd)
                     log(f"⚡ Comando executado: {cmd}", "cyan")
 
-        # 3º PASSO: AVISA DAS NOVAS REGRAS (Salva o relatório)
         if success_list or failed_list:
             with open(REPORT_FILE, "w", encoding="utf-8") as f:
                 json.dump({"install_success": success_list, "install_failed": failed_list}, f)
