@@ -43,7 +43,7 @@ def get_user_apps():
         return set()
 
 def get_app_info(pkg_name):
-    """Desmembra o APK para pegar Nome, Versão, extrair Ícone e gerar Link"""
+    """Desmembra o APK para pegar Nome, Versão, extrair Ícone em PNG e gerar Link"""
     info = {"name": "Desconhecido", "version": "Desconhecida", "icon_saved": False, "icon_url": None}
     try:
         apk_path_cmd = f"su -c 'pm path {pkg_name}'"
@@ -52,7 +52,6 @@ def get_app_info(pkg_name):
         if not apk_path_raw:
             return info
             
-        # 🚀 CORREÇÃO PARA SPLIT APKS: Filtra e pega estritamente a primeira linha (base.apk)
         lines = [line.replace("package:", "").strip() for line in apk_path_raw.split("\n") if line.strip()]
         if not lines:
             return info
@@ -66,7 +65,7 @@ def get_app_info(pkg_name):
         if version_match:
             info["version"] = version_match.group(1)
             
-        # 2. Extrai o Nome Real (com fallback caso seja dinâmico)
+        # 2. Extrai o Nome Real
         name_match = re.search(r"application-label:'([^']+)'", badging_output)
         if name_match:
             info["name"] = name_match.group(1)
@@ -75,13 +74,21 @@ def get_app_info(pkg_name):
             if name_fallback:
                 info["name"] = name_fallback.group(1)
             
-        # 3. Localiza e extrai o ícone interno
+        # 3. Localiza o ícone principal
         icon_match = re.search(r"application: label=.*? icon='([^']+)'", badging_output)
         if not icon_match:
             icon_match = re.search(r"icon='([^']+)'", badging_output)
             
-        if icon_match:
-            icon_internal_path = icon_match.group(1)
+        icon_internal_path = icon_match.group(1) if icon_match else None
+        
+        # 🚀 CORREÇÃO DO XML: Se o ícone principal for XML, caça as alternativas em PNG de alta resolução
+        if icon_internal_path and icon_internal_path.endswith(".xml"):
+            png_icons = re.findall(r"application-icon-\d+='([^']+\.(?:png|jpg|jpeg))'", badging_output)
+            if png_icons:
+                # Pega o último da lista (geralmente xxxhdpi, a maior resolução disponível)
+                icon_internal_path = png_icons[-1]
+            
+        if icon_internal_path:
             icon_ext = icon_internal_path.split('.')[-1]
             icon_dest = os.path.join(ICONS_DIR, f"{pkg_name}.{icon_ext}")
             
@@ -90,7 +97,7 @@ def get_app_info(pkg_name):
             
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
                 info["icon_saved"] = icon_dest
-                # Faz o upload para gerar o link direto
+                # Agora com PNG, o Catbox vai aceitar com sucesso!
                 info["icon_url"] = upload_to_catbox(icon_dest)
 
     except Exception as e:
@@ -98,15 +105,43 @@ def get_app_info(pkg_name):
         
     return info
 
+def print_app_panel(app_package, info, is_startup=False):
+    """Gera o cartão visual do aplicativo no terminal"""
+    status_title = "🔍 App Detectado na Inicialização" if is_startup else "📥 Novo App Instalado!"
+    border_color = "cyan" if is_startup else "green"
+    
+    detalhes = f"[bold]{status_title}[/bold]\n\n"
+    detalhes += f"📦 [bold]Pacote:[/bold] {app_package}\n"
+    detalhes += f"🏷️ [bold]Nome:[/bold] {info['name']}\n"
+    detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
+    
+    if info["icon_url"]:
+        detalhes += f"🔗 [bold]Link do Ícone:[/bold] [underline cyan]{info['icon_url']}[/underline cyan]\n"
+    elif info["icon_saved"]:
+        detalhes += f"🖼️ [bold]Ícone Local:[/bold] Salvo em icons/{os.path.basename(info['icon_saved'])}\n"
+        detalhes += f"[dim red](Falha ao fazer upload para a nuvem)[/dim red]"
+    else:
+        detalhes += f"🖼️ [bold]Ícone:[/bold] [red]Não foi possível extrair do APK[/red]"
+        
+    console.print(Panel(detalhes, border_style=border_color))
+
 def start_monitor():
     os.system("clear" if os.name == "posix" else "cls")
-    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Avançado[/bold cyan]\n[dim]Extrator & Uploader de APKs (Fix: Split APKs)[/dim]", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Super Avançado[/bold cyan]\n[dim]Varredura Inicial + Caçador de PNG + Uploader[/dim]", border_style="cyan"))
     
-    console.print("[yellow]🔍 Mapeando aplicativos instalados...[/yellow]")
+    console.print("[yellow]🔍 Fazendo varredura completa dos aplicativos instalados...[/yellow]")
     current_apps = get_user_apps()
     
-    console.print(f"[bold green]✅ Monitoramento iniciado! Total de apps encontrados: {len(current_apps)}[/bold green]")
-    console.print("[dim]Aguardando instalacoes ou desinstalacoes no celular... (Pressione CTRL+C para sair)[/dim]\n")
+    # 🚀 MELHORIA 1: Processa todos os apps existentes na inicialização!
+    console.print(f"[bold green]📦 {len(current_apps)} apps encontrados. Mapeando dados e ícones...[/bold green]\n")
+    for app in sorted(current_apps):
+        console.print(f"[dim]⚡ Escaneando: {app}...[/dim]")
+        info = get_app_info(app)
+        print_app_panel(app, info, is_startup=True)
+        time.sleep(0.2) # Pequena pausa para não sobrecarregar a rede nos uploads iniciais
+        
+    console.print("\n[bold green]🌟 Varredura de inicialização concluída![/bold green]")
+    console.print("[dim]Aguardando novas instalacoes ou desinstalacoes no celular... (Pressione CTRL+C para sair)[/dim]\n")
 
     while True:
         try:
@@ -119,23 +154,9 @@ def start_monitor():
                 
                 if added:
                     for app in added:
-                        console.print(f"\n[bold yellow]⚙️ Analisando e extraindo pacote: {app}...[/bold yellow]")
+                        console.print(f"\n[bold yellow]⚙️ Analisando novo pacote: {app}...[/bold yellow]")
                         info = get_app_info(app)
-                        
-                        detalhes = f"[bold green]📥 Novo App Instalado![/bold green]\n\n"
-                        detalhes += f"📦 [bold]Pacote:[/bold] {app}\n"
-                        detalhes += f"🏷️ [bold]Nome:[/bold] {info['name']}\n"
-                        detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
-                        
-                        if info["icon_url"]:
-                            detalhes += f"🔗 [bold]Link do Ícone:[/bold] [underline cyan]{info['icon_url']}[/underline cyan]\n"
-                        elif info["icon_saved"]:
-                            detalhes += f"🖼️ [bold]Ícone Local:[/bold] Salvo em icons/{os.path.basename(info['icon_saved'])}\n"
-                            detalhes += f"[dim red](Falha ao fazer upload para a nuvem)[/dim red]"
-                        else:
-                            detalhes += f"🖼️ [bold]Ícone:[/bold] [red]Não foi possível extrair do APK[/red]"
-                            
-                        console.print(Panel(detalhes, border_style="green"))
+                        print_app_panel(app, info, is_startup=False)
                 
                 if removed:
                     for app in removed:
