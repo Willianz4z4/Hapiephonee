@@ -4,12 +4,15 @@ import subprocess
 import time
 import re
 
+print("🚀 Carregando bibliotecas do sistema...")
+
 try:
     import requests
     from rich.console import Console
     from rich.panel import Panel
     console = Console()
 except ImportError:
+    print("⚠️ Instalando pacotes necessários (rich, requests)... aguarde.")
     os.system("pip install rich requests -q > /dev/null 2>&1")
     import requests
     from rich.console import Console
@@ -21,7 +24,6 @@ ICONS_DIR = os.path.join(BASE_DIR, "icons")
 os.makedirs(ICONS_DIR, exist_ok=True)
 
 def upload_to_catbox(file_path):
-    """Faz o upload do arquivo para o Catbox.moe e retorna a URL direta"""
     url = "https://catbox.moe/user/api.php"
     data = {"reqtype": "fileupload"}
     try:
@@ -35,7 +37,6 @@ def upload_to_catbox(file_path):
     return None
 
 def get_user_apps():
-    """Retorna um SET com os nomes dos pacotes instalados APENAS pelo usuário"""
     try:
         out = subprocess.check_output("su -c 'pm list packages -3'", shell=True, stderr=subprocess.DEVNULL).decode('utf-8')
         return set([line.replace("package:", "").strip() for line in out.split("\n") if line.strip()])
@@ -43,7 +44,6 @@ def get_user_apps():
         return set()
 
 def get_app_info(pkg_name):
-    """Desmembra o APK para pegar Nome, Versão, extrair Ícone em PNG e gerar Link"""
     info = {"name": "Desconhecido", "version": "Desconhecida", "icon_saved": False, "icon_url": None}
     try:
         apk_path_cmd = f"su -c 'pm path {pkg_name}'"
@@ -60,12 +60,10 @@ def get_app_info(pkg_name):
         badging_cmd = f"aapt dump badging \"{apk_path}\""
         badging_output = subprocess.check_output(badging_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8')
         
-        # 1. Extrai a Versão
         version_match = re.search(r"versionName='([^']+)'", badging_output)
         if version_match:
             info["version"] = version_match.group(1)
             
-        # 2. Extrai o Nome Real
         name_match = re.search(r"application-label:'([^']+)'", badging_output)
         if name_match:
             info["name"] = name_match.group(1)
@@ -74,18 +72,15 @@ def get_app_info(pkg_name):
             if name_fallback:
                 info["name"] = name_fallback.group(1)
             
-        # 3. Localiza o ícone principal
         icon_match = re.search(r"application: label=.*? icon='([^']+)'", badging_output)
         if not icon_match:
             icon_match = re.search(r"icon='([^']+)'", badging_output)
             
         icon_internal_path = icon_match.group(1) if icon_match else None
         
-        # 🚀 CORREÇÃO DO XML: Se o ícone principal for XML, caça as alternativas em PNG de alta resolução
         if icon_internal_path and icon_internal_path.endswith(".xml"):
             png_icons = re.findall(r"application-icon-\d+='([^']+\.(?:png|jpg|jpeg))'", badging_output)
             if png_icons:
-                # Pega o último da lista (geralmente xxxhdpi, a maior resolução disponível)
                 icon_internal_path = png_icons[-1]
             
         if icon_internal_path:
@@ -97,7 +92,6 @@ def get_app_info(pkg_name):
             
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
                 info["icon_saved"] = icon_dest
-                # Agora com PNG, o Catbox vai aceitar com sucesso!
                 info["icon_url"] = upload_to_catbox(icon_dest)
 
     except Exception as e:
@@ -106,7 +100,6 @@ def get_app_info(pkg_name):
     return info
 
 def print_app_panel(app_package, info, is_startup=False):
-    """Gera o cartão visual do aplicativo no terminal"""
     status_title = "🔍 App Detectado na Inicialização" if is_startup else "📥 Novo App Instalado!"
     border_color = "cyan" if is_startup else "green"
     
@@ -126,19 +119,17 @@ def print_app_panel(app_package, info, is_startup=False):
     console.print(Panel(detalhes, border_style=border_color))
 
 def start_monitor():
-    os.system("clear" if os.name == "posix" else "cls")
     console.print(Panel.fit("[bold cyan]Hapiephone Monitor Super Avançado[/bold cyan]\n[dim]Varredura Inicial + Caçador de PNG + Uploader[/dim]", border_style="cyan"))
     
     console.print("[yellow]🔍 Fazendo varredura completa dos aplicativos instalados...[/yellow]")
     current_apps = get_user_apps()
     
-    # 🚀 MELHORIA 1: Processa todos os apps existentes na inicialização!
     console.print(f"[bold green]📦 {len(current_apps)} apps encontrados. Mapeando dados e ícones...[/bold green]\n")
     for app in sorted(current_apps):
         console.print(f"[dim]⚡ Escaneando: {app}...[/dim]")
         info = get_app_info(app)
         print_app_panel(app, info, is_startup=True)
-        time.sleep(0.2) # Pequena pausa para não sobrecarregar a rede nos uploads iniciais
+        time.sleep(0.2)
         
     console.print("\n[bold green]🌟 Varredura de inicialização concluída![/bold green]")
     console.print("[dim]Aguardando novas instalacoes ou desinstalacoes no celular... (Pressione CTRL+C para sair)[/dim]\n")
@@ -172,9 +163,9 @@ def start_monitor():
         except KeyboardInterrupt:
             console.print("\n[bold red]🛑 Monitoramento encerrado pelo usuário.[/bold red]")
             break
-        except Exception:
+        except Exception as e:
+            console.print(f"[bold red]Erro inesperado:[/bold red] {e}")
             time.sleep(2)
 
 if __name__ == "__main__":
-    os.system("pkg install aapt unzip -y -q > /dev/null 2>&1")
     start_monitor()
