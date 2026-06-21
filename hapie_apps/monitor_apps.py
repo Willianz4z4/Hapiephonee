@@ -5,7 +5,7 @@ import time
 import re
 import json
 
-print("🚀 Carregando Monitor Silencioso (Modo Local/Discord)...")
+print("🚀 Carregando Monitor Estruturado (hapie_apps)...")
 
 try:
     from rich.console import Console
@@ -17,10 +17,16 @@ except ImportError:
     from rich.panel import Panel
     console = Console()
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ICONS_DIR = os.path.join(BASE_DIR, "icons")
-JSON_FILE = os.path.join(BASE_DIR, "apps_data.json")
+# Configuração inteligente de caminhos relativos
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # ~/Hapiephonee/hapie_apps
+REPO_ROOT = os.path.dirname(BASE_DIR)                  # ~/Hapiephonee
+
+ICONS_DIR = os.path.join(REPO_ROOT, "icons")
+JSON_FILE = os.path.join(REPO_ROOT, "Data", "apps_install.json")
+
+# Garante que as pastas existam
 os.makedirs(ICONS_DIR, exist_ok=True)
+os.makedirs(os.path.dirname(JSON_FILE), exist_ok=True)
 
 def load_data():
     if os.path.exists(JSON_FILE):
@@ -105,7 +111,6 @@ def get_app_info(pkg_name):
             
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
                 icon_filename = os.path.basename(icon_dest)
-                # 🔥 Fica exclusivamente local! Pronto para o bot usar com discord.File()
                 info["icon_local"] = f"icons/{icon_filename}"
 
     except Exception:
@@ -114,7 +119,7 @@ def get_app_info(pkg_name):
     return info
 
 def print_app_panel(app_package, info, is_new=False):
-    status_title = "📥 Novo App Detectado!" if is_new else "🔄 App Atualizado no JSON"
+    status_title = "📥 Novo App Detectado!" if is_new else "🔄 App Sincronizado no JSON"
     border_color = "green" if is_new else "blue"
     
     detalhes = f"[bold]{status_title}[/bold]\n\n"
@@ -123,7 +128,7 @@ def print_app_panel(app_package, info, is_new=False):
     detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
     
     if info["icon_local"]:
-        detalhes += f"🖼️ [bold]Capa Guardada Em:[/bold] [cyan]{info['icon_local']}[/cyan]"
+        detalhes += f"🖼️ [bold]Capa em:[/bold] [cyan]{info['icon_local']}[/cyan]"
     else:
         detalhes += f"🖼️ [bold]Capa:[/bold] [red]Nenhuma imagem PNG/WebP suportada[/red]"
         
@@ -131,9 +136,9 @@ def print_app_panel(app_package, info, is_new=False):
 
 def start_monitor():
     os.system("clear" if os.name == "posix" else "cls")
-    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Local[/bold cyan]\n[dim]Banco JSON + Armazenamento Oculto para o Git[/dim]", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Estruturado[/bold cyan]\n[dim]Pasta: hapie_apps | Banco: Data/apps_install.json[/dim]", border_style="cyan"))
     
-    console.print("[yellow]📂 Carregando memória do JSON...[/yellow]")
+    console.print("[yellow]📂 Carregando memória do Data/apps_install.json...[/yellow]")
     app_db = load_data()
     
     current_apps = get_user_apps()
@@ -154,11 +159,11 @@ def start_monitor():
         
     if new_or_updated > 0:
         save_data(app_db)
-        console.print(f"[bold green]✅ JSON atualizado e salvo! ({len(app_db)} apps no total)[/bold green]")
+        console.print(f"[bold green]✅ apps_install.json atualizado! ({len(app_db)} apps no total)[/bold green]")
     else:
-        console.print(f"[bold green]✅ JSON já estava 100% atualizado com {len(app_db)} apps.[/bold green]")
+        console.print(f"[bold green]✅ apps_install.json já estava 100% atualizado com {len(app_db)} apps.[/bold green]")
         
-    print("\n🌟 Monitor ativo em segundo plano... (CTRL+C para sair)\n")
+    print("\n🌟 Monitor ativo... (Pressione CTRL+C para sair)\n")
 
     while True:
         try:
@@ -182,7 +187,7 @@ def start_monitor():
                         if app in app_db:
                             del app_db[app]
                             save_data(app_db)
-                        console.print(Panel(f"[bold red]🗑️ Aplicativo Removido:[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
+                        console.print(Panel(f"[bold red]🗑️ Aplicativo Removido do JSON:[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
                         
                 current_apps = new_apps
         except KeyboardInterrupt:
