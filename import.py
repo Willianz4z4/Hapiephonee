@@ -22,12 +22,9 @@ except ImportError:
     from rich.panel import Panel
     from halo import Halo
 
-HAPIEPHONE_VERSION = "10.1 (Estruturado)"
+HAPIEPHONE_VERSION = "10.2 (Monitor Linkado)"
 console = Console()
 
-# ==========================================
-# 📍 NOVAS ROTAS ORGANIZADAS
-# ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 
@@ -42,8 +39,9 @@ os.makedirs(HAPIE_APPS_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(ESSENCIAL_DIR, exist_ok=True)
 
-# O relatório agora fica na pasta Data
 REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
+# 🚀 AQUI ELE SABE ONDE O MONITOR SALVA OS APPS:
+APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
 
 saved_config = {}
 
@@ -115,7 +113,6 @@ spinner.start()
 
 os.system("pkg update -y -q > /dev/null 2>&1 && pkg upgrade -y -q > /dev/null 2>&1")
 
-# ⚡ BAIXA OS REQUISITOS DIRETO DA PASTA ESSENCIAL
 try:
     pkg_file = os.path.join(ESSENCIAL_DIR, "reqs_pkg.txt")
     URL_PKG = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/essencial/reqs_pkg.txt"
@@ -248,7 +245,6 @@ try:
     python_path = sys.executable
     v_cache = int(time.time())
 
-    # 1. MODULO DE COPIA
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
     copy_script_path = os.path.join(FUNCTIONS_DIR, "auto_copy.py")
     log_script_path = os.path.join(FUNCTIONS_DIR, "copy_log.txt")
@@ -259,7 +255,6 @@ try:
     daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} > {log_script_path} 2>&1 &"
     os.system(daemon_cmd)
 
-    # 2. ⚡ MODULO DO MONITOR DE APPS NOVO
     os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
     monitor_script_path = os.path.join(HAPIE_APPS_DIR, "monitor_apps.py")
     monitor_log_path = os.path.join(DATA_DIR, "monitor_log.txt")
@@ -293,19 +288,25 @@ try:
             try:
                 install_success = []
                 install_failed = []
+                apps_installed_data = {}
 
-                # LÊ O RELATÓRIO DA NOVA PASTA DATA
                 if os.path.exists(REPORT_FILE):
                     try:
                         with open(REPORT_FILE, "r", encoding="utf-8") as f:
                             relatorio = json.load(f)
                             install_success = relatorio.get("install_success", [])
                             install_failed = relatorio.get("install_failed", [])
-                        print(f"\n[LOCAL DEBUG] 📂 Relatório encontrado! Enviando p/ servidor:")
-                        print(f"Sucesso: {install_success} | Falha: {install_failed}")
                         os.remove(REPORT_FILE)
-                    except Exception as e:
-                        print(f"\n[ERRO LOCAL] ❌ Falha ao ler relatório: {e}")
+                    except Exception:
+                        pass
+
+                # 🚀 A MÁGICA ACONTECE AQUI: Ele lê o arquivo do monitor!
+                if os.path.exists(APPS_JSON_FILE):
+                    try:
+                        with open(APPS_JSON_FILE, "r", encoding="utf-8") as f:
+                            apps_installed_data = json.load(f)
+                    except Exception:
+                        pass
 
                 payload = {
                     "type": 1 if registered_in_db else 0,
@@ -318,7 +319,8 @@ try:
                     "client_token": client_token,
                     "version": HAPIEPHONE_VERSION,
                     "install_success": install_success,
-                    "install_failed": install_failed
+                    "install_failed": install_failed,
+                    "apps_installed": apps_installed_data  # 📦 Joga o JSON inteiro no payload para o servidor!
                 }
 
                 headers = {"Content-Type": "application/json"}
@@ -343,7 +345,6 @@ try:
                     has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos"])
 
                     if has_tasks:
-                        # ⚡ CHAMA O INSTALADOR DA PASTA HAPIE_APPS
                         install_script_path = os.path.join(HAPIE_APPS_DIR, "install.py")
 
                         with Halo(text='Updating Install Engine...', spinner='dots'):
