@@ -4,7 +4,7 @@ import subprocess
 import time
 import re
 
-print("🚀 Carregando super caçador de logos...")
+print("🚀 Carregando super caçador de logos com Upload Duplo...")
 
 try:
     import requests
@@ -23,17 +23,29 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ICONS_DIR = os.path.join(BASE_DIR, "icons")
 os.makedirs(ICONS_DIR, exist_ok=True)
 
-def upload_to_catbox(file_path):
-    url = "https://catbox.moe/user/api.php"
-    data = {"reqtype": "fileupload"}
+def upload_to_cloud(file_path):
+    """Tenta subir a imagem para o Catbox. Se falhar, usa o 0x0.st (excelente para VPS)"""
+    # Tentativa 1: Catbox
     try:
+        url = "https://catbox.moe/user/api.php"
+        data = {"reqtype": "fileupload"}
         with open(file_path, "rb") as f:
-            files = {"fileToUpload": f}
-            response = requests.post(url, data=data, files=files, timeout=15)
-        if response.status_code == 200:
-            return response.text.strip()
+            resp = requests.post(url, data=data, files={"fileToUpload": f}, timeout=10)
+        if resp.status_code == 200 and "http" in resp.text:
+            return resp.text.strip()
     except:
         pass
+        
+    # Tentativa 2: Servidor 0x0.st (Não bloqueia IPs de nuvem)
+    try:
+        url = "https://0x0.st"
+        with open(file_path, "rb") as f:
+            resp = requests.post(url, files={"file": f}, timeout=10)
+        if resp.status_code == 200 and "http" in resp.text:
+            return resp.text.strip()
+    except:
+        pass
+        
     return None
 
 def get_user_apps():
@@ -45,7 +57,6 @@ def get_user_apps():
 
 def find_best_icon_in_apk(apk_path):
     try:
-        # Usa o unzip normal do Termux (sem su -c)
         cmd = f"unzip -l \"{apk_path}\""
         files_list = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
         
@@ -81,7 +92,6 @@ def get_app_info(pkg_name):
             return info
         apk_path = lines[0]
         
-        # 🔥 O SEGREDO: aapt rodando pelo Termux, sem su -c
         badging_cmd = f"aapt dump badging \"{apk_path}\""
         badging_output = subprocess.check_output(badging_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
         
@@ -108,7 +118,8 @@ def get_app_info(pkg_name):
             
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
                 info["icon_saved"] = icon_dest
-                info["icon_url"] = upload_to_catbox(icon_dest)
+                # 🚀 ATIVA O UPLOAD DUPLO AQUI
+                info["icon_url"] = upload_to_cloud(icon_dest)
 
     except Exception:
         pass
@@ -128,15 +139,15 @@ def print_app_panel(app_package, info, is_startup=False):
         detalhes += f"🔗 [bold]Link da Logo:[/bold] [underline cyan]{info['icon_url']}[/underline cyan]"
     elif info["icon_saved"]:
         detalhes += f"🖼️ [bold]Logo Local:[/bold] Salvo em icons/{os.path.basename(info['icon_saved'])}\n"
-        detalhes += f"[dim red](Falha ao enviar link)[/dim red]"
+        detalhes += f"[dim red]❌ (Falha de rede ao enviar para a nuvem)[/dim red]"
     else:
-        detalhes += f"🖼️ [bold]Logo:[/bold] [red]Nenhuma imagem extraível encontrada no APK[/red]"
+        detalhes += f"🖼️ [bold]Logo:[/bold] [red]Nenhuma imagem PNG/JPG encontrada no APK[/red]"
         
     console.print(Panel(detalhes, border_style=border_color))
 
 def start_monitor():
     os.system("clear" if os.name == "posix" else "cls")
-    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Ultra[/bold cyan]\n[dim]Correção de Leitura e Extrator de Logos[/dim]", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Ultra[/bold cyan]\n[dim]Extrator de Logos com Upload Multi-Servidor[/dim]", border_style="cyan"))
     
     console.print("[yellow]🔍 Fazendo varredura minuciosa dos APKs...[/yellow]")
     current_apps = get_user_apps()
@@ -145,7 +156,7 @@ def start_monitor():
     for app in sorted(current_apps):
         info = get_app_info(app)
         print_app_panel(app, info, is_startup=True)
-        time.sleep(0.3)
+        time.sleep(0.5)
         
     print("\n🌟 Varredura concluída! Monitor ativo... (CTRL+C para sair)\n")
 
