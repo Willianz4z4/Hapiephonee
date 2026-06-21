@@ -4,7 +4,7 @@ import subprocess
 import time
 import re
 
-print("🚀 Carregando Super Caçador de Capas Reais...")
+print("🚀 Carregando Motor Híbrido: Cirúrgico + Farejador...")
 
 try:
     import requests
@@ -24,12 +24,9 @@ ICONS_DIR = os.path.join(BASE_DIR, "icons")
 os.makedirs(ICONS_DIR, exist_ok=True)
 
 def upload_to_cloud(file_path):
-    """Tenta subir a imagem para o Telegraph ou Uguu.se, que aceitam VPS"""
-    # Tentativa 1: Uguu.se (Geralmente mais rápido que Telegraph em VPS)
     try:
         url = "https://uguu.se/upload.php"
         with open(file_path, "rb") as f:
-            # Força o nome do arquivo para .png para garantir aceitação
             resp = requests.post(url, files={"files[]": ("icon.png", f, "image/png")}, timeout=15)
         if resp.status_code == 200:
             data = resp.json()
@@ -38,7 +35,6 @@ def upload_to_cloud(file_path):
     except:
         pass
 
-    # Tentativa 2: Servidor do Telegram (Telegraph)
     try:
         url = "https://telegra.ph/upload"
         with open(file_path, "rb") as f:
@@ -73,7 +69,6 @@ def get_app_info(pkg_name):
             return info
         apk_path = lines[0]
         
-        # 1. Coleta Nome, Versão e define qual é o ícone oficial
         badging_cmd = f"aapt dump badging \"{apk_path}\""
         badging_output = subprocess.check_output(badging_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
         
@@ -85,45 +80,47 @@ def get_app_info(pkg_name):
         if name_match:
             info["name"] = name_match.group(1)
         
-        # 🎯 A MÁGICA: Descobre o nome do arquivo de ícone definido no Manifesto
-        # Ex: Pega 'ic_launcher' de 'res/mipmap-anydpi-v26/ic_launcher.xml'
-        icon_path_in_manifest = None
-        # Procura a densidade padrão primeiro
         icon_match = re.search(r"application: label=.*? icon='([^']+)'", badging_output)
         if not icon_match:
-            # Fallback para qualquer ícone definido
             icon_match = re.search(r"icon='([^']+)'", badging_output)
             
+        unzip_list_cmd = f"unzip -l \"{apk_path}\""
+        files_list = subprocess.check_output(unzip_list_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
+        
+        icon_internal_path = None
+        
+        # TENTATIVA 1: Método Cirúrgico (Nome exato do manifesto)
         if icon_match:
             full_icon_path = icon_match.group(1)
-            # Pega só o nome do arquivo sem extensão (ex: ic_launcher)
             icon_name_base = os.path.splitext(os.path.basename(full_icon_path))[0]
             
-            # 2. Faz uma busca reversa inteligente dentro do APK por esse nome exato
-            # procurando formatos PNG ou WebP de alta resolução
-            unzip_list_cmd = f"unzip -l \"{apk_path}\""
-            files_list = subprocess.check_output(unzip_list_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
-            
-            # Procura linhas que tenham o nome base do ícone E terminem em .png/.webp
-            # Priorizando pastas xxxhdpi, xxhdpi, etc.
             potential_icons = re.findall(r"\s+([^\s]*" + re.escape(icon_name_base) + r"\.(?:png|webp))\b", files_list)
-            
-            # Ordena para pegar as maiores resoluções primeiro (xxxhdpi > xxhdpi > hdpi)
             potential_icons.sort(key=lambda x: ("xxxhdpi" in x, "xxhdpi" in x, "xhdpi" in x), reverse=True)
             
             if potential_icons:
-                icon_internal_path = potential_icons[0] # Pega a melhor imagem real encontrada
-                icon_ext = icon_internal_path.split('.')[-1]
-                icon_dest = os.path.join(ICONS_DIR, f"{pkg_name}.{icon_ext}")
+                icon_internal_path = potential_icons[0]
                 
-                # Extrai a imagem real
-                unzip_p_cmd = f"unzip -p \"{apk_path}\" \"{icon_internal_path}\" > \"{icon_dest}\""
-                os.system(unzip_p_cmd)
+        # TENTATIVA 2: Falhou o cirúrgico? Solta o Cão Farejador Genérico!
+        if not icon_internal_path:
+            all_imgs = re.findall(r"\s+([^\s]+\.(?:png|webp|jpg|jpeg))\b", files_list)
+            fallback_icons = [f for f in all_imgs if "icon" in f.lower() or "logo" in f.lower() or "launcher" in f.lower()]
+            fallback_icons.sort(key=lambda x: ("xxxhdpi" in x, "xxhdpi" in x, "xhdpi" in x, "mipmap" in x), reverse=True)
+            
+            if fallback_icons:
+                icon_internal_path = fallback_icons[0]
+            elif all_imgs:
+                icon_internal_path = all_imgs[0] # Pega qualquer imagem como último recurso
                 
-                if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
-                    info["icon_saved"] = icon_dest
-                    # Sobe para a nuvem
-                    info["icon_url"] = upload_to_cloud(icon_dest)
+        if icon_internal_path:
+            icon_ext = icon_internal_path.split('.')[-1]
+            icon_dest = os.path.join(ICONS_DIR, f"{pkg_name}.{icon_ext}")
+            
+            unzip_p_cmd = f"unzip -p \"{apk_path}\" \"{icon_internal_path}\" > \"{icon_dest}\""
+            os.system(unzip_p_cmd)
+            
+            if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
+                info["icon_saved"] = icon_dest
+                info["icon_url"] = upload_to_cloud(icon_dest)
 
     except Exception:
         pass
@@ -140,27 +137,27 @@ def print_app_panel(app_package, info, is_startup=False):
     detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
     
     if info["icon_url"]:
-        detalhes += f"🔗 [bold]Link da Capa Real:[/bold] [underline cyan]{info['icon_url']}[/underline cyan]"
+        detalhes += f"🔗 [bold]Link da Capa:[/bold] [underline cyan]{info['icon_url']}[/underline cyan]"
     elif info["icon_saved"]:
         detalhes += f"🖼️ [bold]Capa Local:[/bold] icons/{os.path.basename(info['icon_saved'])}\n"
         detalhes += f"[dim red]❌ (Falha de rede ao enviar link)[/dim red]"
     else:
-        detalhes += f"🖼️ [bold]Capa:[/bold] [red]Não foi possível extrair a imagem real (.png/.webp) do APK[/red]"
+        detalhes += f"🖼️ [bold]Capa:[/bold] [red]Nenhuma imagem suportada encontrada[/red]"
         
     console.print(Panel(detalhes, border_style=border_color))
 
 def start_monitor():
     os.system("clear" if os.name == "posix" else "cls")
-    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Ultra[/bold cyan]\n[dim]Extrator Cirúrgico de Capas Reais (.png/.webp)[/dim]", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Híbrido[/bold cyan]\n[dim]Busca Cirúrgica + Motor Farejador Anti-Falha[/dim]", border_style="cyan"))
     
-    console.print("[yellow]🔍 Fazendo varredura cirúrgica dos APKs...[/yellow]")
+    console.print("[yellow]🔍 Fazendo varredura dos APKs...[/yellow]")
     current_apps = get_user_apps()
     
-    console.print(f"[bold green]📦 {len(current_apps)} apps encontrados. Buscando capas reais...[/bold green]\n")
+    console.print(f"[bold green]📦 {len(current_apps)} apps encontrados. Buscando capas...[/bold green]\n")
     for app in sorted(current_apps):
         info = get_app_info(app)
         print_app_panel(app, info, is_startup=True)
-        time.sleep(0.3) # Pausa leve para uploads
+        time.sleep(0.3)
         
     print("\n🌟 Varredura concluída! Monitor ativo... (CTRL+C para sair)\n")
 
