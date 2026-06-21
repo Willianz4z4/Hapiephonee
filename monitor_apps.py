@@ -4,7 +4,7 @@ import subprocess
 import time
 import re
 
-print("🚀 Carregando super caçador de logos com Upload Duplo...")
+print("🚀 Carregando super caçador de logos com Upload via Telegram...")
 
 try:
     import requests
@@ -24,25 +24,29 @@ ICONS_DIR = os.path.join(BASE_DIR, "icons")
 os.makedirs(ICONS_DIR, exist_ok=True)
 
 def upload_to_cloud(file_path):
-    """Tenta subir a imagem para o Catbox. Se falhar, usa o 0x0.st (excelente para VPS)"""
-    # Tentativa 1: Catbox
+    """Tenta subir a imagem para o Telegraph (Telegram), que é à prova de bloqueios de VPS"""
+    # Tentativa 1: Servidor do Telegram (Telegraph)
     try:
-        url = "https://catbox.moe/user/api.php"
-        data = {"reqtype": "fileupload"}
+        url = "https://telegra.ph/upload"
         with open(file_path, "rb") as f:
-            resp = requests.post(url, data=data, files={"fileToUpload": f}, timeout=10)
-        if resp.status_code == 200 and "http" in resp.text:
-            return resp.text.strip()
+            # O Telegraph exige que o arquivo seja enviado com um nome e tipo MIME corretos
+            resp = requests.post(url, files={"file": ("icon.png", f, "image/png")}, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, list) and "src" in data[0]:
+                return "https://telegra.ph" + data[0]["src"]
     except:
         pass
         
-    # Tentativa 2: Servidor 0x0.st (Não bloqueia IPs de nuvem)
+    # Tentativa 2: Servidor Uguu.se (Muito amigável com Termux)
     try:
-        url = "https://0x0.st"
+        url = "https://uguu.se/upload.php"
         with open(file_path, "rb") as f:
-            resp = requests.post(url, files={"file": f}, timeout=10)
-        if resp.status_code == 200 and "http" in resp.text:
-            return resp.text.strip()
+            resp = requests.post(url, files={"files[]": ("icon.png", f, "image/png")}, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("success") and "files" in data:
+                return data["files"][0]["url"]
     except:
         pass
         
@@ -118,7 +122,7 @@ def get_app_info(pkg_name):
             
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
                 info["icon_saved"] = icon_dest
-                # 🚀 ATIVA O UPLOAD DUPLO AQUI
+                # 🚀 TENTA O TELEGRAM AGORA
                 info["icon_url"] = upload_to_cloud(icon_dest)
 
     except Exception:
@@ -139,7 +143,7 @@ def print_app_panel(app_package, info, is_startup=False):
         detalhes += f"🔗 [bold]Link da Logo:[/bold] [underline cyan]{info['icon_url']}[/underline cyan]"
     elif info["icon_saved"]:
         detalhes += f"🖼️ [bold]Logo Local:[/bold] Salvo em icons/{os.path.basename(info['icon_saved'])}\n"
-        detalhes += f"[dim red]❌ (Falha de rede ao enviar para a nuvem)[/dim red]"
+        detalhes += f"[dim red]❌ (Bloqueado pelo servidor de imagens)[/dim red]"
     else:
         detalhes += f"🖼️ [bold]Logo:[/bold] [red]Nenhuma imagem PNG/JPG encontrada no APK[/red]"
         
@@ -147,7 +151,7 @@ def print_app_panel(app_package, info, is_startup=False):
 
 def start_monitor():
     os.system("clear" if os.name == "posix" else "cls")
-    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Ultra[/bold cyan]\n[dim]Extrator de Logos com Upload Multi-Servidor[/dim]", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Ultra[/bold cyan]\n[dim]Extrator de Logos com Upload via Telegram[/dim]", border_style="cyan"))
     
     console.print("[yellow]🔍 Fazendo varredura minuciosa dos APKs...[/yellow]")
     current_apps = get_user_apps()
