@@ -3,50 +3,39 @@ import sys
 import subprocess
 import time
 import re
+import json
 
-print("🚀 Carregando Motor Híbrido: Cirúrgico + Farejador...")
+print("🚀 Carregando Monitor Silencioso com Banco JSON...")
 
 try:
-    import requests
     from rich.console import Console
     from rich.panel import Panel
     console = Console()
 except ImportError:
-    print("⚠️ Instalando rich e requests... aguarde.")
-    os.system("pip install rich requests -q > /dev/null 2>&1")
-    import requests
+    os.system("pip install rich -q > /dev/null 2>&1")
     from rich.console import Console
     from rich.panel import Panel
     console = Console()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ICONS_DIR = os.path.join(BASE_DIR, "icons")
+JSON_FILE = os.path.join(BASE_DIR, "apps_data.json")
 os.makedirs(ICONS_DIR, exist_ok=True)
 
-def upload_to_cloud(file_path):
-    try:
-        url = "https://uguu.se/upload.php"
-        with open(file_path, "rb") as f:
-            resp = requests.post(url, files={"files[]": ("icon.png", f, "image/png")}, timeout=15)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("success") and "files" in data:
-                return data["files"][0]["url"]
-    except:
-        pass
+def load_data():
+    """Carrega a memória do JSON para não escanear tudo de novo"""
+    if os.path.exists(JSON_FILE):
+        try:
+            with open(JSON_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
+    return {}
 
-    try:
-        url = "https://telegra.ph/upload"
-        with open(file_path, "rb") as f:
-            resp = requests.post(url, files={"file": ("icon.png", f, "image/png")}, timeout=15)
-        if resp.status_code == 200:
-            data = resp.json()
-            if isinstance(data, list) and "src" in data[0]:
-                return "https://telegra.ph" + data[0]["src"]
-    except:
-        pass
-        
-    return None
+def save_data(data):
+    """Salva a memória no arquivo JSON"""
+    with open(JSON_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
 def get_user_apps():
     try:
@@ -56,7 +45,7 @@ def get_user_apps():
         return set()
 
 def get_app_info(pkg_name):
-    info = {"name": "Desconhecido", "version": "Desconhecida", "icon_saved": False, "icon_url": None}
+    info = {"name": "Desconhecido", "version": "Desconhecida", "icon_local": None, "icon_url": None}
     try:
         apk_path_cmd = f"su -c 'pm path {pkg_name}'"
         apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
@@ -89,7 +78,6 @@ def get_app_info(pkg_name):
         
         icon_internal_path = None
         
-        # TENTATIVA 1: Método Cirúrgico (Nome exato do manifesto)
         if icon_match:
             full_icon_path = icon_match.group(1)
             icon_name_base = os.path.splitext(os.path.basename(full_icon_path))[0]
@@ -100,7 +88,6 @@ def get_app_info(pkg_name):
             if potential_icons:
                 icon_internal_path = potential_icons[0]
                 
-        # TENTATIVA 2: Falhou o cirúrgico? Solta o Cão Farejador Genérico!
         if not icon_internal_path:
             all_imgs = re.findall(r"\s+([^\s]+\.(?:png|webp|jpg|jpeg))\b", files_list)
             fallback_icons = [f for f in all_imgs if "icon" in f.lower() or "logo" in f.lower() or "launcher" in f.lower()]
@@ -109,7 +96,7 @@ def get_app_info(pkg_name):
             if fallback_icons:
                 icon_internal_path = fallback_icons[0]
             elif all_imgs:
-                icon_internal_path = all_imgs[0] # Pega qualquer imagem como último recurso
+                icon_internal_path = all_imgs[0]
                 
         if icon_internal_path:
             icon_ext = icon_internal_path.split('.')[-1]
@@ -119,17 +106,19 @@ def get_app_info(pkg_name):
             os.system(unzip_p_cmd)
             
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
-                info["icon_saved"] = icon_dest
-                info["icon_url"] = upload_to_cloud(icon_dest)
+                icon_filename = os.path.basename(icon_dest)
+                info["icon_local"] = f"icons/{icon_filename}"
+                # 🔥 A GRANDE SACADA: Usa o seu próprio GitHub como servidor de imagens definitivo!
+                info["icon_url"] = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/icons/{icon_filename}"
 
     except Exception:
         pass
         
     return info
 
-def print_app_panel(app_package, info, is_startup=False):
-    status_title = "🔍 App Detectado" if is_startup else "📥 Novo App Instalado!"
-    border_color = "cyan" if is_startup else "green"
+def print_app_panel(app_package, info, is_new=False):
+    status_title = "📥 Novo App Detectado/Instalado!" if is_new else "🔄 App Atualizado no JSON"
+    border_color = "green" if is_new else "blue"
     
     detalhes = f"[bold]{status_title}[/bold]\n\n"
     detalhes += f"📦 [bold]Pacote:[/bold] [yellow]{app_package}[/yellow]\n"
@@ -137,45 +126,69 @@ def print_app_panel(app_package, info, is_startup=False):
     detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
     
     if info["icon_url"]:
-        detalhes += f"🔗 [bold]Link da Capa:[/bold] [underline cyan]{info['icon_url']}[/underline cyan]"
-    elif info["icon_saved"]:
-        detalhes += f"🖼️ [bold]Capa Local:[/bold] icons/{os.path.basename(info['icon_saved'])}\n"
-        detalhes += f"[dim red]❌ (Falha de rede ao enviar link)[/dim red]"
+        detalhes += f"🔗 [bold]Link da Capa (GitHub):[/bold] [underline cyan]{info['icon_url']}[/underline cyan]"
     else:
-        detalhes += f"🖼️ [bold]Capa:[/bold] [red]Nenhuma imagem suportada encontrada[/red]"
+        detalhes += f"🖼️ [bold]Capa:[/bold] [red]Nenhuma imagem PNG/WebP suportada[/red]"
         
     console.print(Panel(detalhes, border_style=border_color))
 
 def start_monitor():
     os.system("clear" if os.name == "posix" else "cls")
-    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Híbrido[/bold cyan]\n[dim]Busca Cirúrgica + Motor Farejador Anti-Falha[/dim]", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Silencioso[/bold cyan]\n[dim]Banco JSON + Hospedagem no GitHub Próprio[/dim]", border_style="cyan"))
     
-    console.print("[yellow]🔍 Fazendo varredura dos APKs...[/yellow]")
+    console.print("[yellow]📂 Carregando memória do JSON...[/yellow]")
+    app_db = load_data()
+    
     current_apps = get_user_apps()
+    new_or_updated = 0
     
-    console.print(f"[bold green]📦 {len(current_apps)} apps encontrados. Buscando capas...[/bold green]\n")
-    for app in sorted(current_apps):
-        info = get_app_info(app)
-        print_app_panel(app, info, is_startup=True)
-        time.sleep(0.3)
+    # Faz uma checagem rápida sem poluir a tela
+    for app in current_apps:
+        if app not in app_db:
+            console.print(f"[dim]⚡ Adicionando app que faltava: {app}...[/dim]")
+            info = get_app_info(app)
+            app_db[app] = info
+            new_or_updated += 1
+            print_app_panel(app, info, is_new=True)
+            
+    # Limpa apps que foram deletados enquanto o monitor estava desligado
+    apps_to_remove = [app for app in app_db if app not in current_apps]
+    for app in apps_to_remove:
+        del app_db[app]
+        new_or_updated += 1
         
-    print("\n🌟 Varredura concluída! Monitor ativo... (CTRL+C para sair)\n")
+    if new_or_updated > 0:
+        save_data(app_db)
+        console.print(f"[bold green]✅ JSON atualizado e salvo! ({len(app_db)} apps no total)[/bold green]")
+    else:
+        console.print(f"[bold green]✅ JSON já estava 100% atualizado com {len(app_db)} apps. Tudo pronto![/bold green]")
+        
+    print("\n🌟 Monitor ativo em segundo plano... (CTRL+C para sair)\n")
 
     while True:
         try:
             time.sleep(2)
             new_apps = get_user_apps()
+            
             if new_apps != current_apps:
                 added = new_apps - current_apps
                 removed = current_apps - new_apps
                 
                 if added:
                     for app in added:
+                        console.print(f"\n[bold yellow]⚙️ Nova instalação detectada: {app}...[/bold yellow]")
                         info = get_app_info(app)
-                        print_app_panel(app, info, is_startup=False)
+                        app_db[app] = info
+                        save_data(app_db)
+                        print_app_panel(app, info, is_new=True)
+                        
                 if removed:
                     for app in removed:
-                        console.print(Panel(f"[bold red]🗑️ Aplicativo Desinstalado:[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
+                        if app in app_db:
+                            del app_db[app]
+                            save_data(app_db)
+                        console.print(Panel(f"[bold red]🗑️ Aplicativo Desinstalado (Removido do JSON):[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
+                        
                 current_apps = new_apps
         except KeyboardInterrupt:
             break
