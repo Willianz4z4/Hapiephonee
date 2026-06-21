@@ -5,7 +5,7 @@ import time
 import re
 import json
 
-print("🚀 Carregando Monitor Silencioso com Banco JSON...")
+print("🚀 Carregando Monitor Silencioso (Modo Local/Discord)...")
 
 try:
     from rich.console import Console
@@ -23,7 +23,6 @@ JSON_FILE = os.path.join(BASE_DIR, "apps_data.json")
 os.makedirs(ICONS_DIR, exist_ok=True)
 
 def load_data():
-    """Carrega a memória do JSON para não escanear tudo de novo"""
     if os.path.exists(JSON_FILE):
         try:
             with open(JSON_FILE, "r", encoding="utf-8") as f:
@@ -33,7 +32,6 @@ def load_data():
     return {}
 
 def save_data(data):
-    """Salva a memória no arquivo JSON"""
     with open(JSON_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
@@ -45,7 +43,7 @@ def get_user_apps():
         return set()
 
 def get_app_info(pkg_name):
-    info = {"name": "Desconhecido", "version": "Desconhecida", "icon_local": None, "icon_url": None}
+    info = {"name": "Desconhecido", "version": "Desconhecida", "icon_local": None}
     try:
         apk_path_cmd = f"su -c 'pm path {pkg_name}'"
         apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
@@ -107,9 +105,8 @@ def get_app_info(pkg_name):
             
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
                 icon_filename = os.path.basename(icon_dest)
+                # 🔥 Fica exclusivamente local! Pronto para o bot usar com discord.File()
                 info["icon_local"] = f"icons/{icon_filename}"
-                # 🔥 A GRANDE SACADA: Usa o seu próprio GitHub como servidor de imagens definitivo!
-                info["icon_url"] = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/icons/{icon_filename}"
 
     except Exception:
         pass
@@ -117,7 +114,7 @@ def get_app_info(pkg_name):
     return info
 
 def print_app_panel(app_package, info, is_new=False):
-    status_title = "📥 Novo App Detectado/Instalado!" if is_new else "🔄 App Atualizado no JSON"
+    status_title = "📥 Novo App Detectado!" if is_new else "🔄 App Atualizado no JSON"
     border_color = "green" if is_new else "blue"
     
     detalhes = f"[bold]{status_title}[/bold]\n\n"
@@ -125,8 +122,8 @@ def print_app_panel(app_package, info, is_new=False):
     detalhes += f"🏷️ [bold]Nome:[/bold] {info['name']}\n"
     detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
     
-    if info["icon_url"]:
-        detalhes += f"🔗 [bold]Link da Capa (GitHub):[/bold] [underline cyan]{info['icon_url']}[/underline cyan]"
+    if info["icon_local"]:
+        detalhes += f"🖼️ [bold]Capa Guardada Em:[/bold] [cyan]{info['icon_local']}[/cyan]"
     else:
         detalhes += f"🖼️ [bold]Capa:[/bold] [red]Nenhuma imagem PNG/WebP suportada[/red]"
         
@@ -134,7 +131,7 @@ def print_app_panel(app_package, info, is_new=False):
 
 def start_monitor():
     os.system("clear" if os.name == "posix" else "cls")
-    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Silencioso[/bold cyan]\n[dim]Banco JSON + Hospedagem no GitHub Próprio[/dim]", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Local[/bold cyan]\n[dim]Banco JSON + Armazenamento Oculto para o Git[/dim]", border_style="cyan"))
     
     console.print("[yellow]📂 Carregando memória do JSON...[/yellow]")
     app_db = load_data()
@@ -142,16 +139,14 @@ def start_monitor():
     current_apps = get_user_apps()
     new_or_updated = 0
     
-    # Faz uma checagem rápida sem poluir a tela
     for app in current_apps:
         if app not in app_db:
-            console.print(f"[dim]⚡ Adicionando app que faltava: {app}...[/dim]")
+            console.print(f"[dim]⚡ Analisando: {app}...[/dim]")
             info = get_app_info(app)
             app_db[app] = info
             new_or_updated += 1
             print_app_panel(app, info, is_new=True)
             
-    # Limpa apps que foram deletados enquanto o monitor estava desligado
     apps_to_remove = [app for app in app_db if app not in current_apps]
     for app in apps_to_remove:
         del app_db[app]
@@ -161,7 +156,7 @@ def start_monitor():
         save_data(app_db)
         console.print(f"[bold green]✅ JSON atualizado e salvo! ({len(app_db)} apps no total)[/bold green]")
     else:
-        console.print(f"[bold green]✅ JSON já estava 100% atualizado com {len(app_db)} apps. Tudo pronto![/bold green]")
+        console.print(f"[bold green]✅ JSON já estava 100% atualizado com {len(app_db)} apps.[/bold green]")
         
     print("\n🌟 Monitor ativo em segundo plano... (CTRL+C para sair)\n")
 
@@ -176,7 +171,7 @@ def start_monitor():
                 
                 if added:
                     for app in added:
-                        console.print(f"\n[bold yellow]⚙️ Nova instalação detectada: {app}...[/bold yellow]")
+                        console.print(f"\n[bold yellow]⚙️ Nova instalação: {app}...[/bold yellow]")
                         info = get_app_info(app)
                         app_db[app] = info
                         save_data(app_db)
@@ -187,7 +182,7 @@ def start_monitor():
                         if app in app_db:
                             del app_db[app]
                             save_data(app_db)
-                        console.print(Panel(f"[bold red]🗑️ Aplicativo Desinstalado (Removido do JSON):[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
+                        console.print(Panel(f"[bold red]🗑️ Aplicativo Removido:[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
                         
                 current_apps = new_apps
         except KeyboardInterrupt:
