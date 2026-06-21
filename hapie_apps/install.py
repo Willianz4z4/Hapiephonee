@@ -13,9 +13,17 @@ except ImportError:
         def print(self, msg, *args, **kwargs): print(msg)
     console = DummyConsole()
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_FILE = os.path.join(BASE_DIR, "install_log.txt")
-REPORT_FILE = os.path.join(BASE_DIR, "install_report.json")
+# ==========================================
+# 📍 ROTAS ATUALIZADAS E ORGANIZADAS
+# ==========================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # ~/Hapiephonee/hapie_apps
+REPO_ROOT = os.path.dirname(BASE_DIR)                 # ~/Hapiephonee
+
+DATA_DIR = os.path.join(REPO_ROOT, "Data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+LOG_FILE = os.path.join(DATA_DIR, "install_log.txt")
+REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 
 def log(msg, color="cyan", write_file=True):
     console.print(f"[{color}]{msg}[/{color}]")
@@ -51,13 +59,10 @@ def install_apk(url, visibility):
         cmd_get_pkg = f"aapt dump badging {tmp_path} | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
         pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
 
-        # ==========================================
-        # 🚨 TRAVA DE SEGURANÇA: VERIFICA SE O AAPT EXISTE
-        # ==========================================
         if "not found" in pkg_name or not pkg_name:
             log("❌ ERRO FATAL: Comando 'aapt' não encontrado no Termux!", "bold red")
             log("Execute no celular: pkg install aapt -y", "bold yellow")
-            os.remove(tmp_path)
+            if os.path.exists(tmp_path): os.remove(tmp_path)
             return None, None, False
 
         if pkg_name:
@@ -140,7 +145,7 @@ if __name__ == "__main__":
                 apk_url, visibility, _, extra = item[0], item[1], item[2], item[3]
                 print("\n")
                 pkg, app_name, success = install_apk(apk_url, visibility)
-                
+
                 if success and pkg:
                     success_list.append(pkg)
                     if extra.get("data_link"):
