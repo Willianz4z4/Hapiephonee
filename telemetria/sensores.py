@@ -3,8 +3,39 @@ import time
 import json
 import os
 
+def obter_nome_processador():
+    """Tenta descobrir o modelo real do processador (chipset) do celular"""
+    nome_cpu = "Desconhecido"
+    try:
+        # Tentativa 1: getprop (Geralmente retorna o codinome da placa)
+        out = subprocess.check_output("getprop ro.board.platform", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        
+        if out and out.lower() != "unknown":
+            nome_cpu = out.upper()
+        else:
+            # Tentativa 2: Vasculhar o arquivo /proc/cpuinfo
+            with open('/proc/cpuinfo', 'r') as f:
+                for linha in f:
+                    if linha.startswith("Hardware") or linha.startswith("model name"):
+                        partes = linha.split(":")
+                        if len(partes) > 1:
+                            nome_cpu = partes[1].strip()
+                            break
+                            
+        # Deixa a leitura mais humana para marcas famosas
+        if "MSM" in nome_cpu or "SDM" in nome_cpu or "SM" in nome_cpu or "LAHAINA" in nome_cpu or "TARO" in nome_cpu or "KALI" in nome_cpu:
+            nome_cpu = f"Snapdragon ({nome_cpu})"
+        elif "MT" in nome_cpu:
+            nome_cpu = f"MediaTek ({nome_cpu})"
+        elif "EXYNOS" in nome_cpu:
+            nome_cpu = f"Exynos ({nome_cpu})"
+            
+    except Exception:
+        pass
+        
+    return nome_cpu
+
 def obter_uso_cpu():
-    """Calcula o uso real do processador lendo os ciclos do sistema em tempo real"""
     try:
         with open('/proc/stat', 'r') as f:
             linha1 = f.readline().split()
@@ -26,8 +57,41 @@ def obter_uso_cpu():
     except Exception:
         return 0.0
 
+def obter_temperatura_cpu():
+    temps_cpu = []
+    base_path = "/sys/class/thermal"
+    
+    if not os.path.exists(base_path):
+        return 0.0
+        
+    try:
+        for zone in os.listdir(base_path):
+            if zone.startswith("thermal_zone"):
+                zone_path = os.path.join(base_path, zone)
+                type_file = os.path.join(zone_path, "type")
+                temp_file = os.path.join(zone_path, "temp")
+                
+                if os.path.exists(type_file) and os.path.exists(temp_file):
+                    with open(type_file, "r") as f:
+                        tipo = f.read().lower().strip()
+                    
+                    if "cpu" in tipo or "tsens" in tipo or "core" in tipo:
+                        with open(temp_file, "r") as f:
+                            temp_bruta = float(f.read().strip())
+                        
+                        if temp_bruta > 1000:
+                            temp_bruta = temp_bruta / 1000.0
+                        elif temp_bruta > 100:
+                            temp_bruta = temp_bruta / 10.0
+                            
+                        if 10 < temp_bruta < 105: 
+                            temps_cpu.append(temp_bruta)
+    except Exception:
+        pass
+
+    return round(sum(temps_cpu) / len(temps_cpu), 1) if temps_cpu else 0.0
+
 def obter_uso_memoria():
-    """Lê a RAM total e livre direto do kernel do Android"""
     try:
         with open('/proc/meminfo', 'r') as f:
             linhas = f.readlines()
@@ -51,12 +115,10 @@ def obter_uso_memoria():
         return 0.0
 
 def obter_armazenamento():
-    """Calcula o espaço total e livre do armazenamento interno (/data) em Gigabytes"""
     dados = {"total_gb": 0.0, "usado_gb": 0.0, "porcentagem": 0.0}
     try:
-        # os.statvfs lê as propriedades do disco diretamente pelo kernel do Linux
         st = os.statvfs('/data')
-        total = (st.f_blocks * st.f_frsize) / (1024 ** 3) # Converte bytes para Gigabytes
+        total = (st.f_blocks * st.f_frsize) / (1024 ** 3)
         livre = (st.f_bavail * st.f_frsize) / (1024 ** 3)
         usado = total - livre
         porcentagem = (usado / total) * 100
@@ -69,14 +131,7 @@ def obter_armazenamento():
     return dados
 
 def obter_dados_bateria():
-    """Extrai os dados vitais da bateria via dumpsys"""
-    dados = {
-        "porcentagem": 0,
-        "saude": "Desconhecida",
-        "temperatura_c": 0.0,
-        "voltagem_v": 0.0
-    }
-    
+    dados = {"porcentagem": 0, "saude": "Desconhecida", "temperatura_c": 0.0, "voltagem_v": 0.0}
     mapa_saude = {
         1: "Desconhecida", 2: "Boa", 3: "Superaquecendo", 
         4: "Morta (Viciada)", 5: "Sobretensão", 6: "Falha Geral", 7: "Muito Fria"
@@ -84,7 +139,6 @@ def obter_dados_bateria():
 
     try:
         out = subprocess.check_output("su -c 'dumpsys battery'", shell=True, stderr=subprocess.DEVNULL).decode('utf-8')
-        
         for linha in out.split('\n'):
             linha = linha.strip()
             if linha.startswith("level:"):
@@ -100,14 +154,11 @@ def obter_dados_bateria():
                 dados["voltagem_v"] = round(mv / 1000.0, 2)
     except Exception:
         pass
-
     return dados
 
 def obter_apps_consumindo_mais():
-    """Lista todos os apps, filtrando e agrupando os processos do sistema"""
     apps_final = {}
     total_system_cpu = 0.0
-    
     system_processes = [
         "system_server", "zygote", "surfaceflinger", "kworker", 
         "servicemanager", "logd", "audioserver", "mediaserver", 
@@ -116,7 +167,6 @@ def obter_apps_consumindo_mais():
 
     try:
         out = subprocess.check_output("su -c 'dumpsys cpuinfo'", shell=True, stderr=subprocess.DEVNULL).decode('utf-8')
-        
         for linha in out.split('\n'):
             linha = linha.strip()
             if '%' in linha and '/' in linha and ':' in linha:
@@ -127,14 +177,12 @@ def obter_apps_consumindo_mais():
                     nome_app = resto.split('/')[1].strip() if '/' in resto else resto
                     
                     is_system = any(proc in nome_app.lower() for proc in system_processes)
-                    
                     if is_system:
                         total_system_cpu += uso_cpu
                     else:
                         if nome_app not in apps_final:
                             apps_final[nome_app] = 0.0
                         apps_final[nome_app] += uso_cpu
-                        
                 except Exception:
                     continue
     except Exception:
@@ -142,16 +190,16 @@ def obter_apps_consumindo_mais():
 
     lista_final = [{"nome": k, "uso_cpu_percent": round(v, 1)} for k, v in apps_final.items() if v > 0.1]
     lista_final.append({"nome": "SYSTEM (Agrupado)", "uso_cpu_percent": round(total_system_cpu, 1)})
-    
     return sorted(lista_final, key=lambda x: x['uso_cpu_percent'], reverse=True)
 
 def coletar_telemetria_completa():
-    """Gera o dicionário mestre com hardware, armazenamento e consumo de apps"""
     bateria = obter_dados_bateria()
     armazenamento = obter_armazenamento()
     
     relatorio = {
+        "cpu_name": obter_nome_processador(), # 🔥 NOVO DADO CAPTURADO
         "cpu_percent": obter_uso_cpu(),
+        "cpu_temp_c": obter_temperatura_cpu(),
         "ram_percent": obter_uso_memoria(),
         "storage_total_gb": armazenamento["total_gb"],
         "storage_used_gb": armazenamento["usado_gb"],
@@ -179,18 +227,22 @@ if __name__ == "__main__":
         console = Console()
 
     os.system("clear" if os.name == "posix" else "cls")
-    console.print("[bold yellow]⏳ Lendo todos os sensores e partições de memória...[/bold yellow]\n")
+    console.print("[bold yellow]⏳ Identificando hardware e lendo sensores...[/bold yellow]\n")
     
     dados = coletar_telemetria_completa()
 
+    cor_temp_cpu = "green" if dados['cpu_temp_c'] < 55 else ("yellow" if dados['cpu_temp_c'] < 75 else "red")
+
     hw_text = (
+        f"⚙️ [bold magenta]Modelo do Chipset:[/bold magenta] {dados['cpu_name']}\n" # 🚀 NOME DO PROCESSADOR AQUI
         f"💻 [bold cyan]CPU Total Em Uso:[/bold cyan] {dados['cpu_percent']}%\n"
+        f"🔥 [{cor_temp_cpu}][bold]Temperatura do CPU:[/bold] {dados['cpu_temp_c']}°C[/{cor_temp_cpu}]\n"
         f"🧠 [bold cyan]Memória RAM Em Uso:[/bold cyan] {dados['ram_percent']}%\n"
         f"💾 [bold cyan]Espaço Interno Total:[/bold cyan] {dados['storage_total_gb']} GB [dim]({dados['storage_used_gb']} GB Usados | {dados['storage_percent']}%%)[/dim]\n"
         f"🔋 [bold green]Carga da Bateria:[/bold green] {dados['battery_percent']}% "
-        f"[dim](Saúde: {dados['battery_health']} | {dados['battery_temp_c']}°C | {dados['battery_voltage_v']}V)[/dim]"
+        f"[dim](Saúde: {dados['battery_health']} | Bateria: {dados['battery_temp_c']}°C | {dados['battery_voltage_v']}V)[/dim]"
     )
-    console.print(Panel(hw_text, title="⚙️ Diagnóstico Completo do Dispositivo", border_style="cyan", expand=False))
+    console.print(Panel(hw_text, title="⚙️ Diagnóstico Térmico e de Hardware", border_style="cyan", expand=False))
 
     table = Table(title="📊 Distribuição de CPU por App", header_style="bold magenta")
     table.add_column("App / Processo", style="cyan", no_wrap=True)
