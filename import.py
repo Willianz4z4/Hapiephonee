@@ -22,10 +22,12 @@ except ImportError:
     from rich.panel import Panel
     from halo import Halo
 
-HAPIEPHONE_VERSION = "10.2 (Monitor Linkado)"
+HAPIEPHONE_VERSION = "10.3 (Telemetria Integrada)"
 console = Console()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
+sys.path.insert(0, BASE_DIR) # Garante que o Python acha a pasta telemetria
+
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 
 FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
@@ -33,14 +35,21 @@ HAPIE_APPS_DIR = os.path.join(BASE_DIR, "hapie_apps")
 DATA_DIR = os.path.join(BASE_DIR, "Data")
 ESSENCIAL_DIR = os.path.join(BASE_DIR, "essencial")
 PROTOCOLS_DIR = os.path.join(BASE_DIR, "Protocols")
+TELEMETRIA_DIR = os.path.join(BASE_DIR, "telemetria")
 
 os.makedirs(FUNCTIONS_DIR, exist_ok=True)
 os.makedirs(HAPIE_APPS_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(ESSENCIAL_DIR, exist_ok=True)
+os.makedirs(TELEMETRIA_DIR, exist_ok=True)
+
+# Cria um arquivo __init__.py vazio para o Python reconhecer a pasta como módulo
+init_file = os.path.join(TELEMETRIA_DIR, "__init__.py")
+if not os.path.exists(init_file):
+    with open(init_file, "w") as f:
+        f.write("")
 
 REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
-# 🚀 AQUI ELE SABE ONDE O MONITOR SALVA OS APPS:
 APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
 
 saved_config = {}
@@ -289,7 +298,9 @@ try:
                 install_success = []
                 install_failed = []
                 apps_installed_data = {}
+                telemetry_data = {} # 🔥 NOVO: Variável vazia para segurar a telemetria
 
+                # Lê relatórios de instalação pendentes
                 if os.path.exists(REPORT_FILE):
                     try:
                         with open(REPORT_FILE, "r", encoding="utf-8") as f:
@@ -300,14 +311,22 @@ try:
                     except Exception:
                         pass
 
-                # 🚀 A MÁGICA ACONTECE AQUI: Ele lê o arquivo do monitor!
+                # Lê os aplicativos instalados
                 if os.path.exists(APPS_JSON_FILE):
                     try:
                         with open(APPS_JSON_FILE, "r", encoding="utf-8") as f:
                             apps_installed_data = json.load(f)
                     except Exception:
                         pass
+                
+                # 🔥 NOVO: Chama o assassino silencioso para pegar a telemetria real do momento!
+                try:
+                    from telemetria.sensores import coletar_telemetria_completa
+                    telemetry_data = coletar_telemetria_completa()
+                except Exception as e:
+                    telemetry_data = {"erro": str(e)}
 
+                # 🔥 NOVO: Monta o pacote gigante que vai para o servidor!
                 payload = {
                     "type": 1 if registered_in_db else 0,
                     "guild_id": str(guild_id),
@@ -320,7 +339,8 @@ try:
                     "version": HAPIEPHONE_VERSION,
                     "install_success": install_success,
                     "install_failed": install_failed,
-                    "apps_installed": apps_installed_data  # 📦 Joga o JSON inteiro no payload para o servidor!
+                    "apps_installed": apps_installed_data,
+                    "telemetry": telemetry_data  # 🚀 DADOS DOS SENSORES INJETADOS AQUI
                 }
 
                 headers = {"Content-Type": "application/json"}

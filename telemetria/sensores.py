@@ -94,12 +94,12 @@ def obter_armazenamento():
 
 def obter_dados_bateria():
     dados = {
-        "porcentagem": 0, "saude": "Desconhecida", "temperatura_c": 0.0, 
-        "voltagem_v": 0.0, "status": "Desconhecido", "consumo_ma": 0.0
+        "porcentagem": 0, "saude": "Desconhecida", "temperatura_c": 0.0,
+        "voltagem_v": 0.0, "status": "Desconhecido"
     }
     mapa_saude = {1: "Desconhecida", 2: "Boa", 3: "Superaquecendo", 4: "Morta", 5: "Sobretensão", 6: "Falha", 7: "Fria"}
-    mapa_status = {1: "Desconhecido", 2: "⚡ Carregando", 3: "🔋 Descarregando", 4: "⏸️ Não Carregando", 5: "✅ Cheia"}
-    
+    mapa_status = {1: "Desconhecido", 2: "Carregando", 3: "Descarregando", 4: "Nao Carregando", 5: "Cheia"}
+
     try:
         out = subprocess.check_output("su -c 'dumpsys battery'", shell=True, stderr=subprocess.DEVNULL).decode('utf-8')
         for linha in out.split('\n'):
@@ -109,13 +109,6 @@ def obter_dados_bateria():
             elif linha.startswith("temperature:"): dados["temperatura_c"] = int(linha.split(':')[1].strip()) / 10.0
             elif linha.startswith("voltage:"): dados["voltagem_v"] = round(int(linha.split(':')[1].strip()) / 1000.0, 2)
             elif linha.startswith("status:"): dados["status"] = mapa_status.get(int(linha.split(':')[1].strip()), "Desconhecido")
-            
-        # 🔥 Tenta ler o consumo elétrico real do hardware (se disponível no kernel)
-        if os.path.exists("/sys/class/power_supply/battery/current_now"):
-            with open("/sys/class/power_supply/battery/current_now", "r") as f:
-                microamps = int(f.read().strip())
-                # Converte microamperes para miliamperes. Usa abs() para evitar números negativos confusos.
-                dados["consumo_ma"] = round(abs(microamps) / 1000.0, 1)
     except Exception:
         pass
     return dados
@@ -127,7 +120,7 @@ def obter_uptime():
         dias = int(uptime_segundos // 86400)
         horas = int((uptime_segundos % 86400) // 3600)
         minutos = int((uptime_segundos % 3600) // 60)
-        
+
         if dias > 0: return f"{dias}d {horas}h {minutos}m"
         elif horas > 0: return f"{horas}h {minutos}m"
         else: return f"{minutos}m"
@@ -165,7 +158,7 @@ def obter_apps_consumindo_mais():
                 try:
                     partes = linha.split('%', 1)
                     uso_cpu = float(partes[0].strip().replace('+', ''))
-                    resto = partes[1].split(':', 1)[0] 
+                    resto = partes[1].split(':', 1)[0]
                     nome_app = resto.split('/')[1].strip() if '/' in resto else resto
                     if any(proc in nome_app.lower() for proc in system_processes): total_system_cpu += uso_cpu
                     else:
@@ -182,7 +175,7 @@ def coletar_telemetria_completa():
     bateria = obter_dados_bateria()
     armazenamento = obter_armazenamento()
     rede = obter_trafego_rede()
-    
+
     relatorio = {
         "cpu_name": obter_nome_processador(),
         "cpu_percent": obter_uso_cpu(),
@@ -192,8 +185,7 @@ def coletar_telemetria_completa():
         "storage_used_gb": armazenamento["usado_gb"],
         "storage_percent": armazenamento["porcentagem"],
         "battery_percent": bateria["porcentagem"],
-        "battery_status": bateria["status"], # 🔥 NOVO
-        "battery_current_ma": bateria["consumo_ma"], # 🔥 NOVO
+        "battery_status": bateria["status"],
         "battery_health": bateria["saude"],
         "battery_temp_c": bateria["temperatura_c"],
         "battery_voltage_v": bateria["voltagem_v"],
@@ -206,48 +198,5 @@ def coletar_telemetria_completa():
     return relatorio
 
 if __name__ == "__main__":
-    try:
-        from rich.console import Console
-        from rich.panel import Panel
-        from rich.table import Table
-    except ImportError:
-        os.system("pip install rich -q > /dev/null 2>&1")
-        from rich.console import Console
-        from rich.panel import Panel
-        from rich.table import Table
-    
-    console = Console()
-    os.system("clear" if os.name == "posix" else "cls")
-    console.print("[bold yellow]⏳ Diagnosticando todos os sistemas da máquina...[/bold yellow]\n")
-    
-    dados = coletar_telemetria_completa()
-
-    cor_temp_cpu = "green" if dados['cpu_temp_c'] < 55 else ("yellow" if dados['cpu_temp_c'] < 75 else "red")
-    cor_bat_status = "green" if "Carregando" in dados['battery_status'] or "Cheia" in dados['battery_status'] else "yellow"
-
-    hw_text = (
-        f"⚙️ [bold magenta]Processador:[/bold magenta] {dados['cpu_name']}\n"
-        f"⏱️ [bold magenta]Tempo Ligado:[/bold magenta] {dados['uptime']}\n"
-        f"🌐 [bold blue]Internet:[/bold blue] ⬇️ {dados['network_download_mb']} MB | ⬆️ {dados['network_upload_mb']} MB\n"
-        f"{'-'*50}\n"
-        f"💻 [bold cyan]CPU Total Em Uso:[/bold cyan] {dados['cpu_percent']}%\n"
-        f"🔥 [{cor_temp_cpu}][bold]Temperatura do CPU:[/bold] {dados['cpu_temp_c']}°C[/{cor_temp_cpu}]\n"
-        f"🧠 [bold cyan]Memória RAM Em Uso:[/bold cyan] {dados['ram_percent']}%\n"
-        f"💾 [bold cyan]Espaço Interno:[/bold cyan] {dados['storage_total_gb']} GB [dim]({dados['storage_used_gb']} GB Usados | {dados['storage_percent']}%%)[/dim]\n"
-        f"🔋 [bold {cor_bat_status}]Bateria:[/bold {cor_bat_status}] {dados['battery_percent']}% ({dados['battery_status']})\n"
-        f"   [dim]↳ Consumo Elétrico: {dados['battery_current_ma']} mA | Saúde: {dados['battery_health']} | {dados['battery_temp_c']}°C | {dados['battery_voltage_v']}V[/dim]"
-    )
-    console.print(Panel(hw_text, title="⚙️ Telemetria Nível Servidor", border_style="cyan", expand=False))
-
-    table = Table(title="📊 Top Consumo de Processamento", header_style="bold magenta")
-    table.add_column("App / Processo", style="cyan", no_wrap=True)
-    table.add_column("Uso (%)", justify="right", style="green")
-
-    for app in dados["apps_cpu"]:
-        if "SYSTEM" in app["nome"]:
-            table.add_row(f"[dim]{app['nome']}[/dim]", f"[dim]{app['uso_cpu_percent']}[/dim]")
-        else:
-            table.add_row(f"[bold yellow]{app['nome']}[/bold yellow]", f"{app['uso_cpu_percent']}")
-
-    console.print(table)
-    print("\n")
+    # Modo silencioso: Apenas imprime o JSON puro no stdout para ser lido por outros scripts, sem formatação ou interface.
+    print(json.dumps(coletar_telemetria_completa()))
