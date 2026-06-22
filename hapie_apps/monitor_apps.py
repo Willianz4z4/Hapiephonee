@@ -17,14 +17,12 @@ except ImportError:
     from rich.panel import Panel
     console = Console()
 
-# Configuração inteligente de caminhos relativos
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(BASE_DIR)
 
 ICONS_DIR = os.path.join(REPO_ROOT, "icons")
 JSON_FILE = os.path.join(REPO_ROOT, "Data", "apps_install.json")
 
-# Garante que as pastas existam
 os.makedirs(ICONS_DIR, exist_ok=True)
 os.makedirs(os.path.dirname(JSON_FILE), exist_ok=True)
 
@@ -49,17 +47,18 @@ def get_user_apps():
         return set()
 
 # ========================================================
-# 🔥 UPLOADER: Envia o ícone físico para a nuvem
+# 🔥 NOVO UPLOADER: FreeImage.host (Estável e compatível com Discord)
 # ========================================================
-def upload_to_catbox(file_path):
+def upload_to_nuvem(file_path):
     try:
-        # Comando curl enviando o arquivo para a API do Catbox
-        upload_cmd = f"curl -s -F 'reqtype=fileupload' -F 'fileToUpload=@{file_path}' https://catbox.moe/user/api.php"
-        url = subprocess.check_output(upload_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+        # Usamos a chave pública oficial da API deles com retorno em JSON
+        upload_cmd = f'curl -s -F "key=6d207e02198a847aa98d0a2a901485a5" -F "action=upload" -F "source=@{file_path}" -F "format=json" https://freeimage.host/api/1/upload'
+        out = subprocess.check_output(upload_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
         
-        # Verifica se o retorno é uma URL válida
-        if url.startswith("http"):
-            return url
+        # Faz o parse da resposta para pegar o link direto da imagem
+        data = json.loads(out)
+        if "image" in data and "url" in data["image"]:
+            return data["image"]["url"]
     except Exception:
         pass
     return None
@@ -125,15 +124,13 @@ def get_app_info(pkg_name):
             unzip_p_cmd = f"unzip -p \"{apk_path}\" \"{icon_internal_path}\" > \"{icon_dest}\""
             os.system(unzip_p_cmd)
 
-            # Se o ficheiro físico for gerado com sucesso, envia para a nuvem!
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
-                console.print(f"[dim]☁️ Fazendo upload do ícone para a nuvem...[/dim]")
-                cloud_url = upload_to_catbox(icon_dest)
+                console.print(f"[dim]☁️ Fazendo upload do ícone para a nuvem (FreeImage)...[/dim]")
+                cloud_url = upload_to_nuvem(icon_dest)
                 
                 if cloud_url:
                     info["icon_local"] = cloud_url
                 else:
-                    # Se falhar o upload (falta de net), guarda local.
                     icon_filename = os.path.basename(icon_dest)
                     info["icon_local"] = f"icons/{icon_filename}"
 
@@ -152,8 +149,8 @@ def print_app_panel(app_package, info, is_new=False):
     detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
 
     if info["icon_local"]:
-        if info["icon_local"].startswith("http"):
-            detalhes += f"🖼️ [bold]Nuvem:[/bold] [cyan]{info['icon_local']}[/cyan]"
+        if str(info["icon_local"]).startswith("http"):
+            detalhes += f"🔗 [bold]URL Nuvem:[/bold] [cyan]{info['icon_local']}[/cyan]"
         else:
             detalhes += f"🖼️ [bold]Local:[/bold] [cyan]{info['icon_local']}[/cyan]"
     else:
@@ -171,7 +168,6 @@ def start_monitor():
     current_apps = get_user_apps()
     new_or_updated = 0
 
-    # Adicionado um verificador para atualizar os apps velhos que só tem caminho local
     for app in current_apps:
         needs_update = False
         if app not in app_db:
