@@ -48,10 +48,7 @@ class PlayStoreSmartAI:
         return None
 
     def get_smart_clickable_nodes(self, xml_content):
-        """🧠 FILTRO POR PADRÕES: Descarta o lixo analisando a 'alma' do código."""
         clickables = []
-        
-        # Palavras-chave que indicam que o botão é uma propaganda, card de app ou lixo visual
         junk_ids = ["card", "cluster", "promo", "banner", "merch", "ad_label", "bucket", "suggestion"]
         junk_texts = ["app:", "jogo:", "game:", "classificação", "star rating", "download", "instalar", "install", "mb", "gb"]
 
@@ -64,19 +61,16 @@ class PlayStoreSmartAI:
                     res_id = node.attrib.get('resource-id', '').lower()
                     bounds = node.attrib.get('bounds', '')
                     
-                    # 1. Ignora os invisíveis/vazios
                     if not text and not desc and not res_id:
                         continue 
                     
                     is_junk = False
                     
-                    # 2. Ignora se o ID de sistema entrega que é lixo da loja (ex: play_card)
                     for junk in junk_ids:
                         if junk in res_id:
                             is_junk = True
                             break
                             
-                    # 3. Ignora se o texto entregar que é um aplicativo pra baixar
                     if not is_junk:
                         for junk in junk_texts:
                             if junk in text or junk in desc:
@@ -84,7 +78,7 @@ class PlayStoreSmartAI:
                                 break
                     
                     if is_junk:
-                        continue # Pula esse botão e nem mostra pra IA
+                        continue 
 
                     coords = self.parse_bounds(bounds)
                     if coords:
@@ -137,7 +131,7 @@ class PlayStoreSmartAI:
         return max(self.q_table[state_hash].values())
 
     def IA_learning(self, episodes=15, max_steps_per_episode=10):
-        print(f"🧠 REINFORCEMENT LEARNING (Com Scanner de Padrões de Lixo)")
+        print(f"🧠 REINFORCEMENT LEARNING (Salvamento Botão por Botão em Tempo Real)")
         
         ultimate_target = ["claim", "reivindicar", "resgatar"]
         path_hints = ["conta", "account", "perfil", "profile", "play points", "pontos do play", "perks", "benefícios", "vantagens"]
@@ -163,7 +157,6 @@ class PlayStoreSmartAI:
                     current_state = self.get_state_hash(xml)
                     visited_states.add(current_state)
                     
-                    # 🔥 O Filtro faz o trabalho sujo aqui!
                     clickables = self.get_smart_clickable_nodes(xml)
                     
                     if not clickables:
@@ -189,7 +182,7 @@ class PlayStoreSmartAI:
                         self.q_table[current_state][action_key] = old_q + self.alpha * (reward - old_q)
                         
                         self.click(alvo[0], alvo[1])
-                        self.save_q_table()
+                        self.save_q_table() # 🔥 SALVA IMEDIATAMENTE O SUCESSO
                         break
 
                     if random.uniform(0, 1) < self.epsilon:
@@ -215,8 +208,15 @@ class PlayStoreSmartAI:
                     new_state = self.get_state_hash(new_xml)
                     
                     reward = -2.0 
+                    
+                    is_outside_app = "com.android.vending" not in new_xml
 
-                    if new_state == current_state:
+                    if is_outside_app:
+                        print("🚨 FATAL: O clique fechou a Play Store ou abriu outro app! (-500 pts)")
+                        reward = -500.0
+                        self.root_command("input keyevent 4") 
+                        time.sleep(1.5)
+                    elif new_state == current_state:
                         print("📉 Punição: Clicou em um botão inútil (-40 pts)")
                         reward = -40.0
                     elif new_state in visited_states:
@@ -236,8 +236,8 @@ class PlayStoreSmartAI:
                     
                     new_q_value = old_q_value + self.alpha * (reward + self.gamma * future_optimal_value - old_q_value)
                     self.q_table[current_state][action_key] = new_q_value
-
-                self.save_q_table()
+                    
+                    self.save_q_table() # 🔥 SALVA IMEDIATAMENTE O APRENDIZADO DESTE BOTÃO ESPECÍFICO
                 
                 if self.epsilon > self.min_epsilon:
                     self.epsilon -= 0.04
