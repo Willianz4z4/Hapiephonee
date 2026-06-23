@@ -12,26 +12,29 @@ class PlayStoreRootAI:
         self.memory = self.load_memory()
 
     def root_command(self, cmd):
+        """Envia comandos Root. Agora otimizado para aceitar múltiplos comandos."""
         full_cmd = f"su -c '{cmd}'"
         result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
         return result.stdout.strip()
 
     def toggle_visuals(self, enable=True):
-        """Ativa/Desativa a demarcação visual de cliques nativa do Android."""
+        """Ativa/Desativa a demarcação visual (Otimizado para forçar atualização)."""
         val = "1" if enable else "0"
-        self.root_command(f"settings put system show_touches {val}")
-        self.root_command(f"settings put system pointer_location {val}")
+        # Agrupa os comandos em uma única chamada Root para aplicar mais rápido
+        cmd = f"settings put system show_touches {val} ; settings put system pointer_location {val}"
+        self.root_command(cmd)
         estado = "ATIVADO" if enable else "DESATIVADO"
         print(f"👁️ Rastro visual de toques {estado}.")
 
     def restart_playstore(self):
         print("\n🔄 Reiniciando a Play Store (Limpando a tela)...")
-        self.root_command("am force-stop com.android.vending")
-        time.sleep(1)
-        self.root_command("monkey -p com.android.vending -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1")
-        time.sleep(4)
+        # Agrupa o fechamento e a abertura no mesmo comando Root
+        cmd = "am force-stop com.android.vending ; sleep 1 ; monkey -p com.android.vending -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1"
+        self.root_command(cmd)
+        time.sleep(3) # Tempo para a loja carregar a interface
 
     def get_screen_xml(self):
+        # Lê a tela e já cospe o resultado na mesma linha de comando
         cmd = "uiautomator dump /data/local/tmp/dump.xml > /dev/null && cat /data/local/tmp/dump.xml"
         xml_content = self.root_command(cmd)
         if not xml_content.startswith("<?xml"):
@@ -74,10 +77,23 @@ class PlayStoreRootAI:
             pass
         return clickables
 
-    def click(self, x, y, delay=0.2):
-        print(f"👉 Clicando: ({x}, {y})")
-        self.root_command(f"input tap {x} {y} &") 
-        time.sleep(delay)
+    def click_batch(self, coords_list, delay=0.1):
+        """💥 O SEGREDO DA VELOCIDADE: Envia múltiplos cliques numa única requisição Root!"""
+        if not coords_list: return
+        
+        cmds = []
+        for x, y in coords_list:
+            cmds.append(f"input tap {x} {y}")
+            cmds.append(f"sleep {delay}") # Usa o sleep do próprio Android, não do Python
+            
+        full_cmd = " ; ".join(cmds)
+        
+        if len(coords_list) > 1:
+            print(f"⚡ Metralhadora de Cliques: {len(coords_list)} botões acionados!")
+        else:
+            print(f"👉 Clicando: {coords_list[0]}")
+            
+        self.root_command(full_cmd)
 
     def load_memory(self):
         if os.path.exists(self.routes_history_file):
@@ -90,7 +106,7 @@ class PlayStoreRootAI:
             json.dump(self.memory, f, indent=4)
 
     def IA_learning(self, time_limit_seconds=30, max_attempts=15, required_successes=3):
-        print(f"🧠 IA LEARNING INICIADO")
+        print(f"🧠 IA LEARNING INICIADO (Modo Turbo ⚡)")
         print(f"Meta: Achar {required_successes} rotas válidas.")
         print(f"Limites: {max_attempts} tentativas | {time_limit_seconds}s por tentativa\n")
         
@@ -98,8 +114,6 @@ class PlayStoreRootAI:
         path_hints = ["perfil", "conta", "profile", "account", "play points", "pontos do play", "perks", "benefícios", "vantagens"]
 
         success_count = 0
-
-        # LIGA O RASTRO VISUAL
         self.toggle_visuals(True)
 
         try:
@@ -111,8 +125,6 @@ class PlayStoreRootAI:
                 self.restart_playstore()
                 start_time = time.time()
                 current_route = []
-                
-                # Memória de Curto Prazo para NÃO repetir cliques errados
                 visited_nodes = set()
 
                 while (time.time() - start_time) < time_limit_seconds:
@@ -122,19 +134,18 @@ class PlayStoreRootAI:
                     
                     xml = self.get_screen_xml()
                     if not xml:
-                        time.sleep(1)
+                        time.sleep(0.5)
                         continue
 
                     # 1. ACHOU O ALVO FINAL!
                     coords_alvo = self.find_node_by_text(xml, ultimate_target)
                     if coords_alvo:
                         print(f"\n🎯 ALVO FINAL ENCONTRADO! Coordenadas: {coords_alvo}")
-                        self.click(coords_alvo[0], coords_alvo[1], delay=1.0)
+                        self.click_batch([coords_alvo], delay=0.5)
                         current_route.append({"action": "click_target", "coords": coords_alvo})
                         
                         time_taken = int(time.time() - start_time)
                         steps_taken = len(current_route)
-                        
                         pontuacao = 10000 - (steps_taken * 50) - (time_taken * 10)
                         
                         route_data = {
@@ -161,32 +172,30 @@ class PlayStoreRootAI:
                     coords_hint = self.find_node_by_text(xml, path_hints)
                     if coords_hint:
                         print(f"\n💡 Pista encontrada! Clicando...")
-                        self.click(coords_hint[0], coords_hint[1], delay=1.0)
+                        self.click_batch([coords_hint], delay=0.5)
                         current_route.append({"action": "click_hint", "coords": coords_hint})
-                        visited_nodes.add(coords_hint) # Anota pra não clicar de novo se voltar aqui
+                        visited_nodes.add(coords_hint)
                         continue
 
-                    # 3. Exploração Aleatória Inteligente (Evita repetidos)
+                    # 3. Exploração Aleatória (Modo TURBO em Lote)
                     print(f"\n👁️ Explorando rápido...")
                     all_clickables = self.get_all_clickable_nodes(xml)
-                    
-                    # FILTRA OS BOTÕES QUE JÁ FORAM CLICADOS NESTA TENTATIVA
                     novos_alvos = [pt for pt in all_clickables if pt not in visited_nodes]
                     
                     if novos_alvos:
-                        quantidade_cliques = min(3, len(novos_alvos))
+                        quantidade_cliques = min(4, len(novos_alvos)) # Clica em até 4 lugares num único comando
                         alvos_rapidos = random.sample(novos_alvos, quantidade_cliques)
                         
+                        self.click_batch(alvos_rapidos, delay=0.1)
+                        
                         for random_coords in alvos_rapidos:
-                            self.click(random_coords[0], random_coords[1], delay=0.1)
                             current_route.append({"action": "random_click", "coords": random_coords})
-                            visited_nodes.add(random_coords) # Memoriza o clique!
+                            visited_nodes.add(random_coords)
                     else:
                         print("⬇️ Tela esgotada. Rolando e limpando memória...")
-                        self.root_command("input swipe 500 1500 500 500 &")
+                        self.root_command("input swipe 500 1500 500 500")
                         current_route.append({"action": "swipe_down"})
-                        visited_nodes.clear() # Limpa a memória porque a tela mudou
-                        time.sleep(0.5)
+                        visited_nodes.clear()
 
                 if success_count >= required_successes:
                     print(f"\n✅ META ATINGIDA! A IA aprendeu {required_successes} rotas com sucesso.")
@@ -203,7 +212,6 @@ class PlayStoreRootAI:
                 print("❌ A IA não conseguiu encontrar nenhuma rota válida.")
                 
         finally:
-            # GARANTE QUE VAI DESLIGAR O RASTRO VISUAL MESMO SE O SCRIPT DER ERRO
             self.toggle_visuals(False)
 
 if __name__ == "__main__":
