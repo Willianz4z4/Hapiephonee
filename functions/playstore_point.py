@@ -7,27 +7,27 @@ import xml.etree.ElementTree as ET
 import re
 
 class PlayStoreRootAI:
-    def __init__(self, device_id=""):
-        self.device_cmd_prefix = f"-s {device_id} " if device_id else ""
+    def __init__(self):
         self.routes_history_file = "playstore_routes.json"
         self.memory = self.load_memory()
 
-    def adb_root_command(self, cmd):
-        full_cmd = f"adb {self.device_cmd_prefix}shell \"su -c '{cmd}'\""
+    def root_command(self, cmd):
+        # 🔥 REMOVIDO O ADB! Agora roda direto como Root no Termux
+        full_cmd = f"su -c '{cmd}'"
         result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
         return result.stdout.strip()
 
     def restart_playstore(self):
         """Mata o aplicativo e abre novamente do zero."""
         print("\n🔄 Reiniciando a Play Store (Limpando a tela)...")
-        self.adb_root_command("am force-stop com.android.vending")
+        self.root_command("am force-stop com.android.vending")
         time.sleep(1)
-        self.adb_root_command("monkey -p com.android.vending -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1")
+        self.root_command("monkey -p com.android.vending -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1")
         time.sleep(4) # Aguarda carregar a página inicial
 
     def get_screen_xml(self):
         cmd = "uiautomator dump /data/local/tmp/dump.xml > /dev/null && cat /data/local/tmp/dump.xml"
-        xml_content = self.adb_root_command(cmd)
+        xml_content = self.root_command(cmd)
         if not xml_content.startswith("<?xml"):
             return None
         return xml_content
@@ -72,7 +72,7 @@ class PlayStoreRootAI:
     def click(self, x, y, delay=0.2):
         """Clica na coordenada e espera o mínimo possível (Background)."""
         print(f"👉 Clicando: ({x}, {y})")
-        self.adb_root_command(f"input tap {x} {y} &") 
+        self.root_command(f"input tap {x} {y} &") 
         time.sleep(delay)
 
     def load_memory(self):
@@ -86,10 +86,6 @@ class PlayStoreRootAI:
             json.dump(self.memory, f, indent=4)
 
     def IA_learning(self, time_limit_seconds=30, max_attempts=15, required_successes=3):
-        """
-        Modo de Aprendizado: Executa várias vezes até achar 'required_successes' rotas.
-        Usa o modo Rapid Fire para tentar várias opções rápido se ficar perdida.
-        """
         print(f"🧠 IA LEARNING INICIADO")
         print(f"Meta: Achar {required_successes} rotas válidas.")
         print(f"Limites: {max_attempts} tentativas | {time_limit_seconds}s por tentativa\n")
@@ -122,13 +118,12 @@ class PlayStoreRootAI:
                 coords_alvo = self.find_node_by_text(xml, ultimate_target)
                 if coords_alvo:
                     print(f"\n🎯 ALVO FINAL ENCONTRADO! Coordenadas: {coords_alvo}")
-                    self.click(coords_alvo[0], coords_alvo[1], delay=1.0) # Clique final mais lento
+                    self.click(coords_alvo[0], coords_alvo[1], delay=1.0)
                     current_route.append({"action": "click_target", "coords": coords_alvo})
                     
                     time_taken = int(time.time() - start_time)
                     steps_taken = len(current_route)
                     
-                    # CÁLCULO DA PONTUAÇÃO (Mais alto = Melhor)
                     pontuacao = 10000 - (steps_taken * 50) - (time_taken * 10)
                     
                     route_data = {
@@ -140,7 +135,7 @@ class PlayStoreRootAI:
                     }
                     
                     self.memory["all_successful_routes"].append(route_data)
-                    print(f"🎉 SUCESSO! Rota finalizada com Pontuação: {pontuacao} (Passos: {steps_taken}, Tempo: {time_taken}s)")
+                    print(f"🎉 SUCESSO! Rota finalizada com Pontuação: {pontuacao}")
                     
                     best_saved = self.memory.get("best_route", {})
                     if not best_saved or pontuacao > best_saved.get("score", 0):
@@ -155,7 +150,7 @@ class PlayStoreRootAI:
                 coords_hint = self.find_node_by_text(xml, path_hints)
                 if coords_hint:
                     print(f"\n💡 Pista encontrada! Clicando...")
-                    self.click(coords_hint[0], coords_hint[1], delay=1.0) # Pista clica e espera
+                    self.click(coords_hint[0], coords_hint[1], delay=1.0)
                     current_route.append({"action": "click_hint", "coords": coords_hint})
                     continue
 
@@ -168,10 +163,10 @@ class PlayStoreRootAI:
                     alvos_rapidos = random.sample(clickables, quantidade_cliques)
                     
                     for random_coords in alvos_rapidos:
-                        self.click(random_coords[0], random_coords[1], delay=0.1) # Delay quase zero
+                        self.click(random_coords[0], random_coords[1], delay=0.1)
                         current_route.append({"action": "random_click", "coords": random_coords})
                 else:
-                    self.adb_root_command("input swipe 500 1500 500 500 &")
+                    self.root_command("input swipe 500 1500 500 500 &")
                     current_route.append({"action": "swipe_down"})
                     time.sleep(0.5)
 
