@@ -49,12 +49,9 @@ class PlayStoreSmartAI:
 
     def get_smart_clickable_nodes(self, xml_content):
         clickables = []
-        
-        # 🔥 Adicionado "overflow", "opções" e "options" para ignorar menus de 3 pontinhos
         junk_ids = ["card", "cluster", "promo", "banner", "merch", "ad_label", "bucket", "suggestion", "overflow"]
         junk_texts = ["app:", "jogo:", "game:", "classificação", "star rating", "download", "instalar", "install", "mb", "gb", "opções", "options", "more options", "mais opções"]
 
-        # 🧠 MEMÓRIA DE ASSINATURA (Evita clicar em itens repetidos de uma lista)
         seen_signatures = set()
 
         try:
@@ -85,13 +82,10 @@ class PlayStoreSmartAI:
                     if is_junk:
                         continue 
 
-                    # 🔥 DEDUPLICAÇÃO DE BOTÕES IDÊNTICOS
-                    # Se houver 5 botões de 3 pontinhos na tela, eles terão a mesma assinatura.
-                    # A IA vai salvar só o primeiro e ignorar o resto!
                     signature = f"{res_id}|{text}|{desc}"
                     if signature != "||":
                         if signature in seen_signatures:
-                            continue # Já vi esse tipo de botão na tela, ignorando o clone.
+                            continue 
                         seen_signatures.add(signature)
 
                     coords = self.parse_bounds(bounds)
@@ -145,7 +139,7 @@ class PlayStoreSmartAI:
         return max(self.q_table[state_hash].values())
 
     def IA_learning(self, episodes=15, max_steps_per_episode=10):
-        print(f"🧠 REINFORCEMENT LEARNING (Deduplicação de Assinaturas Ativada)")
+        print(f"🧠 REINFORCEMENT LEARNING (Game Over para Fugas ativado)")
         
         ultimate_target = ["claim", "reivindicar", "resgatar"]
         path_hints = ["conta", "account", "perfil", "profile", "play points", "pontos do play", "perks", "benefícios", "vantagens"]
@@ -221,16 +215,24 @@ class PlayStoreSmartAI:
                     if not new_xml: new_xml = xml
                     new_state = self.get_state_hash(new_xml)
                     
-                    reward = -2.0 
-                    
                     is_outside_app = "com.android.vending" not in new_xml
 
+                    # 🔥 LÓGICA DE GAME OVER (MORTE INSTANTÂNEA)
                     if is_outside_app:
-                        print("🚨 FATAL: Saiu da Play Store! (-500 pts)")
+                        print("🚨 FATAL (GAME OVER): Saiu da Play Store! (-500 pts)")
                         reward = -500.0
-                        self.root_command("input keyevent 4") 
-                        time.sleep(1.5)
-                    elif new_state == current_state:
+                        # Salva a punição imediatamente
+                        old_q = self.q_table[current_state].get(action_key, 0.0)
+                        self.q_table[current_state][action_key] = old_q + self.alpha * (reward - old_q)
+                        self.save_q_table()
+                        
+                        print("💥 Abortando a rodada atual e reiniciando a loja...")
+                        break # O 'break' sai desse loop de passos e joga a IA direto pro próximo Episódio!
+                    
+                    # Continua a lógica normal caso ela continue dentro da Play Store
+                    reward = -2.0 
+
+                    if new_state == current_state:
                         print("📉 Punição: Clicou em um botão inútil (-40 pts)")
                         reward = -40.0
                     elif new_state in visited_states:
