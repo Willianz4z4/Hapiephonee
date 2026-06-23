@@ -7,16 +7,15 @@ import xml.etree.ElementTree as ET
 import re
 import hashlib
 
-class PlayStoreQLearningAI:
+class PlayStoreSmartAI:
     def __init__(self):
         self.q_table_file = "q_table_memory.json"
         self.q_table = self.load_q_table()
         
-        # Hyperparâmetros da IA
-        self.alpha = 0.5  # Taxa de aprendizado
-        self.gamma = 0.8  # Fator de desconto para decisões futuras
-        self.epsilon = 0.5 # Começa com 50% de curiosidade (Exploração)
-        self.min_epsilon = 0.20 # 🔥 CRUCIAL: Nunca baixa de 20%, garantindo que ela sempre teste rotas novas!
+        self.alpha = 0.5
+        self.gamma = 0.8
+        self.epsilon = 0.5
+        self.min_epsilon = 0.20
 
     def root_command(self, cmd):
         full_cmd = f"su -c '{cmd}'"
@@ -48,13 +47,46 @@ class PlayStoreQLearningAI:
             return (x1 + x2) // 2, (y1 + y2) // 2
         return None
 
-    def get_all_clickable_nodes(self, xml_content):
+    def get_smart_clickable_nodes(self, xml_content):
+        """🧠 FILTRO POR PADRÕES: Descarta o lixo analisando a 'alma' do código."""
         clickables = []
+        
+        # Palavras-chave que indicam que o botão é uma propaganda, card de app ou lixo visual
+        junk_ids = ["card", "cluster", "promo", "banner", "merch", "ad_label", "bucket", "suggestion"]
+        junk_texts = ["app:", "jogo:", "game:", "classificação", "star rating", "download", "instalar", "install", "mb", "gb"]
+
         try:
             root = ET.fromstring(xml_content)
             for node in root.iter('node'):
                 if node.attrib.get('clickable') == 'true':
-                    coords = self.parse_bounds(node.attrib.get('bounds'))
+                    text = node.attrib.get('text', '').lower()
+                    desc = node.attrib.get('content-desc', '').lower()
+                    res_id = node.attrib.get('resource-id', '').lower()
+                    bounds = node.attrib.get('bounds', '')
+                    
+                    # 1. Ignora os invisíveis/vazios
+                    if not text and not desc and not res_id:
+                        continue 
+                    
+                    is_junk = False
+                    
+                    # 2. Ignora se o ID de sistema entrega que é lixo da loja (ex: play_card)
+                    for junk in junk_ids:
+                        if junk in res_id:
+                            is_junk = True
+                            break
+                            
+                    # 3. Ignora se o texto entregar que é um aplicativo pra baixar
+                    if not is_junk:
+                        for junk in junk_texts:
+                            if junk in text or junk in desc:
+                                is_junk = True
+                                break
+                    
+                    if is_junk:
+                        continue # Pula esse botão e nem mostra pra IA
+
+                    coords = self.parse_bounds(bounds)
                     if coords:
                         clickables.append(coords)
         except:
@@ -104,11 +136,11 @@ class PlayStoreQLearningAI:
             return 0.0
         return max(self.q_table[state_hash].values())
 
-    def IA_learning(self, episodes=15, max_steps_per_episode=15):
-        print(f"🧠 REINFORCEMENT LEARNING (Pontuação Dinâmica por Eficiência)")
+    def IA_learning(self, episodes=15, max_steps_per_episode=10):
+        print(f"🧠 REINFORCEMENT LEARNING (Com Scanner de Padrões de Lixo)")
         
         ultimate_target = ["claim", "reivindicar", "resgatar"]
-        path_hints = ["perfil", "conta", "profile", "account", "play points", "pontos do play", "perks", "benefícios", "vantagens"]
+        path_hints = ["conta", "account", "perfil", "profile", "play points", "pontos do play", "perks", "benefícios", "vantagens"]
 
         self.toggle_visuals(True)
 
@@ -130,32 +162,29 @@ class PlayStoreQLearningAI:
 
                     current_state = self.get_state_hash(xml)
                     visited_states.add(current_state)
-                    clickables = self.get_all_clickable_nodes(xml)
+                    
+                    # 🔥 O Filtro faz o trabalho sujo aqui!
+                    clickables = self.get_smart_clickable_nodes(xml)
                     
                     if not clickables:
-                        print("⬇️ Sem botões visíveis. Rolando...")
+                        print("⬇️ Tela processada (Lixo ignorado). Rolando tela...")
                         self.root_command("input swipe 500 1500 500 500")
                         time.sleep(1.0)
                         continue
 
                     self.init_state_in_qtable(current_state, clickables)
 
-                    # 1. VERIFICA SE O ALVO ESTÁ NA TELA
                     alvo = self.check_for_targets(xml, ultimate_target)
                     if alvo:
                         action_key = f"{alvo[0]},{alvo[1]}"
                         time_taken = int(time.time() - start_time)
                         steps_count += 1
                         
-                        # 🔥 RECOMPENSA DINÂMICA (Baseada em performance)
-                        # Quanto menos passos e menos tempo levar, maior o prêmio.
-                        # Rotas burras ou demoradas ganham muito pouca recompensa.
                         reward = max(100.0, 2000.0 - (steps_count * 150) - (time_taken * 30))
                         
                         print(f"🎯 ALVO ENCONTRADO! Passo: {steps_count} | Tempo: {time_taken}s")
-                        print(f"💰 Recompensa Calculada por Eficiência: +{reward:.1f} pontos!")
+                        print(f"💰 Recompensa Calculada: +{reward:.1f} pontos!")
                         
-                        # Aplica o aprendizado na tabela Q
                         old_q = self.q_table[current_state].get(action_key, 0)
                         self.q_table[current_state][action_key] = old_q + self.alpha * (reward - old_q)
                         
@@ -163,45 +192,45 @@ class PlayStoreQLearningAI:
                         self.save_q_table()
                         break
 
-                    # 2. SELEÇÃO DE AÇÃO (Epsilon-Greedy com trava de curiosidade)
                     if random.uniform(0, 1) < self.epsilon:
-                        x, y = random.choice(clickables)
+                        top_buttons = [pt for pt in clickables if pt[1] < 400]
+                        if top_buttons and random.choice([True, False]): 
+                            x, y = random.choice(top_buttons)
+                            print(f"🎲 [Explorando Topo] Clicou em: {x},{y}")
+                        else:
+                            x, y = random.choice(clickables)
+                            print(f"🎲 [Explorando Geral] Clicou em: {x},{y}")
                         action_key = f"{x},{y}"
-                        print(f"🎲 [Explorando Novo] Clicou em: {action_key}")
                     else:
                         best_action = max(self.q_table[current_state], key=self.q_table[current_state].get)
                         x, y = map(int, best_action.split(','))
                         action_key = best_action
-                        print(f"🧠 [Usando Conhecimento] Botão {action_key} (Nota Atual: {self.q_table[current_state][best_action]:.1f})")
+                        print(f"🧠 [Usando Conhecimento] Botão {action_key} (Nota: {self.q_table[current_state][best_action]:.1f})")
 
-                    # EXECUTAR AÇÃO
                     self.click(x, y)
                     steps_count += 1
 
-                    # 3. ANALISAR CONSEQUÊNCIAS (S')
                     new_xml = self.get_screen_xml()
                     if not new_xml: new_xml = xml
-
                     new_state = self.get_state_hash(new_xml)
                     
-                    # Sistema de Recompensas e Punições de meio de caminho
-                    reward = -2.0 # Custo por clique (força a IA a querer terminar logo)
+                    reward = -2.0 
 
                     if new_state == current_state:
-                        print("📉 Punição: Botão inútil, não mudou a tela (-40 pts)")
+                        print("📉 Punição: Clicou em um botão inútil (-40 pts)")
                         reward = -40.0
                     elif new_state in visited_states:
-                        print("⚠️ Punição: Entrou em Loop/Voltou de tela (-25 pts)")
+                        print("⚠️ Punição: Loop de tela detectado (-25 pts)")
                         reward = -25.0
+                        self.root_command("input keyevent 4") 
+                        time.sleep(1.0)
                     else:
-                        # Verificando se a nova tela tem pistas lógicas
                         if self.check_for_targets(new_xml, path_hints):
-                            print("📈 Recompensa: Entrou em tela com pistas óbvias (+40 pts)")
+                            print("📈 Recompensa: Entrou em menu com Pistas (+40 pts)")
                             reward = 40.0
                         else:
-                            print("➡️ Avanço neutro para tela desconhecida (-2 pts)")
+                            print("➡️ Avanço neutro.")
 
-                    # ATUALIZAÇÃO DA TABELA MATRIZ (Equação Bellman de Q-Learning)
                     old_q_value = self.q_table[current_state].get(action_key, 0.0)
                     future_optimal_value = self.get_max_q_value(new_state)
                     
@@ -210,7 +239,6 @@ class PlayStoreQLearningAI:
 
                 self.save_q_table()
                 
-                # Diminui a curiosidade aos poucos, mas respeita o limite mínimo de 20%
                 if self.epsilon > self.min_epsilon:
                     self.epsilon -= 0.04
                 else:
@@ -220,5 +248,5 @@ class PlayStoreQLearningAI:
             self.toggle_visuals(False)
 
 if __name__ == "__main__":
-    ai = PlayStoreQLearningAI()
-    ai.IA_learning(episodes=15, max_steps_per_episode=15)
+    ai = PlayStoreSmartAI()
+    ai.IA_learning(episodes=10, max_steps_per_episode=12)
