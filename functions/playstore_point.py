@@ -20,7 +20,6 @@ class PlayStoreTrueAI:
         self.epsilon = 0.70 
         self.min_epsilon = 0.15
         
-        # 📌 Pistas de Ouro (Se tiver isso, a IA foca neles e ignora os filtros)
         self.hint_rewards = {
             "perfil": 30.0, "profile": 30.0, "conta": 30.0, "account": 30.0, 
             "logado como": 40.0, "signed in as": 40.0, "configurações": 20.0, "settings": 20.0,
@@ -78,7 +77,6 @@ class PlayStoreTrueAI:
 
     def get_smart_clickables(self, xml_content):
         clickables = {}
-        # 🚫 FILTRO ANTI-APPS APRIMORADO (Bloqueia cartões, mídia e sugestões de apps)
         junk_ids = [
             "ad_label", "promo", "banner", "suggestion", "overflow", "notification",
             "play_card", "card", "cluster", "screenshot", "video_thumbnail", "list_item"
@@ -105,7 +103,7 @@ class PlayStoreTrueAI:
                 
                 if not text and not desc and not res_id:
                     continue 
-                if len(text) > 70 or len(desc) > 70: # Aumentado um pouco para ler o "logado como..." inteiro
+                if len(text) > 70 or len(desc) > 70: 
                     continue
 
                 is_target = any(t in text or t in desc for t in self.ultimate_target)
@@ -114,7 +112,6 @@ class PlayStoreTrueAI:
                 if not is_clickable and not is_target and not is_hint:
                     continue
                 
-                # Só passa no Filtro Anti-Apps se o botão não for o nosso Alvo nem uma Pista de Ouro
                 is_junk = False
                 if not is_target and not is_hint:
                     for junk in junk_ids:
@@ -187,10 +184,10 @@ class PlayStoreTrueAI:
 
     def IA_learning(self, max_steps_per_episode=15):
         os.system('clear' if os.name == 'posix' else 'cls')
-        print("🧠 IA True Point (Filtro Anti-Apps Ativo). Monitoramento focado em navegação.")
+        print("🧠 IA True Point (Exploração Forçada Ativa). Foco em rotas inéditas.")
         print("Verifique os passos reais com: tail -f ai_training.log\n")
         
-        self.write_log("=== NOVO TREINAMENTO INICIADO (FOCO EM MENUS) ===")
+        self.write_log("=== NOVO TREINAMENTO INICIADO (EXPLORAÇÃO FORÇADA) ===")
         self.toggle_visuals(True)
         episode = 1
 
@@ -246,36 +243,33 @@ class PlayStoreTrueAI:
 
                         available_actions = list(self.q_table[current_state].keys())
                         
-                        acoes_virgens = [
-                            k for k in available_actions 
-                            if self.q_table[current_state][k] == 0.0 and k not in tried_actions_in_state[current_state]
-                        ]
-                        acoes_nao_clicadas_hoje = [
-                            k for k in available_actions 
-                            if k not in tried_actions_in_state[current_state]
-                        ]
+                        # A LÓGICA MESTRA:
+                        acoes_nunca_clicadas_na_vida = [k for k in available_actions if self.q_table[current_state][k] == 0.0]
+                        acoes_nao_clicadas_hoje = [k for k in available_actions if k not in tried_actions_in_state[current_state]]
+                        
+                        virgens_validas = [k for k in acoes_nunca_clicadas_na_vida if k in acoes_nao_clicadas_hoje]
 
-                        if random.uniform(0, 1) < self.epsilon:
-                            if acoes_virgens:
-                                action_key = random.choice(acoes_virgens)
-                                self.write_log(f"🎲 [Curiosidade] Clicando em botão de Menu INÉDITO: {action_key}")
-                            elif acoes_nao_clicadas_hoje:
-                                action_key = random.choice(acoes_nao_clicadas_hoje)
-                                self.write_log(f"🎲 [Curiosidade] Testando outro botão da interface: {action_key}")
-                            else:
-                                action_key = random.choice(available_actions)
-                                self.write_log(f"🎲 [Exploração] Tudo testado na tela atual. Repetindo: {action_key}")
-                        else:
-                            max_q = max(self.q_table[current_state].values())
-                            melhores_acoes = [k for k, v in self.q_table[current_state].items() if v == max_q]
+                        if virgens_validas:
+                            # 1. EXPLORAÇÃO FORÇADA: Obriga a testar todos os botões da tela antes de repetir
+                            action_key = random.choice(virgens_validas)
+                            self.write_log(f"🔍 [Obrigatório] Ignorando rotas antigas. Testando botão INÉDITO: {action_key}")
                             
-                            melhores_nao_clicados = [k for k in melhores_acoes if k not in tried_actions_in_state[current_state]]
-                            if melhores_nao_clicados:
-                                action_key = random.choice(melhores_nao_clicados)
+                        elif acoes_nao_clicadas_hoje:
+                            # 2. CURIOSIDADE VS CONHECIMENTO (Apenas entre os botões não testados na rodada atual)
+                            if random.uniform(0, 1) < self.epsilon:
+                                action_key = random.choice(acoes_nao_clicadas_hoje)
+                                self.write_log(f"🎲 [Curiosidade] Testando botão alternativo: {action_key}")
                             else:
+                                # Pega a MELHOR nota SOMENTE das opções que ela ainda não clicou nesta tentativa
+                                max_q = max(self.q_table[current_state][k] for k in acoes_nao_clicadas_hoje)
+                                melhores_acoes = [k for k in acoes_nao_clicadas_hoje if self.q_table[current_state][k] == max_q]
                                 action_key = random.choice(melhores_acoes)
+                                self.write_log(f"🧠 [Conhecimento] Melhor opção viável: {action_key} (Nota: {max_q:.1f})")
                                 
-                            self.write_log(f"🧠 [Conhecimento] Escolheu: {action_key} (Nota: {max_q:.1f})")
+                        else:
+                            # 3. BECO SEM SAÍDA: Testou tudo e não achou nada. Sai da tela!
+                            action_key = "swipe_down"
+                            self.write_log("⚠️ Todos os botões mapeados e testados nesta rodada. Forçando Scroll/Voltar.")
 
                     if action_key != "swipe_down":
                         tried_actions_in_state[current_state].add(action_key)
