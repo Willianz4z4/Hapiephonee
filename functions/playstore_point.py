@@ -49,8 +49,13 @@ class PlayStoreSmartAI:
 
     def get_smart_clickable_nodes(self, xml_content):
         clickables = []
-        junk_ids = ["card", "cluster", "promo", "banner", "merch", "ad_label", "bucket", "suggestion"]
-        junk_texts = ["app:", "jogo:", "game:", "classificação", "star rating", "download", "instalar", "install", "mb", "gb"]
+        
+        # 🔥 Adicionado "overflow", "opções" e "options" para ignorar menus de 3 pontinhos
+        junk_ids = ["card", "cluster", "promo", "banner", "merch", "ad_label", "bucket", "suggestion", "overflow"]
+        junk_texts = ["app:", "jogo:", "game:", "classificação", "star rating", "download", "instalar", "install", "mb", "gb", "opções", "options", "more options", "mais opções"]
+
+        # 🧠 MEMÓRIA DE ASSINATURA (Evita clicar em itens repetidos de uma lista)
+        seen_signatures = set()
 
         try:
             root = ET.fromstring(xml_content)
@@ -79,6 +84,15 @@ class PlayStoreSmartAI:
                     
                     if is_junk:
                         continue 
+
+                    # 🔥 DEDUPLICAÇÃO DE BOTÕES IDÊNTICOS
+                    # Se houver 5 botões de 3 pontinhos na tela, eles terão a mesma assinatura.
+                    # A IA vai salvar só o primeiro e ignorar o resto!
+                    signature = f"{res_id}|{text}|{desc}"
+                    if signature != "||":
+                        if signature in seen_signatures:
+                            continue # Já vi esse tipo de botão na tela, ignorando o clone.
+                        seen_signatures.add(signature)
 
                     coords = self.parse_bounds(bounds)
                     if coords:
@@ -131,7 +145,7 @@ class PlayStoreSmartAI:
         return max(self.q_table[state_hash].values())
 
     def IA_learning(self, episodes=15, max_steps_per_episode=10):
-        print(f"🧠 REINFORCEMENT LEARNING (Salvamento Botão por Botão em Tempo Real)")
+        print(f"🧠 REINFORCEMENT LEARNING (Deduplicação de Assinaturas Ativada)")
         
         ultimate_target = ["claim", "reivindicar", "resgatar"]
         path_hints = ["conta", "account", "perfil", "profile", "play points", "pontos do play", "perks", "benefícios", "vantagens"]
@@ -160,7 +174,7 @@ class PlayStoreSmartAI:
                     clickables = self.get_smart_clickable_nodes(xml)
                     
                     if not clickables:
-                        print("⬇️ Tela processada (Lixo ignorado). Rolando tela...")
+                        print("⬇️ Tela processada (Lixo/Repetidos ignorados). Rolando tela...")
                         self.root_command("input swipe 500 1500 500 500")
                         time.sleep(1.0)
                         continue
@@ -182,7 +196,7 @@ class PlayStoreSmartAI:
                         self.q_table[current_state][action_key] = old_q + self.alpha * (reward - old_q)
                         
                         self.click(alvo[0], alvo[1])
-                        self.save_q_table() # 🔥 SALVA IMEDIATAMENTE O SUCESSO
+                        self.save_q_table()
                         break
 
                     if random.uniform(0, 1) < self.epsilon:
@@ -212,7 +226,7 @@ class PlayStoreSmartAI:
                     is_outside_app = "com.android.vending" not in new_xml
 
                     if is_outside_app:
-                        print("🚨 FATAL: O clique fechou a Play Store ou abriu outro app! (-500 pts)")
+                        print("🚨 FATAL: Saiu da Play Store! (-500 pts)")
                         reward = -500.0
                         self.root_command("input keyevent 4") 
                         time.sleep(1.5)
@@ -237,7 +251,7 @@ class PlayStoreSmartAI:
                     new_q_value = old_q_value + self.alpha * (reward + self.gamma * future_optimal_value - old_q_value)
                     self.q_table[current_state][action_key] = new_q_value
                     
-                    self.save_q_table() # 🔥 SALVA IMEDIATAMENTE O APRENDIZADO DESTE BOTÃO ESPECÍFICO
+                    self.save_q_table()
                 
                 if self.epsilon > self.min_epsilon:
                     self.epsilon -= 0.04
