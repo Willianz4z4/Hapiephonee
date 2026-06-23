@@ -21,13 +21,13 @@ class PlayStoreTrueAI:
         self.epsilon = 0.70 
         self.min_epsilon = 0.15
         
+        # 📌 Pistas intermediárias (Caminho quente)
         self.hint_rewards = {
             "perfil": 30.0, "profile": 30.0, "conta": 30.0, "account": 30.0,
             "play points": 60.0, "pontos do play": 60.0,
             "perks": 90.0, "vantagens": 90.0, "benefícios": 90.0
         }
         
-        # Alvos mais específicos para evitar falsos positivos invisíveis
         self.ultimate_target = ["claim", "reivindicar", "resgatar", "next silver prize", "available on"]
         self.global_start_time = time.time()
 
@@ -49,12 +49,11 @@ class PlayStoreTrueAI:
     def restart_playstore(self):
         self.write_log("Forçando reinício da Play Store (True Reset)")
         self.root_command("am force-stop com.android.vending")
-        time.sleep(1.0) # Aumentado para o Android processar o fechamento
+        time.sleep(1.0) 
         self.root_command("am start -n com.android.vending/com.google.android.finsky.activities.MainActivity")
-        time.sleep(5.0) # Aumentado para dar tempo da Home carregar 100% no primeiro passo
+        time.sleep(5.0) 
 
     def get_screen_xml(self):
-        # Limpa dumps antigos para não ler lixo caso o comando falhe
         self.root_command("rm -f /data/local/tmp/dump.xml")
         cmd = "uiautomator dump /data/local/tmp/dump.xml > /dev/null && cat /data/local/tmp/dump.xml"
         xml_content = self.root_command(cmd)
@@ -66,7 +65,6 @@ class PlayStoreTrueAI:
         match = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', bounds_str)
         if match:
             x1, y1, x2, y2 = map(int, match.groups())
-            # Evita cliques nas bordas extremas ou botões bugados sem tamanho
             if x1 == x2 or y1 == y2:
                 return None
             return (x1 + x2) // 2, (y1 + y2) // 2
@@ -80,7 +78,6 @@ class PlayStoreTrueAI:
             "mais opções", "avaliação", "boost", "days ago", "hours ago", "week ago", "minute", 
             "oferta", "offer", "notificação"
         ]
-
         seen_signatures = set()
 
         try:
@@ -92,19 +89,16 @@ class PlayStoreTrueAI:
                 bounds = node.attrib.get('bounds', '')
                 is_clickable = node.attrib.get('clickable') == 'true'
                 
-                # Ignora nós completamente invisíveis ou fora da tela
                 if node.attrib.get('visible-to-user') == 'false':
                     continue
                 
                 if not text and not desc and not res_id:
                     continue 
-                    
                 if len(text) > 50 or len(desc) > 50:
                     continue
 
                 is_target = any(t in text or t in desc for t in self.ultimate_target)
 
-                # Só aceita se for clicável ou se for o nosso alvo de validação
                 if not is_clickable and not is_target:
                     continue
                 
@@ -112,7 +106,6 @@ class PlayStoreTrueAI:
                 if not is_target:
                     for junk in junk_ids:
                         if junk in res_id: is_junk = True; break
-                            
                     if not is_junk:
                         for junk in junk_texts:
                             if junk in text or junk in desc: is_junk = True; break
@@ -137,7 +130,6 @@ class PlayStoreTrueAI:
             combined_text = data["text"] + " " + data["desc"]
             for target in self.ultimate_target:
                 if target in combined_text:
-                    # Segurança: garante que as coordenadas do alvo fazem sentido na tela
                     x, y = map(int, action_key.split(','))
                     if x > 10 and y > 10: 
                         return action_key
@@ -156,7 +148,7 @@ class PlayStoreTrueAI:
         else:
             x, y = action_key.split(',')
             self.root_command(f"input tap {x} {y}")
-            time.sleep(1.5) # Tempo para o clique registrar e a tela começar a mudar
+            time.sleep(1.5)
 
     def load_q_table(self):
         if os.path.exists(self.q_table_file):
@@ -182,8 +174,8 @@ class PlayStoreTrueAI:
 
     def IA_learning(self, max_steps_per_episode=15):
         os.system('clear' if os.name == 'posix' else 'cls')
-        print("🧠 IA iniciada. Modo de monitoramento limpo ativado.")
-        print("Acompanhe os cliques em tempo real usando: tail -f ai_training.log\n")
+        print("🧠 IA iniciada. Modo de monitoramento limpo ativo.")
+        print("Verifique os passos reais com: tail -f ai_training.log\n")
         
         self.write_log("=== NOVO TREINAMENTO INICIADO ===")
         self.toggle_visuals(True)
@@ -201,6 +193,7 @@ class PlayStoreTrueAI:
                 visited_states = set()
                 steps_count = 0
                 scroll_count = 0
+                abortar_episodio = False
 
                 for step in range(max_steps_per_episode):
                     xml = self.get_screen_xml()
@@ -230,9 +223,8 @@ class PlayStoreTrueAI:
                             
                             old_q = self.q_table[current_state].get(alvo_key, 0)
                             self.q_table[current_state][alvo_key] = old_q + self.alpha * (reward - old_q)
-                            
                             self.save_q_table()
-                            break # Encontrou o alvo verdadeiro, encerra com sucesso!
+                            break 
 
                         available_actions = list(self.q_table[current_state].keys())
                         if random.uniform(0, 1) < self.epsilon:
@@ -266,11 +258,11 @@ class PlayStoreTrueAI:
                     reward = -2.0 
                     is_outside_app = "com.android.vending" not in new_xml
 
+                    # ⚡ REGRA SOLICITADA: Atribui nota ruim e força o fim imediato do episódio se fechar o app
                     if is_outside_app:
-                        self.write_log("🚨 FATAL: Saiu da Play Store! (-300 pts)")
-                        reward = -300.0
-                        self.root_command("input keyevent 4") 
-                        time.sleep(1.5)
+                        self.write_log("🚨 FATAL (GAME OVER): Saiu da Play Store! Aplicando punição máxima (-500 pts).")
+                        reward = -500.0
+                        abortar_episodio = True
                     elif new_state == current_state and action_key != "swipe_down":
                         self.write_log("📉 Punição: O botão não abriu tela nova (-50 pts)")
                         reward = -50.0
@@ -296,16 +288,21 @@ class PlayStoreTrueAI:
                         if not reward_given:
                             self.write_log("➡️ Avanço neutro.")
 
+                    # Atualiza a tabela Q com a nota ruim antes de quebrar o laço
                     if current_state in self.q_table:
                         old_q_value = self.q_table[current_state].get(action_key, 0.0)
-                        future_optimal_value = self.get_max_q_value(new_state)
+                        future_optimal_value = self.get_max_q_value(new_state) if not abortar_episodio else 0.0
                         
                         new_q_value = old_q_value + self.alpha * (reward + self.gamma * future_optimal_value - old_q_value)
                         self.q_table[current_state][action_key] = new_q_value
                         self.save_q_table()
+
+                    if abortar_episodio:
+                        self.write_log("💥 Abortando rodada atual para resetar ambiente...")
+                        break # Sai do loop de passos e vai direto para o próximo episódio (restart_playstore)
                 
                 if self.epsilon > self.min_epsilon:
-                    self.epsilon -= 0.01 # Decai mais devagar para dar tempo de explorar com 70%
+                    self.epsilon -= 0.01 
                 else:
                     self.epsilon = self.min_epsilon
                     
