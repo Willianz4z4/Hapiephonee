@@ -27,13 +27,11 @@ class PlayStoreTrueAI:
             "perks": 90.0, "vantagens": 90.0, "benefícios": 90.0
         }
         
-        self.ultimate_target = ["claim", "reivindicar", "resgatar", "next silver prize", "available", "disponível"]
-        
-        # Tempo de início global para o painel limpo
+        # Alvos mais específicos para evitar falsos positivos invisíveis
+        self.ultimate_target = ["claim", "reivindicar", "resgatar", "next silver prize", "available on"]
         self.global_start_time = time.time()
 
     def write_log(self, message):
-        """Escreve os detalhes técnicos no arquivo de log silenciosamente"""
         timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
         with open(self.log_file, "a", encoding="utf-8") as f:
             f.write(f"[{timestamp}] {message}\n")
@@ -51,11 +49,13 @@ class PlayStoreTrueAI:
     def restart_playstore(self):
         self.write_log("Forçando reinício da Play Store (True Reset)")
         self.root_command("am force-stop com.android.vending")
-        time.sleep(0.8)
+        time.sleep(1.0) # Aumentado para o Android processar o fechamento
         self.root_command("am start -n com.android.vending/com.google.android.finsky.activities.MainActivity")
-        time.sleep(4.0)
+        time.sleep(5.0) # Aumentado para dar tempo da Home carregar 100% no primeiro passo
 
     def get_screen_xml(self):
+        # Limpa dumps antigos para não ler lixo caso o comando falhe
+        self.root_command("rm -f /data/local/tmp/dump.xml")
         cmd = "uiautomator dump /data/local/tmp/dump.xml > /dev/null && cat /data/local/tmp/dump.xml"
         xml_content = self.root_command(cmd)
         if not xml_content or not xml_content.startswith("<?xml"):
@@ -66,6 +66,9 @@ class PlayStoreTrueAI:
         match = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', bounds_str)
         if match:
             x1, y1, x2, y2 = map(int, match.groups())
+            # Evita cliques nas bordas extremas ou botões bugados sem tamanho
+            if x1 == x2 or y1 == y2:
+                return None
             return (x1 + x2) // 2, (y1 + y2) // 2
         return None
 
@@ -89,6 +92,10 @@ class PlayStoreTrueAI:
                 bounds = node.attrib.get('bounds', '')
                 is_clickable = node.attrib.get('clickable') == 'true'
                 
+                # Ignora nós completamente invisíveis ou fora da tela
+                if node.attrib.get('visible-to-user') == 'false':
+                    continue
+                
                 if not text and not desc and not res_id:
                     continue 
                     
@@ -97,6 +104,7 @@ class PlayStoreTrueAI:
 
                 is_target = any(t in text or t in desc for t in self.ultimate_target)
 
+                # Só aceita se for clicável ou se for o nosso alvo de validação
                 if not is_clickable and not is_target:
                     continue
                 
@@ -129,7 +137,10 @@ class PlayStoreTrueAI:
             combined_text = data["text"] + " " + data["desc"]
             for target in self.ultimate_target:
                 if target in combined_text:
-                    return action_key
+                    # Segurança: garante que as coordenadas do alvo fazem sentido na tela
+                    x, y = map(int, action_key.split(','))
+                    if x > 10 and y > 10: 
+                        return action_key
         return None
 
     def get_state_hash(self, clickables_dict):
@@ -141,11 +152,11 @@ class PlayStoreTrueAI:
     def click(self, action_key):
         if action_key == "swipe_down":
             self.root_command("input swipe 500 1500 500 500")
-            time.sleep(1.0)
+            time.sleep(1.2)
         else:
             x, y = action_key.split(',')
             self.root_command(f"input tap {x} {y}")
-            time.sleep(1.0)
+            time.sleep(1.5) # Tempo para o clique registrar e a tela começar a mudar
 
     def load_q_table(self):
         if os.path.exists(self.q_table_file):
@@ -172,7 +183,7 @@ class PlayStoreTrueAI:
     def IA_learning(self, max_steps_per_episode=15):
         os.system('clear' if os.name == 'posix' else 'cls')
         print("🧠 IA iniciada. Modo de monitoramento limpo ativado.")
-        print("Verifique o arquivo 'ai_training.log' para detalhes de cada clique.\n")
+        print("Acompanhe os cliques em tempo real usando: tail -f ai_training.log\n")
         
         self.write_log("=== NOVO TREINAMENTO INICIADO ===")
         self.toggle_visuals(True)
@@ -180,7 +191,6 @@ class PlayStoreTrueAI:
 
         try:
             while True:
-                # Terminal limpo: Imprime apenas a tentativa atual e o tempo rodado, sobreescrevendo a linha
                 tempo_rodado = self.get_formatted_time()
                 print(f"\r▶️ Tentativa: {episode} | Tempo rodado: {tempo_rodado} | Curiosidade: {int(self.epsilon * 100)}%   ", end="")
                 
@@ -195,7 +205,8 @@ class PlayStoreTrueAI:
                 for step in range(max_steps_per_episode):
                     xml = self.get_screen_xml()
                     if not xml:
-                        time.sleep(0.5)
+                        self.write_log("⚠️ Falha ao ler XML da tela. Aguardando...")
+                        time.sleep(1.0)
                         continue
 
                     clickables_dict = self.get_smart_clickables(xml)
@@ -203,6 +214,7 @@ class PlayStoreTrueAI:
                     visited_states.add(current_state)
                     
                     if not clickables_dict:
+                        self.write_log("⚠️ Nenhum botão detectado na tela. Forçando Scroll Down.")
                         action_key = "swipe_down"
                     else:
                         if current_state not in self.q_table:
@@ -214,29 +226,29 @@ class PlayStoreTrueAI:
                             time_taken = int(time.time() - start_time)
                             reward = max(100.0, 2000.0 - (steps_count * 150) - (time_taken * 30))
                             
-                            self.write_log(f"🎯 TARGET ENCONTRADO! Coord: {alvo_key} | Passos: {steps_count+1} | Recompensa: +{reward:.1f}")
+                            self.write_log(f"🎯 TARGET REAL ENCONTRADO! Coord: {alvo_key} | Passos: {steps_count+1} | Recompensa: +{reward:.1f}")
                             
                             old_q = self.q_table[current_state].get(alvo_key, 0)
                             self.q_table[current_state][alvo_key] = old_q + self.alpha * (reward - old_q)
                             
                             self.save_q_table()
-                            break
+                            break # Encontrou o alvo verdadeiro, encerra com sucesso!
 
                         available_actions = list(self.q_table[current_state].keys())
                         if random.uniform(0, 1) < self.epsilon:
                             action_key = random.choice(available_actions)
-                            self.write_log(f"🎲 [Explorando] Escolheu: {action_key}")
+                            self.write_log(f"🎲 [Explorando] Escolheu clicar em: {action_key}")
                         else:
                             action_key = max(self.q_table[current_state], key=self.q_table[current_state].get)
                             nota = self.q_table[current_state][action_key]
-                            self.write_log(f"🧠 [Conhecimento] Escolheu: {action_key} (Nota: {nota:.1f})")
+                            self.write_log(f"🧠 [Conhecimento] Escolheu clicar em: {action_key} (Nota: {nota:.1f})")
 
                     if action_key == "swipe_down":
                         scroll_count += 1
                         if scroll_count >= 3:
                             self.write_log("⚠️ Beco sem saída (3 scrolls). Forçando Voltar.")
                             self.root_command("input keyevent 4")
-                            time.sleep(1.0)
+                            time.sleep(1.5)
                             scroll_count = 0
                             continue
                     else:
@@ -259,14 +271,14 @@ class PlayStoreTrueAI:
                         reward = -300.0
                         self.root_command("input keyevent 4") 
                         time.sleep(1.5)
-                    elif new_state == current_state:
+                    elif new_state == current_state and action_key != "swipe_down":
                         self.write_log("📉 Punição: O botão não abriu tela nova (-50 pts)")
                         reward = -50.0
-                    elif new_state in visited_states:
+                    elif new_state in visited_states and action_key != "swipe_down":
                         self.write_log("⚠️ Punição: Voltou pra uma tela antiga (-30 pts)")
                         reward = -30.0
                         self.root_command("input keyevent 4") 
-                        time.sleep(1.0)
+                        time.sleep(1.5)
                     else:
                         reward_given = False
                         if action_key in clickables_dict:
@@ -293,7 +305,7 @@ class PlayStoreTrueAI:
                         self.save_q_table()
                 
                 if self.epsilon > self.min_epsilon:
-                    self.epsilon -= 0.02
+                    self.epsilon -= 0.01 # Decai mais devagar para dar tempo de explorar com 70%
                 else:
                     self.epsilon = self.min_epsilon
                     
