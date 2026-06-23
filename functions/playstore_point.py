@@ -17,13 +17,13 @@ class PlayStoreTrueAI:
         self.alpha = 0.5
         self.gamma = 0.8
         
-        # Taxa de Aleatoriedade Inicial
         self.epsilon = 0.70 
         self.min_epsilon = 0.15
         
-        # 📌 Pistas intermediárias (Caminho quente)
+        # 📌 Pistas de Ouro (Se tiver isso, a IA foca neles e ignora os filtros)
         self.hint_rewards = {
-            "perfil": 30.0, "profile": 30.0, "conta": 30.0, "account": 30.0,
+            "perfil": 30.0, "profile": 30.0, "conta": 30.0, "account": 30.0, 
+            "logado como": 40.0, "signed in as": 40.0, "configurações": 20.0, "settings": 20.0,
             "play points": 60.0, "pontos do play": 60.0,
             "perks": 90.0, "vantagens": 90.0, "benefícios": 90.0
         }
@@ -39,14 +39,12 @@ class PlayStoreTrueAI:
     def root_command(self, cmd):
         full_cmd = f"su -c '{cmd}'"
         try:
-            # Adicionado timeout para evitar travamentos infinitos do uiautomator/su
             result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True, timeout=10)
             return result.stdout.strip()
         except subprocess.TimeoutExpired:
             self.write_log(f"⚠️ Timeout executando comando: {cmd}")
             return ""
         except Exception as e:
-            self.write_log(f"⚠️ Erro ao executar root_command: {str(e)}")
             return ""
 
     def toggle_visuals(self, enable=True):
@@ -59,7 +57,7 @@ class PlayStoreTrueAI:
         self.root_command("am force-stop com.android.vending")
         time.sleep(1.0) 
         self.root_command("am start -n com.android.vending/com.google.android.finsky.activities.MainActivity")
-        time.sleep(2.5) # Tempo otimizado para não gastar a janela de 30s
+        time.sleep(2.5) 
 
     def get_screen_xml(self):
         self.root_command("rm -f /data/local/tmp/dump.xml")
@@ -80,11 +78,16 @@ class PlayStoreTrueAI:
 
     def get_smart_clickables(self, xml_content):
         clickables = {}
-        junk_ids = ["ad_label", "promo", "banner", "suggestion", "overflow", "notification"]
+        # 🚫 FILTRO ANTI-APPS APRIMORADO (Bloqueia cartões, mídia e sugestões de apps)
+        junk_ids = [
+            "ad_label", "promo", "banner", "suggestion", "overflow", "notification",
+            "play_card", "card", "cluster", "screenshot", "video_thumbnail", "list_item"
+        ]
         junk_texts = [
             "mb", "gb", "download", "instalar", "install", "opções", "options", "more options", 
             "mais opções", "avaliação", "boost", "days ago", "hours ago", "week ago", "minute", 
-            "oferta", "offer", "notificação"
+            "oferta", "offer", "notificação", "classificação", "estrelas", "stars", "grátis", 
+            "free", "compras no app", "in-app", "jogo:", "app:", "anúncio", "patrocinado"
         ]
         seen_signatures = set()
 
@@ -102,16 +105,18 @@ class PlayStoreTrueAI:
                 
                 if not text and not desc and not res_id:
                     continue 
-                if len(text) > 50 or len(desc) > 50:
+                if len(text) > 70 or len(desc) > 70: # Aumentado um pouco para ler o "logado como..." inteiro
                     continue
 
                 is_target = any(t in text or t in desc for t in self.ultimate_target)
+                is_hint = any(h in text or h in desc for h in self.hint_rewards.keys())
 
-                if not is_clickable and not is_target:
+                if not is_clickable and not is_target and not is_hint:
                     continue
                 
+                # Só passa no Filtro Anti-Apps se o botão não for o nosso Alvo nem uma Pista de Ouro
                 is_junk = False
-                if not is_target:
+                if not is_target and not is_hint:
                     for junk in junk_ids:
                         if junk in res_id: is_junk = True; break
                     if not is_junk:
@@ -152,11 +157,11 @@ class PlayStoreTrueAI:
     def click(self, action_key):
         if action_key == "swipe_down":
             self.root_command("input swipe 500 1500 500 500")
-            time.sleep(0.8) # Reduzido para acelerar o avanço
+            time.sleep(0.8) 
         else:
             x, y = action_key.split(',')
             self.root_command(f"input tap {x} {y}")
-            time.sleep(0.8) # O uiautomator já provê um tempo nativo de leitura depois
+            time.sleep(0.8) 
 
     def load_q_table(self):
         if os.path.exists(self.q_table_file):
@@ -182,10 +187,10 @@ class PlayStoreTrueAI:
 
     def IA_learning(self, max_steps_per_episode=15):
         os.system('clear' if os.name == 'posix' else 'cls')
-        print("🧠 IA True Point iniciada. Modo de monitoramento de alta performance ativo.")
+        print("🧠 IA True Point (Filtro Anti-Apps Ativo). Monitoramento focado em navegação.")
         print("Verifique os passos reais com: tail -f ai_training.log\n")
         
-        self.write_log("=== NOVO TREINAMENTO INICIADO (OTIMIZADO) ===")
+        self.write_log("=== NOVO TREINAMENTO INICIADO (FOCO EM MENUS) ===")
         self.toggle_visuals(True)
         episode = 1
 
@@ -200,32 +205,27 @@ class PlayStoreTrueAI:
                 
                 start_time = time.time()
                 visited_states = set()
+                tried_actions_in_state = {} 
                 steps_count = 0
                 scroll_count = 0
                 abortar_episodio = False
 
                 for step in range(max_steps_per_episode):
-                    # ⏱️ LIMITE DE 30 SEGUNDOS COM PUNIÇÃO
                     if (time.time() - start_time) >= 30.0:
-                        self.write_log("⏳ Limite de 30 segundos atingido! Cortando episódio e aplicando punição por lentidão.")
-                        # Aplica uma pequena punição à última ação por ser ineficiente em tempo
-                        if 'current_state' in locals() and 'action_key' in locals():
-                            old_q = self.q_table[current_state].get(action_key, 0.0)
-                            self.q_table[current_state][action_key] = old_q + self.alpha * (-15.0 - old_q)
-                            self.save_q_table()
+                        self.write_log("⏳ Limite de 30 segundos! Cortando episódio.")
                         break
 
                     xml = self.get_screen_xml()
-                    if not xml:
-                        self.write_log("⚠️ Falha ao ler XML. Tentando novamente...")
-                        continue
+                    if not xml: continue
 
                     clickables_dict = self.get_smart_clickables(xml)
                     current_state = self.get_state_hash(clickables_dict)
                     visited_states.add(current_state)
                     
+                    if current_state not in tried_actions_in_state:
+                        tried_actions_in_state[current_state] = set()
+                    
                     if not clickables_dict:
-                        self.write_log("⚠️ Nenhum botão útil detectado. Forçando Scroll Down.")
                         action_key = "swipe_down"
                     else:
                         if current_state not in self.q_table:
@@ -236,8 +236,7 @@ class PlayStoreTrueAI:
                         if alvo_key:
                             time_taken = int(time.time() - start_time)
                             reward = max(100.0, 2000.0 - (steps_count * 150) - (time_taken * 40))
-                            
-                            self.write_log(f"🎯 TARGET REAL ENCONTRADO! Coord: {alvo_key} | Passos: {steps_count+1} | Recompensa: +{reward:.1f}")
+                            self.write_log(f"🎯 TARGET ENCONTRADO! Coord: {alvo_key} | Passos: {steps_count+1} | +{reward:.1f}")
                             
                             old_q = self.q_table[current_state].get(alvo_key, 0)
                             self.q_table[current_state][alvo_key] = old_q + self.alpha * (reward - old_q)
@@ -247,21 +246,43 @@ class PlayStoreTrueAI:
 
                         available_actions = list(self.q_table[current_state].keys())
                         
+                        acoes_virgens = [
+                            k for k in available_actions 
+                            if self.q_table[current_state][k] == 0.0 and k not in tried_actions_in_state[current_state]
+                        ]
+                        acoes_nao_clicadas_hoje = [
+                            k for k in available_actions 
+                            if k not in tried_actions_in_state[current_state]
+                        ]
+
                         if random.uniform(0, 1) < self.epsilon:
-                            action_key = random.choice(available_actions)
-                            self.write_log(f"🎲 [Explorando] Escolheu: {action_key}")
+                            if acoes_virgens:
+                                action_key = random.choice(acoes_virgens)
+                                self.write_log(f"🎲 [Curiosidade] Clicando em botão de Menu INÉDITO: {action_key}")
+                            elif acoes_nao_clicadas_hoje:
+                                action_key = random.choice(acoes_nao_clicadas_hoje)
+                                self.write_log(f"🎲 [Curiosidade] Testando outro botão da interface: {action_key}")
+                            else:
+                                action_key = random.choice(available_actions)
+                                self.write_log(f"🎲 [Exploração] Tudo testado na tela atual. Repetindo: {action_key}")
                         else:
-                            # 🎯 DESEMPATE INTELIGENTE (Evita loop infinito no mesmo botão quando tudo for zero)
                             max_q = max(self.q_table[current_state].values())
                             melhores_acoes = [k for k, v in self.q_table[current_state].items() if v == max_q]
-                            action_key = random.choice(melhores_acoes)
-                            nota = max_q
-                            self.write_log(f"🧠 [Conhecimento] Escolheu: {action_key} (Nota: {nota:.1f})")
+                            
+                            melhores_nao_clicados = [k for k in melhores_acoes if k not in tried_actions_in_state[current_state]]
+                            if melhores_nao_clicados:
+                                action_key = random.choice(melhores_nao_clicados)
+                            else:
+                                action_key = random.choice(melhores_acoes)
+                                
+                            self.write_log(f"🧠 [Conhecimento] Escolheu: {action_key} (Nota: {max_q:.1f})")
+
+                    if action_key != "swipe_down":
+                        tried_actions_in_state[current_state].add(action_key)
 
                     if action_key == "swipe_down":
                         scroll_count += 1
                         if scroll_count >= 3:
-                            self.write_log("⚠️ Beco sem saída (3 scrolls). Forçando Voltar.")
                             self.root_command("input keyevent 4")
                             time.sleep(1.0)
                             scroll_count = 0
@@ -282,14 +303,14 @@ class PlayStoreTrueAI:
                     is_outside_app = "com.android.vending" not in new_xml
 
                     if is_outside_app:
-                        self.write_log("🚨 FATAL: Saiu da Play Store! Punição (-500 pts).")
+                        self.write_log("🚨 FATAL: Saiu da Play Store! (-500 pts).")
                         reward = -500.0
                         abortar_episodio = True
                     elif new_state == current_state and action_key != "swipe_down":
-                        self.write_log("📉 Punição: O botão não abriu tela nova (-50 pts)")
+                        self.write_log(f"📉 Punição: O botão {action_key} não abriu tela nova (-50 pts)")
                         reward = -50.0
                     elif new_state in visited_states and action_key != "swipe_down":
-                        self.write_log("⚠️ Punição: Voltou pra uma tela antiga (-30 pts)")
+                        self.write_log(f"⚠️ Punição: Voltou pra uma tela antiga (-30 pts)")
                         reward = -30.0
                         self.root_command("input keyevent 4") 
                         time.sleep(1.0)
@@ -321,7 +342,6 @@ class PlayStoreTrueAI:
                     if abortar_episodio:
                         break 
                 
-                # Desce o Epsilon a cada episódio garantido (taxa de queda otimizada)
                 if self.epsilon > self.min_epsilon:
                     self.epsilon -= 0.02
                 else:
@@ -331,7 +351,6 @@ class PlayStoreTrueAI:
 
         except KeyboardInterrupt:
             print("\n\n🛑 Treinamento interrompido pelo usuário.")
-            self.write_log("=== TREINAMENTO INTERROMPIDO ===")
         finally:
             self.toggle_visuals(False)
 
