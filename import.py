@@ -379,7 +379,11 @@ try:
                     "telemetry": telemetry_data
                 }
 
-                headers = {"Content-Type": "application/json"}
+                headers = {
+                    "Content-Type": "application/json",
+                    "ngrok-skip-browser-warning": "true"
+                }
+                
                 response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
 
                 if response.status_code == 200:
