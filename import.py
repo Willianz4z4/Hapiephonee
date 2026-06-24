@@ -6,7 +6,39 @@ import json
 import uuid
 from datetime import datetime
 
-os.system("clear" if os.name == "posix" else "cls")
+# ==========================================
+# 🛡️ WATCHDOG: O CÃO DE GUARDA IMORTAL
+# ==========================================
+if os.environ.get("HAPIE_WATCHDOG") != "1":
+    os.environ["HAPIE_WATCHDOG"] = "1"
+    os.system("clear" if os.name == "posix" else "cls")
+    print("🛡️ [Watchdog] Escudo de Resiliência ativado. O bot agora é imortal.")
+    
+    while True:
+        try:
+            # Inicia o processo filho (o verdadeiro bot)
+            p = subprocess.Popen([sys.executable, __file__] + sys.argv[1:])
+            p.wait()
+            
+            # Se saiu com código 0, foi um desligamento limpo e proposital pelo usuário (CTRL+C)
+            if p.returncode == 0:
+                print("🛡️ [Watchdog] Desligamento seguro detectado. Encerrando o nó.")
+                sys.exit(0)
+            else:
+                # Se foi qualquer outro código, o bot CRASHOU por erro no código!
+                print(f"\n💀 [Watchdog] CRASH DETECTADO (Código {p.returncode})!")
+                print("🔄 [Watchdog] A versão atual parece estar quebrada. Buscando correções no GitHub em 10 segundos...")
+                time.sleep(10) # Dá tempo para você commitar a correção
+                os.system("git pull > /dev/null 2>&1")
+                print("🚀 [Watchdog] Tentando ressuscitar o bot agora...\n")
+                
+        except KeyboardInterrupt:
+            print("\n🛡️ [Watchdog] Interrompido à força pelo usuário.")
+            sys.exit(0)
+
+# ==========================================
+# 🤖 CÓDIGO NORMAL DO BOT COMEÇA AQUI
+# ==========================================
 
 try:
     import requests
@@ -298,7 +330,6 @@ try:
                 apps_installed_data = {}
                 telemetry_data = {}
 
-                # Lê relatórios de instalação pendentes
                 if os.path.exists(REPORT_FILE):
                     try:
                         with open(REPORT_FILE, "r", encoding="utf-8") as f:
@@ -309,7 +340,6 @@ try:
                     except Exception:
                         pass
 
-                # Lê os aplicativos instalados
                 if os.path.exists(APPS_JSON_FILE):
                     try:
                         with open(APPS_JSON_FILE, "r", encoding="utf-8") as f:
@@ -317,14 +347,12 @@ try:
                     except Exception:
                         pass
 
-                # Chama a telemetria do momento
                 try:
                     from telemetria.sensores import coletar_telemetria_completa
                     telemetry_data = coletar_telemetria_completa()
                 except Exception as e:
                     telemetry_data = {"erro": str(e)}
 
-                # Monta o payload para o servidor
                 payload = {
                     "type": 1 if registered_in_db else 0,
                     "guild_id": str(guild_id),
@@ -347,9 +375,6 @@ try:
                 if response.status_code == 200:
                     response_json = response.json()
 
-                    # 🔥 ================================================== 🔥
-                    # O VIGILANTE: RECEBE O "MUDO?" DO SERVIDOR E EXECUTA!
-                    # 🔥 ================================================== 🔥
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
                         target_ver = response_json.get("nova_versao", "Desconhecida")
@@ -357,7 +382,6 @@ try:
                         console.print(f"\n[bold yellow]🔄 UPDATE DETECTADO: O servidor ordenou a versão {target_ver}![/bold yellow]")
                         console.print(f"[dim]Ação travada. Executando: {git_cmd}[/dim]")
                         
-                        # Mata processos paralelos para evitar problemas com arquivos bloqueados
                         os.system("pkill -f auto_copy.py > /dev/null 2>&1")
                         os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
                         
@@ -365,7 +389,6 @@ try:
                         spinner_git.start()
                         
                         try:
-                            # Executa o comando repassado pelo bot (pull ou reset)
                             subprocess.run(git_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                             spinner_git.succeed(f"Código atualizado com sucesso!")
                         except Exception as e:
@@ -374,9 +397,8 @@ try:
                         console.print("[bold green]✅ Reiniciando o node para aplicar o novo código no sistema...[/bold green]\n")
                         time.sleep(1.5)
                         
-                        # REINICIA O SCRIPT COMPLETAMENTE DO ZERO! (Substitui o processo atual)
+                        # Transfere o corpo para o novo processo (O Watchdog assiste isso!)
                         os.execv(sys.executable, ['python'] + sys.argv)
-                    # 🔥 ================================================== 🔥
 
                     if "new_client_token" in response_json:
                         update_client_token(response_json["new_client_token"])
