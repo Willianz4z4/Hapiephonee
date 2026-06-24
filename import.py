@@ -384,7 +384,7 @@ try:
                     "ngrok-skip-browser-warning": "true"
                 }
                 
-                response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
+                response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15, verify=False)
 
                 if response.status_code == 200:
                     response_json = response.json()
