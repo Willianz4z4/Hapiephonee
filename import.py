@@ -29,7 +29,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals()
 sys.path.insert(0, BASE_DIR) # Garante que o Python acha a pasta telemetria
 
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
-
 FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
 HAPIE_APPS_DIR = os.path.join(BASE_DIR, "hapie_apps")
 DATA_DIR = os.path.join(BASE_DIR, "Data")
@@ -179,7 +178,6 @@ def get_last_activity():
 
 try:
     has_root = True if get_root_data("echo root_ok") == "root_ok" else False
-
     if not has_root:
         spinner.fail("Root Permission Check Failed")
         console.print("\n[bold white on red] ❌ ERRO CRÍTICO: DISPOSITIVO SEM ROOT [/bold white on red]")
@@ -298,15 +296,15 @@ try:
                 install_success = []
                 install_failed = []
                 apps_installed_data = {}
-                telemetry_data = {} # 🔥 NOVO: Variável vazia para segurar a telemetria
+                telemetry_data = {}
 
                 # Lê relatórios de instalação pendentes
                 if os.path.exists(REPORT_FILE):
                     try:
                         with open(REPORT_FILE, "r", encoding="utf-8") as f:
                             relatorio = json.load(f)
-                            install_success = relatorio.get("install_success", [])
-                            install_failed = relatorio.get("install_failed", [])
+                        install_success = relatorio.get("install_success", [])
+                        install_failed = relatorio.get("install_failed", [])
                         os.remove(REPORT_FILE)
                     except Exception:
                         pass
@@ -318,15 +316,15 @@ try:
                             apps_installed_data = json.load(f)
                     except Exception:
                         pass
-                
-                # 🔥 NOVO: Chama o assassino silencioso para pegar a telemetria real do momento!
+
+                # Chama a telemetria do momento
                 try:
                     from telemetria.sensores import coletar_telemetria_completa
                     telemetry_data = coletar_telemetria_completa()
                 except Exception as e:
                     telemetry_data = {"erro": str(e)}
 
-                # 🔥 NOVO: Monta o pacote gigante que vai para o servidor!
+                # Monta o payload para o servidor
                 payload = {
                     "type": 1 if registered_in_db else 0,
                     "guild_id": str(guild_id),
@@ -340,7 +338,7 @@ try:
                     "install_success": install_success,
                     "install_failed": install_failed,
                     "apps_installed": apps_installed_data,
-                    "telemetry": telemetry_data  # 🚀 DADOS DOS SENSORES INJETADOS AQUI
+                    "telemetry": telemetry_data
                 }
 
                 headers = {"Content-Type": "application/json"}
@@ -349,13 +347,44 @@ try:
                 if response.status_code == 200:
                     response_json = response.json()
 
+                    # 🔥 ================================================== 🔥
+                    # O VIGILANTE: RECEBE O "MUDO?" DO SERVIDOR E EXECUTA!
+                    # 🔥 ================================================== 🔥
+                    if response_json.get("mudo") == True:
+                        git_cmd = response_json.get("comando_terminal", "git pull")
+                        target_ver = response_json.get("nova_versao", "Desconhecida")
+                        
+                        console.print(f"\n[bold yellow]🔄 UPDATE DETECTADO: O servidor ordenou a versão {target_ver}![/bold yellow]")
+                        console.print(f"[dim]Ação travada. Executando: {git_cmd}[/dim]")
+                        
+                        # Mata processos paralelos para evitar problemas com arquivos bloqueados
+                        os.system("pkill -f auto_copy.py > /dev/null 2>&1")
+                        os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
+                        
+                        spinner_git = Halo(text='Puxando atualizações via Git...', spinner='dots')
+                        spinner_git.start()
+                        
+                        try:
+                            # Executa o comando repassado pelo bot (pull ou reset)
+                            subprocess.run(git_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            spinner_git.succeed(f"Código atualizado com sucesso!")
+                        except Exception as e:
+                            spinner_git.fail(f"Falha ao executar o Git: {e}")
+                        
+                        console.print("[bold green]✅ Reiniciando o node para aplicar o novo código no sistema...[/bold green]\n")
+                        time.sleep(1.5)
+                        
+                        # REINICIA O SCRIPT COMPLETAMENTE DO ZERO! (Substitui o processo atual)
+                        os.execv(sys.executable, ['python'] + sys.argv)
+                    # 🔥 ================================================== 🔥
+
                     if "new_client_token" in response_json:
                         update_client_token(response_json["new_client_token"])
 
                     if response_json.get("status") == "shutdown":
-                         print("\n")
-                         console.print(f"[bold red]🛑 Server refused connection: {response_json.get('reason', 'Unknown reason')}[/bold red]")
-                         sys.exit(1)
+                        print("\n")
+                        console.print(f"[bold red]🛑 Server refused connection: {response_json.get('reason', 'Unknown reason')}[/bold red]")
+                        sys.exit(1)
 
                     if not registered_in_db:
                         registered_in_db = True
@@ -363,10 +392,9 @@ try:
                     last_check = time.time()
 
                     has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos"])
-
+                    
                     if has_tasks:
                         install_script_path = os.path.join(HAPIE_APPS_DIR, "install.py")
-
                         with Halo(text='Updating Install Engine...', spinner='dots'):
                             v_cache_install = int(time.time())
                             URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/install.py?v={v_cache_install}"
