@@ -129,7 +129,8 @@ else:
     console.print("[bold red]❌ Authentication IDs missing. Exiting.[/bold red]")
     sys.exit(2)
 
-URL_WEBHOOK = "http://pandanaceous-meghann-nonincarnate.ngrok-free.dev/webhook"
+# 👇 ATENÇÃO: COLOQUE AQUI O SEU NOVO LINK HTTPS (Ngrok ou Localhost.run)
+URL_WEBHOOK = "https://iodize-scrounger-auction.ngrok-free.dev/webhook"
 report = {"installation_status": "pending", "steps": {}, "system_info": {}}
 
 console.print("[bold yellow]⏳ Executando e verificando Protocolos...[/bold yellow]")
@@ -322,7 +323,7 @@ spinner.start()
 spinner.succeed("Persistent boot skipped (UgPhone compatibility module active).")
 
 registered_in_db = False
-PING_INTERVAL = 15
+PING_INTERVAL = 60 # 👈 Aumentado para economizar cota do Ngrok!
 last_check = 0
 
 console.print("\n[bold green]📡 Connection established. Awaiting commands from Control Panel...[/bold green]")
@@ -384,7 +385,8 @@ try:
                     "ngrok-skip-browser-warning": "true"
                 }
                 
-                response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15, verify=False)
+                # Criptografia (HTTPS) de volta, pacote enviado limpo sem o verify=False
+                response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
 
                 if response.status_code == 200:
                     response_json = response.json()
