@@ -54,7 +54,7 @@ def upload_to_nuvem(file_path):
         # Usamos a chave pública oficial da API deles com retorno em JSON
         upload_cmd = f'curl -s -F "key=6d207e02198a847aa98d0a2a901485a5" -F "action=upload" -F "source=@{file_path}" -F "format=json" https://freeimage.host/api/1/upload'
         out = subprocess.check_output(upload_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
-        
+
         # Faz o parse da resposta para pegar o link direto da imagem
         data = json.loads(out)
         if "image" in data and "url" in data["image"]:
@@ -64,7 +64,7 @@ def upload_to_nuvem(file_path):
     return None
 
 def get_app_info(pkg_name):
-    info = {"name": "Desconhecido", "version": "Desconhecida", "icon_local": None}
+    info = {"name": "Desconhecido", "version": "Desconhecida", "icon_local": None, "size_mb": 0.0}
     try:
         apk_path_cmd = f"su -c 'pm path {pkg_name}'"
         apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
@@ -76,6 +76,23 @@ def get_app_info(pkg_name):
         if not lines:
             return info
         apk_path = lines[0]
+
+        # ==========================================
+        # 📏 Pegar o tamanho do APK e converter pra MB
+        # ==========================================
+        try:
+            size_cmd = f"su -c 'stat -c %s \"{apk_path}\"'"
+            size_bytes = int(subprocess.check_output(size_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip())
+            info["size_mb"] = round(size_bytes / (1024 * 1024), 2)
+        except Exception:
+            try:
+                # Fallback usando ls -l se stat falhar
+                ls_cmd = f"su -c 'ls -l \"{apk_path}\"'"
+                ls_out = subprocess.check_output(ls_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+                size_bytes = int(ls_out.split()[4])
+                info["size_mb"] = round(size_bytes / (1024 * 1024), 2)
+            except:
+                info["size_mb"] = 0.0
 
         badging_cmd = f"aapt dump badging \"{apk_path}\""
         badging_output = subprocess.check_output(badging_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
@@ -91,7 +108,7 @@ def get_app_info(pkg_name):
         icon_match = re.search(r"application: label=.*? icon='([^']+)'", badging_output)
         if not icon_match:
             icon_match = re.search(r"icon='([^']+)'", badging_output)
-
+        
         unzip_list_cmd = f"unzip -l \"{apk_path}\""
         files_list = subprocess.check_output(unzip_list_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
 
@@ -127,7 +144,7 @@ def get_app_info(pkg_name):
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
                 console.print(f"[dim]☁️ Fazendo upload do ícone para a nuvem (FreeImage)...[/dim]")
                 cloud_url = upload_to_nuvem(icon_dest)
-                
+
                 if cloud_url:
                     info["icon_local"] = cloud_url
                 else:
@@ -147,6 +164,7 @@ def print_app_panel(app_package, info, is_new=False):
     detalhes += f"📦 [bold]Pacote:[/bold] [yellow]{app_package}[/yellow]\n"
     detalhes += f"🏷️ [bold]Nome:[/bold] {info['name']}\n"
     detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
+    detalhes += f"⚖️ [bold]Tamanho:[/bold] {info.get('size_mb', 0.0)} MB\n"
 
     if info["icon_local"]:
         if str(info["icon_local"]).startswith("http"):
@@ -173,6 +191,9 @@ def start_monitor():
         if app not in app_db:
             needs_update = True
         elif app_db[app].get("icon_local") and not str(app_db[app]["icon_local"]).startswith("http"):
+            needs_update = True
+        # Se não tiver a chave de tamanho, atualiza também
+        elif "size_mb" not in app_db[app]:
             needs_update = True
 
         if needs_update:
