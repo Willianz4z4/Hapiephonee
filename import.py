@@ -13,13 +13,13 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
     os.environ["HAPIE_WATCHDOG"] = "1"
     os.system("clear" if os.name == "posix" else "cls")
     print("🛡️ [Watchdog] Escudo de Resiliência ativado. O bot agora é imortal a crashs de código.")
-    
+
     while True:
         try:
             # Inicia o processo filho (o verdadeiro bot)
             p = subprocess.Popen([sys.executable, __file__] + sys.argv[1:])
             p.wait()
-            
+
             # Analisa o motivo da morte do bot:
             if p.returncode == 0:
                 print("🛡️ [Watchdog] Desligamento seguro detectado (CTRL+C). Encerrando o nó.")
@@ -41,7 +41,7 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
                 time.sleep(10) # Dá tempo para você commitar a correção
                 os.system("git pull > /dev/null 2>&1")
                 print("🚀 [Watchdog] Tentando ressuscitar o bot com o código novo...\n")
-                
+
         except KeyboardInterrupt:
             print("\n🛡️ [Watchdog] Interrompido à força pelo usuário.")
             sys.exit(0)
@@ -388,25 +388,25 @@ try:
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
                         target_ver = response_json.get("nova_versao", "Desconhecida")
-                        
+
                         console.print(f"\n[bold yellow]🔄 UPDATE DETECTADO: O servidor ordenou a versão {target_ver}![/bold yellow]")
                         console.print(f"[dim]Ação travada. Executando: {git_cmd}[/dim]")
-                        
+
                         os.system("pkill -f auto_copy.py > /dev/null 2>&1")
                         os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
-                        
+
                         spinner_git = Halo(text='Puxando atualizações via Git...', spinner='dots')
                         spinner_git.start()
-                        
+
                         try:
                             subprocess.run(git_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                             spinner_git.succeed(f"Código atualizado com sucesso!")
                         except Exception as e:
                             spinner_git.fail(f"Falha ao executar o Git: {e}")
-                        
+
                         console.print("[bold green]✅ Reiniciando o node para aplicar o novo código no sistema...[/bold green]\n")
                         time.sleep(1.5)
-                        
+
                         # Transfere o corpo para o novo processo (O Watchdog assiste isso!)
                         os.execv(sys.executable, ['python'] + sys.argv)
 
@@ -424,7 +424,7 @@ try:
                     last_check = time.time()
 
                     has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos"])
-                    
+
                     if has_tasks:
                         install_script_path = os.path.join(HAPIE_APPS_DIR, "install.py")
                         with Halo(text='Updating Install Engine...', spinner='dots'):
@@ -443,8 +443,9 @@ try:
                 sys.stdout.write(f"\r\033[K\033[90m📡 {current_protocol} | Last connection: {current_time} - Awaiting tasks...\033[0m")
                 sys.stdout.flush()
 
-            except Exception:
-                pass
+            except Exception as e:
+                sys.stdout.write(f"\r\033[K")
+                console.print(f"[bold red]❌ Falha na conexão com o Webhook: {e}[/bold red]")
 
         time.sleep(2)
 
