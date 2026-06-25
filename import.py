@@ -35,13 +35,11 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
                 print("\n⚠️ [Watchdog] Conexão recusada pelo Servidor Central (Shutdown).")
                 sys.exit(4)
             else:
-                # Se foi qualquer outro código (Erro de Sintaxe, Variável não declarada, etc), aí sim ele ressuscita!
                 print(f"\n💀 [Watchdog] CRASH DE CÓDIGO DETECTADO (Código {p.returncode})!")
                 print("🔄 [Watchdog] A versão atual está quebrada. Buscando correções no GitHub em 10 segundos...")
-                time.sleep(10) # Dá tempo para você commitar a correção
+                time.sleep(10)
                 os.system("git pull > /dev/null 2>&1")
                 print("🚀 [Watchdog] Tentando ressuscitar o bot com o código novo...\n")
-
         except KeyboardInterrupt:
             print("\n🛡️ [Watchdog] Interrompido à força pelo usuário.")
             sys.exit(0)
@@ -64,11 +62,11 @@ except ImportError:
     from rich.panel import Panel
     from halo import Halo
 
-HAPIEPHONE_VERSION = "10.3 (Telemetria Integrada)"
+HAPIEPHONE_VERSION = "10.4 (Fila APK_Apks Ativa)"
 console = Console()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
-sys.path.insert(0, BASE_DIR) # Garante que o Python acha a pasta telemetria
+sys.path.insert(0, BASE_DIR)
 
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
@@ -84,7 +82,6 @@ os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(ESSENCIAL_DIR, exist_ok=True)
 os.makedirs(TELEMETRIA_DIR, exist_ok=True)
 
-# Cria um arquivo __init__.py vazio
 init_file = os.path.join(TELEMETRIA_DIR, "__init__.py")
 if not os.path.exists(init_file):
     with open(init_file, "w") as f:
@@ -92,6 +89,7 @@ if not os.path.exists(init_file):
 
 REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
+PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json") # <-- Ponte com o Monitor
 
 saved_config = {}
 
@@ -129,7 +127,6 @@ else:
     console.print("[bold red]❌ Authentication IDs missing. Exiting.[/bold red]")
     sys.exit(2)
 
-# 👇 ATENÇÃO: COLOQUE AQUI O SEU NOVO LINK HTTPS (Ngrok ou Localhost.run)
 URL_WEBHOOK = "https://iodize-scrounger-auction.ngrok-free.dev/webhook"
 report = {"installation_status": "pending", "steps": {}, "system_info": {}}
 
@@ -147,7 +144,6 @@ else:
     console.print("[bold red]❌ Pasta 'Protocols' não encontrada![/bold red]")
 
 protocol_file = os.path.join(PROTOCOLS_DIR, "active_protocol.txt")
-
 if os.path.exists(protocol_file):
     with open(protocol_file, "r") as f:
         current_protocol = f.read().strip()
@@ -161,7 +157,6 @@ else:
 
 spinner = Halo(text=f'Preparing Cloud Phone environment (Protocol: {current_protocol})...', spinner='dots')
 spinner.start()
-
 os.system("pkg update -y -q > /dev/null 2>&1 && pkg upgrade -y -q > /dev/null 2>&1")
 
 try:
@@ -270,8 +265,7 @@ except Exception as e:
     device_id = "Unknown"
 
 report["installation_status"] = "Completed"
-
-spinner.succeed(f"Hardware scan complete! Device ID: \033[1m{device_id}\033[0m | Protocol: \033[1;36m{current_protocol}\033[0m")
+spinner.succeed(f"Hardware scan complete! Device ID: \033[1m{device_id}\033[0m")
 
 def update_client_token(new_token):
     global client_token
@@ -323,7 +317,7 @@ spinner.start()
 spinner.succeed("Persistent boot skipped (UgPhone compatibility module active).")
 
 registered_in_db = False
-PING_INTERVAL = 60 # 👈 Aumentado para economizar cota do Ngrok!
+PING_INTERVAL = 60
 last_check = 0
 
 console.print("\n[bold green]📡 Connection established. Awaiting commands from Control Panel...[/bold green]")
@@ -384,36 +378,41 @@ try:
                     "Content-Type": "application/json",
                     "ngrok-skip-browser-warning": "true"
                 }
-                
-                # Criptografia (HTTPS) de volta, pacote enviado limpo sem o verify=False
+
                 response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
 
                 if response.status_code == 200:
                     response_json = response.json()
+
+                    # =======================================================
+                    # ⚠️ INTERCEPÇÃO DO UPLOAD_QUEUE (Fila de APKs pendentes)
+                    # =======================================================
+                    if "upload_queue" in response_json:
+                        lista_pendentes = response_json["upload_queue"]
+                        if isinstance(lista_pendentes, list) and len(lista_pendentes) > 0:
+                            # Escreve a lista em arquivo JSON para o monitor interno ler
+                            with open(PENDING_TASKS_FILE, "w", encoding="utf-8") as pf:
+                                json.dump(lista_pendentes, pf, indent=4)
+                            console.print(f"\n[bold yellow]📦 [FILA] Recebidas {len(lista_pendentes)} tarefas de extração de APK.[/bold yellow]")
 
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
                         target_ver = response_json.get("nova_versao", "Desconhecida")
 
                         console.print(f"\n[bold yellow]🔄 UPDATE DETECTADO: O servidor ordenou a versão {target_ver}![/bold yellow]")
-                        console.print(f"[dim]Ação travada. Executando: {git_cmd}[/dim]")
-
                         os.system("pkill -f auto_copy.py > /dev/null 2>&1")
                         os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
 
                         spinner_git = Halo(text='Puxando atualizações via Git...', spinner='dots')
                         spinner_git.start()
-
                         try:
                             subprocess.run(git_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                            spinner_git.succeed(f"Código atualizado com sucesso!")
+                            spinner_git.succeed("Código atualizado com sucesso!")
                         except Exception as e:
                             spinner_git.fail(f"Falha ao executar o Git: {e}")
 
-                        console.print("[bold green]✅ Reiniciando o node para aplicar o novo código no sistema...[/bold green]\n")
+                        console.print("[bold green]✅ Reiniciando o node para aplicar o novo código...[/bold green]\n")
                         time.sleep(1.5)
-
-                        # Transfere o corpo para o novo processo (O Watchdog assiste isso!)
                         os.execv(sys.executable, ['python'] + sys.argv)
 
                     if "new_client_token" in response_json:
@@ -423,14 +422,13 @@ try:
                         print("\n")
                         console.print(f"[bold red]🛑 Server refused connection: {response_json.get('reason', 'Unknown reason')}[/bold red]")
                         sys.exit(4)
-
+                    
                     if not registered_in_db:
                         registered_in_db = True
 
                     last_check = time.time()
 
                     has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos"])
-
                     if has_tasks:
                         install_script_path = os.path.join(HAPIE_APPS_DIR, "install.py")
                         with Halo(text='Updating Install Engine...', spinner='dots'):

@@ -21,10 +21,13 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(BASE_DIR)
 
 ICONS_DIR = os.path.join(REPO_ROOT, "icons")
-JSON_FILE = os.path.join(REPO_ROOT, "Data", "apps_install.json")
+DATA_DIR = os.path.join(REPO_ROOT, "Data")
+JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
+PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
+CONFIG_FILE = os.path.join(REPO_ROOT, "hapie_config.json")
 
 os.makedirs(ICONS_DIR, exist_ok=True)
-os.makedirs(os.path.dirname(JSON_FILE), exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
 def load_data():
     if os.path.exists(JSON_FILE):
@@ -51,11 +54,9 @@ def get_user_apps():
 # ========================================================
 def upload_to_nuvem(file_path):
     try:
-        # Usamos a chave pública oficial da API deles com retorno em JSON
         upload_cmd = f'curl -s -F "key=6d207e02198a847aa98d0a2a901485a5" -F "action=upload" -F "source=@{file_path}" -F "format=json" https://freeimage.host/api/1/upload'
         out = subprocess.check_output(upload_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
 
-        # Faz o parse da resposta para pegar o link direto da imagem
         data = json.loads(out)
         if "image" in data and "url" in data["image"]:
             return data["image"]["url"]
@@ -77,16 +78,12 @@ def get_app_info(pkg_name):
             return info
         apk_path = lines[0]
 
-        # ==========================================
-        # 📏 Pegar o tamanho do APK e converter pra MB
-        # ==========================================
         try:
             size_cmd = f"su -c 'stat -c %s \"{apk_path}\"'"
             size_bytes = int(subprocess.check_output(size_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip())
             info["size_mb"] = round(size_bytes / (1024 * 1024), 2)
         except Exception:
             try:
-                # Fallback usando ls -l se stat falhar
                 ls_cmd = f"su -c 'ls -l \"{apk_path}\"'"
                 ls_out = subprocess.check_output(ls_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
                 size_bytes = int(ls_out.split()[4])
@@ -108,7 +105,7 @@ def get_app_info(pkg_name):
         icon_match = re.search(r"application: label=.*? icon='([^']+)'", badging_output)
         if not icon_match:
             icon_match = re.search(r"icon='([^']+)'", badging_output)
-        
+
         unzip_list_cmd = f"unzip -l \"{apk_path}\""
         files_list = subprocess.check_output(unzip_list_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
 
@@ -142,7 +139,6 @@ def get_app_info(pkg_name):
             os.system(unzip_p_cmd)
 
             if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
-                console.print(f"[dim]☁️ Fazendo upload do ícone para a nuvem (FreeImage)...[/dim]")
                 cloud_url = upload_to_nuvem(icon_dest)
 
                 if cloud_url:
@@ -176,6 +172,73 @@ def print_app_panel(app_package, info, is_new=False):
 
     console.print(Panel(detalhes, border_style=border_color))
 
+# ========================================================
+# 🚀 PENDÊNCIAS: EXTRAÇÃO E UPLOAD PARA O FLASK
+# ========================================================
+def process_pending_uploads():
+    if not os.path.exists(PENDING_TASKS_FILE):
+        return
+
+    try:
+        with open(PENDING_TASKS_FILE, "r", encoding="utf-8") as f:
+            tasks = json.load(f)
+    except Exception:
+        return
+
+    if not tasks:
+        return
+
+    owner_id = "unknown"
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                owner_id = config.get("owner_id", "unknown")
+    except:
+        pass
+
+    # A rota do seu Flask que configuramos no connection.py
+    UPLOAD_URL = "https://iodize-scrounger-auction.ngrok-free.dev/upload_apk"
+
+    for pkg in tasks:
+        console.print(f"\n[bold magenta]🚀 [FILA] Iniciando extração e upload do APK: {pkg}[/bold magenta]")
+        try:
+            apk_path_cmd = f"su -c 'pm path {pkg}'"
+            apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+            lines = [line.replace("package:", "").strip() for line in apk_path_raw.split("\n") if line.strip()]
+
+            if not lines:
+                console.print(f"[red]❌ APK não encontrado no sistema para: {pkg}[/red]")
+                continue
+
+            apk_path = lines[0]
+            temp_apk = f"/sdcard/Download/{pkg}_temp.apk"
+
+            # 1. Copia o APK protegido para a pasta de downloads pública do celular
+            os.system(f"su -c 'cp \"{apk_path}\" \"{temp_apk}\"'")
+            os.system(f"su -c 'chmod 777 \"{temp_apk}\"'")
+
+            console.print(f"[dim]Enviando para o Drive da VPS (Isso pode demorar dependendo do tamanho)...[/dim]")
+            
+            # 2. Faz o envio Multipart-Form-Data para o seu connection.py
+            upload_cmd = f'curl -s -X POST -F "file=@{temp_apk}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
+            response = subprocess.check_output(upload_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+
+            # 3. Limpa o arquivo temporário para não entupir a memória do celular
+            os.system(f"su -c 'rm \"{temp_apk}\"'")
+
+            console.print(f"[bold green]✅ Upload concluído com sucesso: {response}[/bold green]")
+
+        except Exception as e:
+            console.print(f"[bold red]❌ Erro crítico no upload de {pkg}: {e}[/bold red]")
+
+    # 4. Apaga o arquivo de pendências após processar todos
+    try:
+        os.remove(PENDING_TASKS_FILE)
+        console.print("[dim]🗑️ Fila de pendências concluída e resetada.[/dim]\n")
+    except:
+        pass
+
 def start_monitor():
     os.system("clear" if os.name == "posix" else "cls")
     console.print(Panel.fit("[bold cyan]Hapiephone Monitor Estruturado[/bold cyan]\n[dim]Pasta: hapie_apps | Banco: Data/apps_install.json[/dim]", border_style="cyan"))
@@ -192,7 +255,6 @@ def start_monitor():
             needs_update = True
         elif app_db[app].get("icon_local") and not str(app_db[app]["icon_local"]).startswith("http"):
             needs_update = True
-        # Se não tiver a chave de tamanho, atualiza também
         elif "size_mb" not in app_db[app]:
             needs_update = True
 
@@ -218,6 +280,9 @@ def start_monitor():
 
     while True:
         try:
+            # INTERCEPTA AS ORDENS DE UPLOAD VINDAS DO IMPORT.PY
+            process_pending_uploads()
+            
             time.sleep(2)
             new_apps = get_user_apps()
 
@@ -243,7 +308,7 @@ def start_monitor():
                 current_apps = new_apps
         except KeyboardInterrupt:
             break
-        except Exception:
+        except Exception as e:
             time.sleep(2)
 
 if __name__ == "__main__":
