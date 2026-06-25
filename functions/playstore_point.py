@@ -107,7 +107,9 @@ class PlayStoreDeepAI:
         """Pega os botões e já devolve vetorizados."""
         clickables = {}
         junk_ids = ["ad_label", "promo", "banner", "notification", "play_card"]
-        junk_texts = ["mb", "gb", "download", "instalar", "boost", "days ago"]
+        
+        # ⚠️ CORREÇÃO: Palavras relacionadas a anúncios agora tornam o botão invisível para ela
+        junk_texts = ["mb", "gb", "download", "instalar", "boost", "days ago", "sponsored", "patrocinado", "anúncio", "ad"]
 
         try:
             root = ET.fromstring(xml_content)
@@ -264,9 +266,12 @@ class PlayStoreDeepAI:
                         print(f"🎯 ALVO MESTRE ENCONTRADO! GANHOU!")
                         reward = 2000.0 - (steps * 50)
                         is_terminal = True
+                        
+                    # ⚠️ CORREÇÃO: Fim do farm de pontos! Fuga agora não dá prêmio, dá punição leve
                     elif any(t in txt_clicado for t in ["close", "fechar", "sair", "skip"]): 
-                        reward = 15.0 # NOVA RECOMPENSA: Fechar janela/popup
-                        print("🚪 Tentativa de fuga ativada!")
+                        reward = -1.0 
+                        print("🚪 Fuga ativada (mas sem ganhar pontos!)")
+                        
                     elif any(t in txt_clicado for t in ["perks", "vantagens"]): 
                         reward = 90.0
                     elif any(t in txt_clicado for t in ["play points"]): 
