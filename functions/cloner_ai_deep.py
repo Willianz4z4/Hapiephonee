@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 
-# 🧠 Vocabulário base estrutural (focado nas ações e caminhos, independente do app)
+# 🧠 Vocabulário base estrutural
 VOCABULARIO = [
     "cloner", "clone", "app cloner", "load settings", "settings", "configurações", "config",
     "import", "importar", "data", "dados", "download", "storage", "emulated", "diretório",
@@ -20,7 +20,6 @@ VOCABULARIO = [
 ]
 
 class DeepQNetwork(nn.Module):
-    """🧠 O Cérebro Artificial Resiliente (3 Camadas Ocultas)"""
     def __init__(self, input_size):
         super(DeepQNetwork, self).__init__()
         self.network = nn.Sequential(
@@ -28,7 +27,7 @@ class DeepQNetwork(nn.Module):
             nn.ReLU(),
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Linear(64, 1) # Retorna a nota de utilidade (Q-Value) da ação
+            nn.Linear(64, 1)
         )
 
     def forward(self, x):
@@ -39,14 +38,12 @@ class ClonerStressAI:
         self.model_file = "brain_cloner_general.pth"
         self.log_file = "ai_cloner_stress.log"
 
-        # Hiperparâmetros de Aprendizado
         self.gamma = 0.95
-        self.epsilon = 0.80  # Começa explorando bastante
+        self.epsilon = 0.80  
         self.min_epsilon = 0.15
         self.batch_size = 32
         self.memory = deque(maxlen=4000)
 
-        # Tamanho do Input Fixo = (Vocabulário Estrutural + 2 Slots de Match Dinâmico) * 2
         self.vector_length = len(VOCABULARIO) + 2
         self.input_size = self.vector_length * 2
 
@@ -65,20 +62,24 @@ class ClonerStressAI:
             return ""
 
     def get_installed_user_apps(self):
-        """Pega dinamicamente todos os aplicativos de usuário instalados no celular"""
         saida = self.root_command("pm list packages -3")
         packages = []
         for line in saida.split("\n"):
             if "package:" in line:
                 pkg = line.replace("package:", "").strip()
-                # Extrai uma palavra-chave simples do pacote (ex: com.termux -> termux)
                 parts = pkg.split(".")
                 clean_name = parts[-1] if len(parts) > 1 else pkg
-                if clean_name.lower() not in ["vending", "cloner"]: # evita os apps de sistema básicos
+                if clean_name.lower() not in ["vending", "cloner"]:
                     packages.append((pkg, clean_name))
-        
-        # Fallback de segurança caso o comando falhe ou não tenha apps cadastrados
         return packages if packages else [("com.termux", "termux"), ("com.roblox.client", "roblox")]
+
+    def get_current_package(self):
+        """Detecta com precisão qual aplicativo está aberto na tela agora"""
+        focus = self.root_command("dumpsys window | grep -E 'mCurrentFocus'")
+        match = re.search(r'u0\s+([^/]+)', focus)
+        if match:
+            return match.group(1).strip()
+        return ""
 
     def get_screen_xml(self):
         self.root_command("rm -f /data/local/tmp/cloner_dump.xml")
@@ -86,23 +87,14 @@ class ClonerStressAI:
         return xml if xml and xml.startswith("<?xml") else None
 
     def text_to_vector(self, text, target_name):
-        """Transforma o texto em vetor usando o vocabulário fixo + os slots de match dinâmico"""
         text = text.lower()
         target_name = target_name.lower()
-        
-        # 1. Monta a parte estrutural do vocabulário
         vector = [1.0 if palavra in text else 0.0 for palavra in VOCABULARIO]
-        
-        # 2. Injeta o Slot Dinâmico 1: É o app alvo do episódio atual?
         vector.append(1.0 if target_name in text else 0.0)
-        
-        # 3. Injeta o Slot Dinâmico 2: É o arquivo de settings/data do alvo?
         vector.append(1.0 if (target_name in text and "settings" in text) or (f"{target_name}.settings" in text) else 0.0)
-        
         return vector
 
     def get_state_vector(self, xml_content, target_name):
-        """Soma o estado geral de leitura da tela inteira baseado no alvo atual"""
         screen_vector = np.zeros(self.vector_length)
         try:
             root = ET.fromstring(xml_content)
@@ -117,7 +109,6 @@ class ClonerStressAI:
         return screen_vector
 
     def get_clickables_and_scrolls(self, xml_content, target_name):
-        """Mapeia o ambiente gerando as ações vetorizadas dinamicamente para o alvo da rodada"""
         actions = {}
         try:
             root = ET.fromstring(xml_content)
@@ -141,11 +132,9 @@ class ClonerStressAI:
         except:
             pass
 
-        # 📜 Ação virtual de SCROLL (A IA escolhe dar scroll quando julgar necessário)
         scroll_vector = self.text_to_vector("scroll rolar deslizar", target_name)
         actions["SISTEMA|scroll_down"] = {"type": "scroll", "vector": scroll_vector, "raw_text": "ação de rolar para baixo"}
         
-        # 🔙 Botão físico Voltar
         back_vector = self.text_to_vector("voltar retornar", target_name)
         actions["SISTEMA|back"] = {"type": "back", "vector": back_vector, "raw_text": "botão voltar"}
 
@@ -156,12 +145,12 @@ class ClonerStressAI:
             try:
                 self.model.load_state_dict(torch.load(self.model_file))
                 self.model.eval()
-                print("🧠 Cérebro geral carregado com sucesso. Pronto para o estresse!")
+                print("🧠 Cérebro geral carregado. Pronto para o estresse!")
             except:
-                print("⚠️ Criando um novo cérebro neural geral.")
+                pass
 
     def save_model(self):
-        torch.save(self.model.state_dict(), self.model_file)
+        torch.save(self.model.dict(), self.model_file)
 
     def replay_experience(self):
         if len(self.memory) < self.batch_size:
@@ -189,24 +178,53 @@ class ClonerStressAI:
 
     def live_stress_training(self):
         os.system('clear')
-        print("🔥 APRENDIZADO SOB ESTRESSE ATIVADO! Varrendo os APKs do celular...")
+        print("🔥 APRENDIZADO SOB ESTRESSE CRÍTICO ATIVADO!")
         
         episode = 1
         lista_apks = self.get_installed_user_apps()
 
         while True:
-            # 🎲 Escolhe um APP alvo completamente aleatório para este episódio!
             target_pkg, target_name = random.choice(lista_apks)
             
             print(f"\n╔══════════════════════════════════════════════════════════════╗")
-            f"  EPISÓDIO #{episode} | ALVO DA VEZ: {target_name.upper()} ({target_pkg})"
+            print(f"  EPISÓDIO #{episode} | ALVO: {target_name.upper()} | ⏱️ MAX: 1 MINUTO")
             print(f"╚══════════════════════════════════════════════════════════════╝")
             
-            # Aqui você pode dar um force-stop/start no app cloner para resetar o estado da tela
-            time.sleep(1)
+            # Reset inicial dos temporizadores da sessão
+            session_start_time = time.time()
+            outside_app_start = None
             steps = 0
 
-            while steps < 25: # Limite de 25 ações por alvo
+            while True:
+                # ⏱️ CONTROLE 1: Limite estrito de 1 minuto por sessão
+                elapsed_session_time = time.time() - session_start_time
+                if elapsed_session_time >= 60.0:
+                    print("⏱️ [SESSÃO FINALIZADA] Tempo esgotado (1 minuto). Mudando de APK...")
+                    break
+
+                # 🎚️ CONTROLE 2: Monitoramento Antifuga (30 segundos fora do ecossistema)
+                current_package = self.get_current_package()
+                is_inside = any(x in current_package for x in ["cloner", target_name, "packageinstaller", "vending"]) or current_package == ""
+                
+                if not is_inside:
+                    if outside_app_start is None:
+                        outside_app_start = time.time()
+                    elif time.time() - outside_app_start >= 30.0:
+                        print("🚨 [CRÍTICO] Fora do app por 30 segundos! APLICANDO PENALIDADE MÁXIMA.")
+                        
+                        # Penaliza severamente a última ação tomada que a deixou presa fora
+                        if len(self.memory) > 0:
+                            last_exp = list(self.memory)[-1]
+                            # Atualiza a recompensa da última memória para -5000.0
+                            self.memory[-1] = (last_exp[0], last_exp[1], -5000.0, last_exp[3], last_exp[4], True)
+                        
+                        # Reinicia o ecossistema forçadamente
+                        self.root_command("am force-stop com.appcloner") # Ajuste se o pacote do cloner for diferente
+                        self.root_command(f"am force-stop {target_pkg}")
+                        break
+                else:
+                    outside_app_start = None # Reseta o cronômetro se voltou para o app correto
+
                 xml = self.get_screen_xml()
                 if not xml:
                     time.sleep(1)
@@ -223,7 +241,7 @@ class ClonerStressAI:
                     with torch.no_grad():
                         action_scores[key] = self.model(input_tensor).item()
 
-                # Epsilon-Greedy (Explorar vs Explorar)
+                # Epsilon-Greedy
                 if random.uniform(0, 1) < self.epsilon:
                     chosen_key = random.choice(list(actions.keys()))
                     print(f"🎲 [Explorando] Movimento: {chosen_key.split('|')[-1]}")
@@ -233,7 +251,7 @@ class ClonerStressAI:
 
                 action_data = actions[chosen_key]
                 
-                # Execução Física no Celular
+                # Execução Física
                 if action_data["type"] == "click":
                     self.root_command(f"input tap {action_data['x']} {action_data['y']}")
                 elif action_data["type"] == "scroll":
@@ -244,22 +262,20 @@ class ClonerStressAI:
                 time.sleep(1.5)
                 steps += 1
 
-                # --- 🎯 SISTEMA DE RECOMPENSAS GENERALIZADO ---
+                # Recompensas do ambiente interno
                 new_xml = self.get_screen_xml()
-                reward = -2.0  # Punição por tempo
+                reward = -2.0  
                 is_terminal = False
                 txt_clicado = action_data["raw_text"]
 
-                # Verificação dinâmica de Vitória Mestre usando as variáveis do alvo da rodada
+                # Sucesso mestre dinâmico
                 if f"{target_name}.settings" in txt_clicado or (target_name in txt_clicado and "settings" in txt_clicado):
-                    print(f"🎉 ACERTOU EM CHEIO! Dados do {target_name.upper()} injetados com sucesso!")
+                    print(f"🎉 INJETOU DADOS DO {target_name.upper()}!")
                     reward = 4000.0 - (steps * 50)
                     is_terminal = True
                 
-                # Recompensas de trilha condizentes com o alvo dinâmico
                 elif target_name in txt_clicado:
-                    reward = 600.0  # Encontrou o aplicativo mutável na lista
-                    print(f"  └─> [Recompensa] Achou o pacote do {target_name.upper()}")
+                    reward = 600.0  
                 elif "load settings" in txt_clicado or "importar" in txt_clicado:
                     reward = 400.0  
                 elif "download" in txt_clicado:
@@ -273,7 +289,6 @@ class ClonerStressAI:
                 new_actions = self.get_clickables_and_scrolls(new_xml, target_name) if new_xml else {}
                 new_actions_vecs = [d["vector"] for d in new_actions.values()]
 
-                # Gravação da memória e Replay (Treino em Lote)
                 self.memory.append((state_vector, action_data["vector"], reward, new_state_vec, new_actions_vecs, is_terminal))
                 self.replay_experience()
 
@@ -281,8 +296,6 @@ class ClonerStressAI:
                     break
 
             self.save_model()
-            
-            # Decaimento do Epsilon para ir consolidando o aprendizado real
             if self.epsilon > self.min_epsilon:
                 self.epsilon -= 0.02
                 
