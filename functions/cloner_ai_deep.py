@@ -37,6 +37,9 @@ class ClonerStressAI:
     def __init__(self):
         self.model_file = "brain_cloner_general.pth"
         self.log_file = "ai_cloner_stress.log"
+        
+        # ✅ Pacote exato do UG Cloner definido de forma global
+        self.cloner_package = "com.ugcloner.xfein"
 
         self.gamma = 0.95
         self.epsilon = 0.80  
@@ -69,12 +72,11 @@ class ClonerStressAI:
                 pkg = line.replace("package:", "").strip()
                 parts = pkg.split(".")
                 clean_name = parts[-1] if len(parts) > 1 else pkg
-                if clean_name.lower() not in ["vending", "cloner"]:
+                if clean_name.lower() not in ["vending", "cloner", "ugcloner"]:
                     packages.append((pkg, clean_name))
         return packages if packages else [("com.termux", "termux"), ("com.roblox.client", "roblox")]
 
     def get_current_package(self):
-        """Detecta com precisão qual aplicativo está aberto na tela agora"""
         focus = self.root_command("dumpsys window | grep -E 'mCurrentFocus'")
         match = re.search(r'u0\s+([^/]+)', focus)
         if match:
@@ -150,7 +152,7 @@ class ClonerStressAI:
                 pass
 
     def save_model(self):
-        torch.save(self.model.dict(), self.model_file)
+        torch.save(self.model.state_dict(), self.model_file)
 
     def replay_experience(self):
         if len(self.memory) < self.batch_size:
@@ -190,7 +192,12 @@ class ClonerStressAI:
             print(f"  EPISÓDIO #{episode} | ALVO: {target_name.upper()} | ⏱️ MAX: 1 MINUTO")
             print(f"╚══════════════════════════════════════════════════════════════╝")
             
-            # Reset inicial dos temporizadores da sessão
+            # ✅ FECHA E ABRE O UG CLONER AUTOMATICAMENTE NO INÍCIO DE CADA EPISÓDIO
+            self.root_command(f"am force-stop {self.cloner_package}")
+            time.sleep(0.5)
+            self.root_command(f"monkey -p {self.cloner_package} -c android.intent.category.LAUNCHER 1")
+            print(f"🚀 [SISTEMA] UG Cloner inicializado automaticamente.")
+            
             session_start_time = time.time()
             outside_app_start = None
             steps = 0
@@ -202,28 +209,25 @@ class ClonerStressAI:
                     print("⏱️ [SESSÃO FINALIZADA] Tempo esgotado (1 minuto). Mudando de APK...")
                     break
 
-                # 🎚️ CONTROLE 2: Monitoramento Antifuga (30 segundos fora do ecossistema)
+                # 🎚️ CONTROLE 2: Monitoramento Antifuga corrigido com o pacote correto
                 current_package = self.get_current_package()
-                is_inside = any(x in current_package for x in ["cloner", target_name, "packageinstaller", "vending"]) or current_package == ""
+                is_inside = any(x in current_package for x in [self.cloner_package, target_name, "packageinstaller", "vending"]) or current_package == ""
                 
                 if not is_inside:
                     if outside_app_start is None:
                         outside_app_start = time.time()
                     elif time.time() - outside_app_start >= 30.0:
-                        print("🚨 [CRÍTICO] Fora do app por 30 segundos! APLICANDO PENALIDADE MÁXIMA.")
+                        print("🚨 [CRÍTICO] Fora do UG Cloner por 30 segundos! APLICANDO PENALIDADE MÁXIMA.")
                         
-                        # Penaliza severamente a última ação tomada que a deixou presa fora
                         if len(self.memory) > 0:
                             last_exp = list(self.memory)[-1]
-                            # Atualiza a recompensa da última memória para -5000.0
                             self.memory[-1] = (last_exp[0], last_exp[1], -5000.0, last_exp[3], last_exp[4], True)
                         
-                        # Reinicia o ecossistema forçadamente
-                        self.root_command("am force-stop com.appcloner") # Ajuste se o pacote do cloner for diferente
+                        self.root_command(f"am force-stop {self.cloner_package}")
                         self.root_command(f"am force-stop {target_pkg}")
                         break
                 else:
-                    outside_app_start = None # Reseta o cronômetro se voltou para o app correto
+                    outside_app_start = None 
 
                 xml = self.get_screen_xml()
                 if not xml:
@@ -262,13 +266,12 @@ class ClonerStressAI:
                 time.sleep(1.5)
                 steps += 1
 
-                # Recompensas do ambiente interno
+                # Recompensas
                 new_xml = self.get_screen_xml()
                 reward = -2.0  
                 is_terminal = False
                 txt_clicado = action_data["raw_text"]
 
-                # Sucesso mestre dinâmico
                 if f"{target_name}.settings" in txt_clicado or (target_name in txt_clicado and "settings" in txt_clicado):
                     print(f"🎉 INJETOU DADOS DO {target_name.upper()}!")
                     reward = 4000.0 - (steps * 50)
