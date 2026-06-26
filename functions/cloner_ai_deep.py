@@ -115,22 +115,24 @@ class ClonerStressAI:
         try:
             root = ET.fromstring(xml_content)
             for node in root.iter('node'):
-                if node.attrib.get('clickable') == 'true' or node.attrib.get('resource-id') == 'android:id/text1':
-                    text = node.attrib.get('text', '').lower()
-                    desc = node.attrib.get('content-desc', '').lower()
-                    bounds = node.attrib.get('bounds', '')
+                text = node.attrib.get('text', '').lower()
+                desc = node.attrib.get('content-desc', '').lower()
 
-                    if not text and not desc:
-                        continue
+                # 🔥 CORREÇÃO DA CEGUEIRA: 
+                # Pega as coordenadas de QUALQUER coisa que tenha texto útil, 
+                # ignorando o fato do Android dizer se é "clickable" ou não!
+                if not text and not desc:
+                    continue
 
-                    coords = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', bounds)
-                    if coords:
-                        x = (int(coords.group(1)) + int(coords.group(3))) // 2
-                        y = (int(coords.group(2)) + int(coords.group(4))) // 2
+                bounds = node.attrib.get('bounds', '')
+                coords = re.match(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]', bounds)
+                if coords:
+                    x = (int(coords.group(1)) + int(coords.group(3))) // 2
+                    y = (int(coords.group(2)) + int(coords.group(4))) // 2
 
-                        btn_vector = self.text_to_vector(text + " " + desc, target_name)
-                        action_key = f"CLICK|{x},{y}|{text[:15]}"
-                        actions[action_key] = {"type": "click", "x": x, "y": y, "vector": btn_vector, "raw_text": text + " " + desc}
+                    btn_vector = self.text_to_vector(text + " " + desc, target_name)
+                    action_key = f"CLICK|{x},{y}|{text[:15]}"
+                    actions[action_key] = {"type": "click", "x": x, "y": y, "vector": btn_vector, "raw_text": text + " " + desc}
         except:
             pass
 
@@ -152,7 +154,6 @@ class ClonerStressAI:
                 pass
 
     def save_model(self):
-        # ✅ FIX: Alterado de .dict() para .state_dict() para evitar crash do PyTorch
         torch.save(self.model.state_dict(), self.model_file)
 
     def replay_experience(self):
@@ -279,6 +280,7 @@ class ClonerStressAI:
                 
                 elif target_name in txt_clicado:
                     reward = 600.0  
+                    print(f"  └─> [Recompensa] Achou o alvo: {target_name.upper()}")
                 elif "load settings" in txt_clicado or "importar" in txt_clicado:
                     reward = 400.0  
                 elif "download" in txt_clicado:
