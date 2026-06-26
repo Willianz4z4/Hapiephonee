@@ -38,7 +38,7 @@ class ClonerStressAI:
         self.model_file = "brain_cloner_general.pth"
         self.log_file = "ai_cloner_stress.log"
         
-        # ✅ Pacote exato do UG Cloner definido de forma global
+        # ✅ Pacote exato do UG Cloner
         self.cloner_package = "com.ugcloner.xfein"
 
         self.gamma = 0.95
@@ -152,6 +152,7 @@ class ClonerStressAI:
                 pass
 
     def save_model(self):
+        # ✅ FIX: Alterado de .dict() para .state_dict() para evitar crash do PyTorch
         torch.save(self.model.state_dict(), self.model_file)
 
     def replay_experience(self):
@@ -192,7 +193,7 @@ class ClonerStressAI:
             print(f"  EPISÓDIO #{episode} | ALVO: {target_name.upper()} | ⏱️ MAX: 1 MINUTO")
             print(f"╚══════════════════════════════════════════════════════════════╝")
             
-            # ✅ FECHA E ABRE O UG CLONER AUTOMATICAMENTE NO INÍCIO DE CADA EPISÓDIO
+            # ✅ Abre e força a execução do UG Cloner via comando de Intent
             self.root_command(f"am force-stop {self.cloner_package}")
             time.sleep(0.5)
             self.root_command(f"monkey -p {self.cloner_package} -c android.intent.category.LAUNCHER 1")
@@ -203,13 +204,13 @@ class ClonerStressAI:
             steps = 0
 
             while True:
-                # ⏱️ CONTROLE 1: Limite estrito de 1 minuto por sessão
+                # ⏱️ Limite estrito de 1 minuto por sessão
                 elapsed_session_time = time.time() - session_start_time
                 if elapsed_session_time >= 60.0:
-                    print("⏱️ [SESSÃO FINALIZADA] Tempo esgotado (1 minuto). Mudando de APK...")
+                    print("⏱️ [SESSÃO FINALIZADA] Tempo limite de 1 minuto esgotado. Rotacionando alvo...")
                     break
 
-                # 🎚️ CONTROLE 2: Monitoramento Antifuga corrigido com o pacote correto
+                # 🎚️ Verificação de pacote em primeiro plano (Monitor Antifuga)
                 current_package = self.get_current_package()
                 is_inside = any(x in current_package for x in [self.cloner_package, target_name, "packageinstaller", "vending"]) or current_package == ""
                 
@@ -237,7 +238,7 @@ class ClonerStressAI:
                 state_vector = self.get_state_vector(xml, target_name)
                 actions = self.get_clickables_and_scrolls(xml, target_name)
 
-                # Avaliação da Rede Neural
+                # Avaliação Neural
                 self.model.eval()
                 action_scores = {}
                 for key, data in actions.items():
@@ -255,7 +256,7 @@ class ClonerStressAI:
 
                 action_data = actions[chosen_key]
                 
-                # Execução Física
+                # Clique Físico
                 if action_data["type"] == "click":
                     self.root_command(f"input tap {action_data['x']} {action_data['y']}")
                 elif action_data["type"] == "scroll":
@@ -266,7 +267,6 @@ class ClonerStressAI:
                 time.sleep(1.5)
                 steps += 1
 
-                # Recompensas
                 new_xml = self.get_screen_xml()
                 reward = -2.0  
                 is_terminal = False
