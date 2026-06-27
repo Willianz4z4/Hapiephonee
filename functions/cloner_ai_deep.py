@@ -72,7 +72,8 @@ class ClonerStressAI:
                 pkg = line.replace("package:", "").strip()
                 parts = pkg.split(".")
                 clean_name = parts[-1] if len(parts) > 1 else pkg
-                if clean_name.lower() not in ["vending", "cloner", "ugcloner"]:
+                # 🔥 PATCH ANTI-HACK 1: Adicionado xfein e launcher aos bloqueados
+                if clean_name.lower() not in ["vending", "cloner", "ugcloner", "xfein", "launcher"]:
                     packages.append((pkg, clean_name))
         return packages if packages else [("com.termux", "termux"), ("com.roblox.client", "roblox")]
 
@@ -117,11 +118,15 @@ class ClonerStressAI:
             for node in root.iter('node'):
                 text = node.attrib.get('text', '').lower()
                 desc = node.attrib.get('content-desc', '').lower()
+                full_text = text + " " + desc
 
-                # 🔥 CORREÇÃO DA CEGUEIRA: 
-                # Pega as coordenadas de QUALQUER coisa que tenha texto útil, 
-                # ignorando o fato do Android dizer se é "clickable" ou não!
-                if not text and not desc:
+                # 🔥 PATCH ANTI-HACK 2: 
+                # 1. Ignora botões vazios ou com apenas 1 letra (fantasmas)
+                if len(full_text.strip()) < 2:
+                    continue
+                
+                # 2. Ignora o título estático do aplicativo para ela não roubar pontos
+                if "ug cloner by" in full_text:
                     continue
 
                 bounds = node.attrib.get('bounds', '')
@@ -130,9 +135,9 @@ class ClonerStressAI:
                     x = (int(coords.group(1)) + int(coords.group(3))) // 2
                     y = (int(coords.group(2)) + int(coords.group(4))) // 2
 
-                    btn_vector = self.text_to_vector(text + " " + desc, target_name)
-                    action_key = f"CLICK|{x},{y}|{text[:15]}"
-                    actions[action_key] = {"type": "click", "x": x, "y": y, "vector": btn_vector, "raw_text": text + " " + desc}
+                    btn_vector = self.text_to_vector(full_text, target_name)
+                    action_key = f"CLICK|{x},{y}|{full_text[:15].strip()}"
+                    actions[action_key] = {"type": "click", "x": x, "y": y, "vector": btn_vector, "raw_text": full_text}
         except:
             pass
 
