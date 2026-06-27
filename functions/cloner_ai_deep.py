@@ -118,9 +118,13 @@ class ClonerStressAI:
             for node in root.iter('node'):
                 text = node.attrib.get('text', '').lower()
                 desc = node.attrib.get('content-desc', '').lower()
+                pkg = node.attrib.get('package', '').lower()
                 full_text = text + " " + desc
 
-                # 🔥 PATCH ANTI-HACK 2: 
+                # 🔥 PATCH ANTI-HACK 3: A IA fica cega para o Termux (não pode ler os próprios logs)
+                if 'termux' in pkg:
+                    continue
+
                 # 1. Ignora botões vazios ou com apenas 1 letra (fantasmas)
                 if len(full_text.strip()) < 2:
                     continue
