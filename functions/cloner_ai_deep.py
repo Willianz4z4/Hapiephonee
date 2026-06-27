@@ -36,14 +36,13 @@ class DeepQNetwork(nn.Module):
 class ClonerStressAI:
     def __init__(self):
         self.model_file = "brain_cloner_general.pth"
-        
         self.cloner_package = "com.ugcloner.xfein"
 
         self.gamma = 0.95
-        self.epsilon = 0.80  
+        self.epsilon = 0.80
         self.min_epsilon = 0.15
         self.batch_size = 32
-        
+
         self.memory = deque(maxlen=4000)
         self.priorities = deque(maxlen=4000)
 
@@ -51,11 +50,11 @@ class ClonerStressAI:
         self.input_size = self.vector_length * 2
 
         self.device = torch.device("cpu")
-        
+
         self.model = DeepQNetwork(self.input_size).to(self.device)
         self.target_model = DeepQNetwork(self.input_size).to(self.device)
-        self.target_update_freq = 5 
-        
+        self.target_update_freq = 5
+
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
         self.criterion = nn.MSELoss()
 
@@ -97,10 +96,10 @@ class ClonerStressAI:
         target_name = target_name.lower()
         vector = [1.0 if palavra in text else 0.0 for palavra in VOCABULARIO]
         vector.append(1.0 if target_name in text else 0.0)
-        
+
         is_target_setting = (target_name in text and "settings" in text) or (f"{target_name}.settings" in text)
         is_general_setting = "general.settings" in text
-        
+
         vector.append(1.0 if is_target_setting or is_general_setting else 0.0)
         return vector
 
@@ -133,8 +132,7 @@ class ClonerStressAI:
 
                 if len(full_text.strip()) < 2:
                     continue
-                
-                # 🔥 PATCH EVOLUÍDO: Bloqueia qualquer variação de "ug cloner" na tela inteira
+
                 if "ug cloner" in full_text:
                     continue
 
@@ -152,7 +150,7 @@ class ClonerStressAI:
 
         scroll_vector = self.text_to_vector("scroll rolar deslizar", target_name)
         actions["SISTEMA|scroll_down"] = {"type": "scroll", "vector": scroll_vector, "raw_text": "ação de rolar para baixo"}
-        
+
         back_vector = self.text_to_vector("voltar retornar", target_name)
         actions["SISTEMA|back"] = {"type": "back", "vector": back_vector, "raw_text": "botão voltar"}
 
@@ -174,12 +172,12 @@ class ClonerStressAI:
     def replay_experience(self):
         if len(self.memory) < self.batch_size:
             return
-            
+
         prios = np.array(self.priorities)
         probs = prios ** 0.6
         probs /= probs.sum()
         indices = np.random.choice(len(self.memory), self.batch_size, p=probs)
-        
+
         batch = [self.memory[i] for i in indices]
         self.model.train()
 
@@ -198,7 +196,7 @@ class ClonerStressAI:
                 target_q_val = reward + self.gamma * max(next_qs)
 
             target_q = torch.FloatTensor([[target_q_val]]).to(self.device)
-            
+
             loss = self.criterion(current_q, target_q)
             self.optimizer.zero_grad()
             loss.backward()
@@ -209,28 +207,33 @@ class ClonerStressAI:
 
     def live_stress_training(self):
         os.system('clear')
-        print("🔥 IA INDUSTRIAL ATIVADA (FILTROS ATUALIZADOS)!")
-        
+        print("🔥 IA INDUSTRIAL ATIVADA (FILTROS E TRAVAS DE SEQUÊNCIA ATUALIZADOS)!")
+
         episode = 1
         lista_apks = self.get_installed_user_apps()
 
         while True:
             target_pkg, target_name = random.choice(lista_apks)
-            
+
             print(f"\n╔══════════════════════════════════════════════════════════════╗")
             print(f"  EPISÓDIO #{episode} | ALVO: {target_name.upper()} | ⏱️ MAX: 1 MINUTO")
             print(f"╚══════════════════════════════════════════════════════════════╝")
-            
+
             self.root_command(f"am force-stop {self.cloner_package}")
             time.sleep(0.5)
             self.root_command(f"monkey -p {self.cloner_package} -c android.intent.category.LAUNCHER 1")
             print(f"🚀 [SISTEMA] UG Cloner inicializado automaticamente.")
-            
+
             session_start_time = time.time()
             outside_app_start = None
             steps = 0
-            
-            last_action_key = None 
+            last_action_key = None
+
+            # ======================================================
+            # 🛡️ TRAVAS DE ESTADO INTERNAS (ZERA A CADA NOVO EPISÓDIO)
+            # ======================================================
+            achou_o_app = False
+            passou_pelo_download = False
 
             while True:
                 elapsed_session_time = time.time() - session_start_time
@@ -240,7 +243,7 @@ class ClonerStressAI:
 
                 current_package = self.get_current_package()
                 is_inside = any(x in current_package for x in [self.cloner_package, target_name, "packageinstaller", "vending"]) or current_package == ""
-                
+
                 if not is_inside:
                     if outside_app_start is None:
                         outside_app_start = time.time()
@@ -254,7 +257,7 @@ class ClonerStressAI:
                         self.root_command(f"am force-stop {target_pkg}")
                         break
                 else:
-                    outside_app_start = None 
+                    outside_app_start = None
 
                 xml = self.get_screen_xml()
                 if not xml:
@@ -279,7 +282,7 @@ class ClonerStressAI:
                     print(f"🧠 [Neurônios] Movimento: {chosen_key.split('|')[-1]} (Nota Q: {action_scores[chosen_key]:.2f})")
 
                 action_data = actions[chosen_key]
-                
+
                 if action_data["type"] == "click":
                     self.root_command(f"input tap {action_data['x']} {action_data['y']}")
                 elif action_data["type"] == "scroll":
@@ -287,47 +290,75 @@ class ClonerStressAI:
                 elif action_data["type"] == "back":
                     self.root_command("input keyevent 4")
 
-                time.sleep(0.2) 
-                
+                time.sleep(0.2)
+
                 new_xml = self.get_screen_xml()
                 new_actions = self.get_clickables_and_scrolls(new_xml, target_name) if new_xml else {}
-                
+
                 if new_xml and set(new_actions.keys()) == set(actions.keys()):
                     time.sleep(0.5)
                     new_xml = self.get_screen_xml()
                     new_actions = self.get_clickables_and_scrolls(new_xml, target_name) if new_xml else {}
-                
+
                 steps += 1
-                
+
                 new_state_vec = self.get_state_vector(new_xml, target_name) if new_xml else np.zeros(self.vector_length)
                 new_actions_vecs = [d["vector"] for d in new_actions.values()]
 
-                reward = -2.0  
+                reward = -2.0
                 is_terminal = False
                 txt_clicado = action_data["raw_text"]
 
-                if f"{target_name}.settings" in txt_clicado or (target_name in txt_clicado and "settings" in txt_clicado):
+                # ======================================================
+                # 🧠 ENGINE DE RECOMPENSAS E CONDIÇÕES DE SEQUÊNCIA CORRIGIDA
+                # ======================================================
+
+                # 1. 🚫 FILTRO VENENO: Destrói o vício de clicar em arquivos mortos
+                if txt_clicado.strip() == "file" or "delta-" in txt_clicado:
+                    print("🚫 [VENENO INTERCEPTADO] Tentou clicar num elemento inerte. Punido!")
+                    reward = -200.0
+
+                elif f"{target_name}.settings" in txt_clicado or (target_name in txt_clicado and "settings" in txt_clicado):
                     print(f"🎉 INJETOU DADOS ESPECÍFICOS DO {target_name.upper()}!")
                     reward = 5000.0 - (steps * 50)
                     is_terminal = True
+
                 elif "general.settings" in txt_clicado:
-                    print(f"🎉 INJETOU DADOS GERAIS PARA O {target_name.upper()}!")
-                    reward = 4000.0 - (steps * 50)
-                    is_terminal = True
-                elif target_name in txt_clicado:
-                    reward = 600.0  
-                    print(f"  └─> [Recompensa] Achou o alvo: {target_name.upper()}")
+                    # 2. 🔒 TRAVA DA VITÓRIA: Só ganha se veio pela pasta Download
+                    if passou_pelo_download:
+                        print(f"🎉 INJETOU DADOS GERAIS PARA O {target_name.upper()}!")
+                        reward = 4000.0 - (steps * 50)
+                        is_terminal = True
+                    else:
+                        print("🚨 [BRECHA BLOQUEADA] Tentou acionar o setting final via atalho proibido!")
+                        reward = -500.0
+
                 elif "load settings" in txt_clicado or "importar" in txt_clicado:
-                    reward = 400.0  
+                    # 3. 🔒 TRAVA DE MENU: Só ganha se já tiver clicado no App correspondente
+                    if achou_o_app:
+                        reward = 400.0
+                    else:
+                        print("🚨 [BRECHA BLOQUEADA] Abriu o menu de Settings fora de hora!")
+                        reward = -300.0
+
+                elif target_name in txt_clicado:
+                    # 4. 🔓 ETAPA 1 CONCLUÍDA: Ativou a flag do App Alvo
+                    achou_o_app = True 
+                    reward = 600.0
+                    print(f"  └─> [Recompensa] Achou o alvo: {target_name.upper()}")
+
                 elif "download" in txt_clicado:
-                    reward = 250.0  
+                    # 5. 🔓 ETAPA 2 CONCLUÍDA: Ativou a flag do diretório Download
+                    passou_pelo_download = True 
+                    reward = 250.0
+
                 else:
                     if new_xml and set(new_actions.keys()) == set(actions.keys()):
                         if chosen_key == last_action_key:
-                            reward = -50.0  
+                            reward = -50.0
                             print(f"  └─> ⚠️ LOOP DETECTADO: Punição pesada de -50!")
                         else:
-                            reward = -15.0  
+                            reward = -15.0
                             print(f"  └─> ⚠️ AÇÃO INERTE: Punição leve de -15.")
 
                 if not new_xml:
@@ -345,14 +376,14 @@ class ClonerStressAI:
                     break
 
             self.save_model()
-            
+
             if episode % self.target_update_freq == 0:
                 self.target_model.load_state_dict(self.model.state_dict())
                 print("🔄 [SISTEMA] Rede Alvo sincronizada com sucesso!")
 
             if self.epsilon > self.min_epsilon:
                 self.epsilon -= 0.02
-                
+
             episode += 1
 
 if __name__ == "__main__":
