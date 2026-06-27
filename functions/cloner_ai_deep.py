@@ -44,7 +44,6 @@ class ClonerStressAI:
         self.min_epsilon = 0.15
         self.batch_size = 32
         
-        # 🔥 UPGRADE 3: Memória e Fila de Prioridades (PER)
         self.memory = deque(maxlen=4000)
         self.priorities = deque(maxlen=4000)
 
@@ -53,10 +52,9 @@ class ClonerStressAI:
 
         self.device = torch.device("cpu")
         
-        # 🔥 UPGRADE 1: Duplicação Cerebral (Rede Principal e Rede Alvo)
         self.model = DeepQNetwork(self.input_size).to(self.device)
         self.target_model = DeepQNetwork(self.input_size).to(self.device)
-        self.target_update_freq = 5 # Atualiza o gabarito a cada 5 episódios
+        self.target_update_freq = 5 
         
         self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
         self.criterion = nn.MSELoss()
@@ -136,7 +134,8 @@ class ClonerStressAI:
                 if len(full_text.strip()) < 2:
                     continue
                 
-                if "ug cloner by" in full_text:
+                # 🔥 PATCH EVOLUÍDO: Bloqueia qualquer variação de "ug cloner" na tela inteira
+                if "ug cloner" in full_text:
                     continue
 
                 bounds = node.attrib.get('bounds', '')
@@ -163,9 +162,9 @@ class ClonerStressAI:
         if os.path.exists(self.model_file):
             try:
                 self.model.load_state_dict(torch.load(self.model_file))
-                self.target_model.load_state_dict(self.model.state_dict()) # Sincroniza cérebros
+                self.target_model.load_state_dict(self.model.state_dict())
                 self.model.eval()
-                print("🧠 Cérebro Nível Industrial carregado. Pronto para operar!")
+                print("🧠 Cérebro Nível Industrial carregado e blindado!")
             except:
                 pass
 
@@ -176,7 +175,6 @@ class ClonerStressAI:
         if len(self.memory) < self.batch_size:
             return
             
-        # 🔥 UPGRADE 3 (PER): Escolhe as memórias pela importância matemática, não ao acaso
         prios = np.array(self.priorities)
         probs = prios ** 0.6
         probs /= probs.sum()
@@ -192,7 +190,6 @@ class ClonerStressAI:
             if is_terminal or not next_actions_vecs:
                 target_q_val = reward
             else:
-                # 🔥 UPGRADE 1 (Target Net): Usa o cérebro congelado para prever o futuro sem oscilar
                 next_qs = []
                 for n_a_vec in next_actions_vecs:
                     n_input = torch.FloatTensor(np.concatenate([next_state_vec, n_a_vec])).unsqueeze(0).to(self.device)
@@ -207,13 +204,12 @@ class ClonerStressAI:
             loss.backward()
             self.optimizer.step()
 
-            # Atualiza a prioridade daquela memória baseada no erro de previsão
             td_error = abs(current_q.item() - target_q_val)
             self.priorities[i] = td_error + 1e-5
 
     def live_stress_training(self):
         os.system('clear')
-        print("🔥 IA INDUSTRIAL ATIVADA (PER + TARGET NET + DYNAMIC POLLING)!")
+        print("🔥 IA INDUSTRIAL ATIVADA (FILTROS ATUALIZADOS)!")
         
         episode = 1
         lista_apks = self.get_installed_user_apps()
@@ -253,7 +249,7 @@ class ClonerStressAI:
                         if len(self.memory) > 0:
                             last_exp = list(self.memory)[-1]
                             self.memory[-1] = (last_exp[0], last_exp[1], -5000.0, last_exp[3], last_exp[4], True)
-                            self.priorities[-1] = 5000.0 # Prioridade máxima para não esquecer o erro
+                            self.priorities[-1] = 5000.0
                         self.root_command(f"am force-stop {self.cloner_package}")
                         self.root_command(f"am force-stop {target_pkg}")
                         break
@@ -291,13 +287,11 @@ class ClonerStressAI:
                 elif action_data["type"] == "back":
                     self.root_command("input keyevent 4")
 
-                # 🔥 UPGRADE 2: Olhos Biônicos (Espera Dinâmica)
                 time.sleep(0.2) 
                 
                 new_xml = self.get_screen_xml()
                 new_actions = self.get_clickables_and_scrolls(new_xml, target_name) if new_xml else {}
                 
-                # Se os botões são os mesmos de antes, o celular talvez esteja pensando. Espera mais um tiquinho.
                 if new_xml and set(new_actions.keys()) == set(actions.keys()):
                     time.sleep(0.5)
                     new_xml = self.get_screen_xml()
@@ -340,7 +334,6 @@ class ClonerStressAI:
                     reward = -150.0
                     is_terminal = True
 
-                # Salva na memória com a prioridade máxima do momento
                 max_prio = max(self.priorities) if self.memory else 1.0
                 self.memory.append((state_vector, action_data["vector"], reward, new_state_vec, new_actions_vecs, is_terminal))
                 self.priorities.append(max_prio)
@@ -353,7 +346,6 @@ class ClonerStressAI:
 
             self.save_model()
             
-            # 🔥 Sincroniza a Rede Alvo a cada N episódios
             if episode % self.target_update_freq == 0:
                 self.target_model.load_state_dict(self.model.state_dict())
                 print("🔄 [SISTEMA] Rede Alvo sincronizada com sucesso!")
