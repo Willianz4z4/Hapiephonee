@@ -207,7 +207,7 @@ class ClonerStressAI:
 
     def live_stress_training(self):
         os.system('clear')
-        print("🔥 IA INDUSTRIAL ATIVADA (FILTROS E TRAVAS DE SEQUÊNCIA ATUALIZADOS)!")
+        print("🔥 IA INDUSTRIAL ATIVADA (PUNIÇÃO EXPONENCIAL E MÁQUINA DE ESTADOS)")
 
         episode = 1
         lista_apks = self.get_installed_user_apps()
@@ -227,13 +227,13 @@ class ClonerStressAI:
             session_start_time = time.time()
             outside_app_start = None
             steps = 0
+            
+            # ======================================================
+            # 🛡️ CONTROLE DE ESTADOS (STATE MACHINE)
+            # ======================================================
+            etapa_atual = 0  # 0: Início | 1: Achou App | 2: Achou Import/Load Settings | 3: Achou Download
+            spam_count = 0
             last_action_key = None
-
-            # ======================================================
-            # 🛡️ TRAVAS DE ESTADO INTERNAS (ZERA A CADA NOVO EPISÓDIO)
-            # ======================================================
-            achou_o_app = False
-            passou_pelo_download = False
 
             while True:
                 elapsed_session_time = time.time() - session_start_time
@@ -305,61 +305,76 @@ class ClonerStressAI:
                 new_state_vec = self.get_state_vector(new_xml, target_name) if new_xml else np.zeros(self.vector_length)
                 new_actions_vecs = [d["vector"] for d in new_actions.values()]
 
-                reward = -2.0
+                reward = 0.0
                 is_terminal = False
                 txt_clicado = action_data["raw_text"]
 
                 # ======================================================
-                # 🧠 ENGINE DE RECOMPENSAS E CONDIÇÕES DE SEQUÊNCIA CORRIGIDA
+                # 🥊 1. SISTEMA DE PUNIÇÃO EXPONENCIAL (ANTI-SPAM)
                 # ======================================================
+                if chosen_key == last_action_key:
+                    spam_count += 1
+                    reward = -500.0 * (2 ** (spam_count - 1))
+                    print(f"  └─> ⚠️ LOOP DETECTADO! Punição Exponencial de {reward} pontos!")
+                else:
+                    spam_count = 0
+                    
+                last_action_key = chosen_key
 
-                # 1. 🚫 FILTRO VENENO: Destrói o vício de clicar em arquivos mortos
-                if txt_clicado.strip() == "file" or "delta-" in txt_clicado:
-                    print("🚫 [VENENO INTERCEPTADO] Tentou clicar num elemento inerte. Punido!")
-                    reward = -200.0
-
-                elif f"{target_name}.settings" in txt_clicado or (target_name in txt_clicado and "settings" in txt_clicado):
-                    print(f"🎉 INJETOU DADOS ESPECÍFICOS DO {target_name.upper()}!")
-                    reward = 5000.0 - (steps * 50)
-                    is_terminal = True
-
-                elif "general.settings" in txt_clicado:
-                    # 2. 🔒 TRAVA DA VITÓRIA: Só ganha se veio pela pasta Download
-                    if passou_pelo_download:
-                        print(f"🎉 INJETOU DADOS GERAIS PARA O {target_name.upper()}!")
-                        reward = 4000.0 - (steps * 50)
-                        is_terminal = True
-                    else:
-                        print("🚨 [BRECHA BLOQUEADA] Tentou acionar o setting final via atalho proibido!")
-                        reward = -500.0
-
-                elif "load settings" in txt_clicado or "importar" in txt_clicado:
-                    # 3. 🔒 TRAVA DE MENU: Só ganha se já tiver clicado no App correspondente
-                    if achou_o_app:
-                        reward = 400.0
-                    else:
-                        print("🚨 [BRECHA BLOQUEADA] Abriu o menu de Settings fora de hora!")
+                # Só processa a lógica de progresso se não estiver em spam (reward == 0.0)
+                if reward == 0.0:
+                    
+                    # 🚫 2. FILTRO VENENO
+                    if txt_clicado.strip() == "file" or "delta-" in txt_clicado:
+                        print("🚫 [VENENO INTERCEPTADO] Clicou em arquivo morto. Punido!")
                         reward = -300.0
 
-                elif target_name in txt_clicado:
-                    # 4. 🔓 ETAPA 1 CONCLUÍDA: Ativou a flag do App Alvo
-                    achou_o_app = True 
-                    reward = 600.0
-                    print(f"  └─> [Recompensa] Achou o alvo: {target_name.upper()}")
+                    # 🔓 3. ETAPAS OBRIGATÓRIAS (STATE MACHINE)
+                    elif f"{target_name}.settings" in txt_clicado or (target_name in txt_clicado and "settings" in txt_clicado):
+                        print(f"🎉 INJETOU DADOS ESPECÍFICOS DO {target_name.upper()}!")
+                        reward = 5000.0 - (steps * 50)
+                        is_terminal = True
 
-                elif "download" in txt_clicado:
-                    # 5. 🔓 ETAPA 2 CONCLUÍDA: Ativou a flag do diretório Download
-                    passou_pelo_download = True 
-                    reward = 250.0
-
-                else:
-                    if new_xml and set(new_actions.keys()) == set(actions.keys()):
-                        if chosen_key == last_action_key:
-                            reward = -50.0
-                            print(f"  └─> ⚠️ LOOP DETECTADO: Punição pesada de -50!")
+                    elif "general.settings" in txt_clicado:
+                        if etapa_atual >= 2:
+                            print(f"🎉 INJETOU DADOS GERAIS PARA O {target_name.upper()}!")
+                            reward = 4000.0 - (steps * 50)
+                            is_terminal = True
                         else:
+                            print("🚨 [TRAPAÇA BLOQUEADA] Tentou injetar sem abrir a pasta Download!")
+                            reward = -800.0
+
+                    elif "load settings" in txt_clicado or "importar" in txt_clicado:
+                        if etapa_atual >= 1:
+                            etapa_atual = max(etapa_atual, 2)
+                            reward = 400.0
+                            print("  └─> [Recompensa] Abriu o menu de Importação!")
+                        else:
+                            print("🚨 [TRAPAÇA BLOQUEADA] Clicou num Settings aleatório do menu lateral!")
+                            reward = -500.0
+
+                    elif target_name in txt_clicado:
+                        if etapa_atual == 0:
+                            etapa_atual = 1
+                            reward = 600.0
+                            print(f"  └─> [Recompensa] Selecionou o App Alvo: {target_name.upper()}")
+                        else:
+                            reward = -100.0
+                            print(f"  └─> ⚠️ Punição leve: Clicou no alvo de novo sem necessidade.")
+
+                    elif "download" in txt_clicado:
+                        if etapa_atual >= 1:
+                            etapa_atual = max(etapa_atual, 3)
+                            reward = 250.0
+                            print("  └─> [Recompensa] Entrou na pasta Downloads!")
+                        else:
+                            print("🚨 [TRAPAÇA BLOQUEADA] Foi para Downloads antes de escolher o App!")
+                            reward = -400.0
+
+                    else:
+                        if new_xml and set(new_actions.keys()) == set(actions.keys()):
                             reward = -15.0
-                            print(f"  └─> ⚠️ AÇÃO INERTE: Punição leve de -15.")
+                            print(f"  └─> ⚠️ AÇÃO INERTE: -15.")
 
                 if not new_xml:
                     reward = -150.0
@@ -370,7 +385,6 @@ class ClonerStressAI:
                 self.priorities.append(max_prio)
 
                 self.replay_experience()
-                last_action_key = chosen_key
 
                 if is_terminal:
                     break
