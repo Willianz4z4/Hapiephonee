@@ -89,7 +89,7 @@ if not os.path.exists(init_file):
 
 REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
-PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json") # <-- Ponte com o Monitor
+PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json") 
 
 saved_config = {}
 
@@ -304,8 +304,7 @@ try:
     monitor_log_path = os.path.join(DATA_DIR, "monitor_log.txt")
     URL_MONITOR = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/monitor_apps.py?v={v_cache}"
     os.system(f"curl -sL '{URL_MONITOR}' -o {monitor_script_path} > /dev/null 2>&1")
-    
-    # ✅ AQUI ESTÁ A PARTE QUE EU ESQUECI! Download da Telemetria:
+
     sensores_script_path = os.path.join(TELEMETRIA_DIR, "sensores.py")
     URL_SENSORES = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/telemetria/sensores.py?v={v_cache}"
     os.system(f"curl -sL '{URL_SENSORES}' -o {sensores_script_path} > /dev/null 2>&1")
@@ -317,13 +316,14 @@ try:
 except Exception as e:
     spinner.fail(f"Error deploying modules: {e}")
 
-spinner = Halo(text='Configuring persistent boot...', spinner='dots')
-spinner.start()
 spinner.succeed("Persistent boot skipped (UgPhone compatibility module active).")
 
 registered_in_db = False
 PING_INTERVAL = 60
 last_check = 0
+
+# Variável para lembrar a última resolução aplicada e evitar spam de comandos no Android
+last_applied_size = ""
 
 console.print("\n[bold green]📡 Connection established. Awaiting commands from Control Panel...[/bold green]")
 console.print("[dim](Press CTRL+C at any time to disconnect safely)[/dim]\n")
@@ -396,12 +396,29 @@ try:
                     response_json = response.json()
 
                     # =======================================================
+                    # 📏 INTERCEPÇÃO DE MUDANÇA DE RESOLUÇÃO (Device Radius)
+                    # =======================================================
+                    if "radius_width" in response_json and "radius_height" in response_json:
+                        try:
+                            rw = int(float(response_json["radius_width"]))
+                            rh = int(float(response_json["radius_height"]))
+                            new_size = f"{rw}x{rh}"
+
+                            if new_size != last_applied_size:
+                                console.print(f"\n[bold cyan]📏 Ajustando tamanho/proporção da tela para: {new_size}[/bold cyan]")
+                                # Comando root para forçar a nova resolução/density no Android
+                                os.system(f"su -c 'wm size {new_size}' > /dev/null 2>&1")
+                                last_applied_size = new_size
+                        except Exception as e:
+                            pass
+
+
+                    # =======================================================
                     # ⚠️ INTERCEPÇÃO DO UPLOAD_QUEUE (Fila de APKs pendentes)
                     # =======================================================
                     if "upload_queue" in response_json:
                         lista_pendentes = response_json["upload_queue"]
                         if isinstance(lista_pendentes, list) and len(lista_pendentes) > 0:
-                            # Escreve a lista em arquivo JSON para o monitor interno ler
                             with open(PENDING_TASKS_FILE, "w", encoding="utf-8") as pf:
                                 json.dump(lista_pendentes, pf, indent=4)
                             console.print(f"\n[bold yellow]📦 [FILA] Recebidas {len(lista_pendentes)} tarefas de extração de APK.[/bold yellow]")
