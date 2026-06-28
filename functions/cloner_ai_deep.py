@@ -227,7 +227,7 @@ class ClonerStressAI:
             session_start_time = time.time()
             outside_app_start = None
             steps = 0
-            
+
             # ======================================================
             # 🛡️ CONTROLE DE ESTADOS (STATE MACHINE)
             # ======================================================
@@ -318,12 +318,12 @@ class ClonerStressAI:
                     print(f"  └─> ⚠️ LOOP DETECTADO! Punição Exponencial de {reward} pontos!")
                 else:
                     spam_count = 0
-                    
+
                 last_action_key = chosen_key
 
                 # Só processa a lógica de progresso se não estiver em spam (reward == 0.0)
                 if reward == 0.0:
-                    
+
                     # 🚫 2. FILTRO VENENO
                     if txt_clicado.strip() == "file" or "delta-" in txt_clicado:
                         print("🚫 [VENENO INTERCEPTADO] Clicou em arquivo morto. Punido!")
@@ -331,9 +331,13 @@ class ClonerStressAI:
 
                     # 🔓 3. ETAPAS OBRIGATÓRIAS (STATE MACHINE)
                     elif f"{target_name}.settings" in txt_clicado or (target_name in txt_clicado and "settings" in txt_clicado):
-                        print(f"🎉 INJETOU DADOS ESPECÍFICOS DO {target_name.upper()}!")
-                        reward = 5000.0 - (steps * 50)
-                        is_terminal = True
+                        if etapa_atual >= 1:
+                            print(f"🎉 INJETOU DADOS ESPECÍFICOS DO {target_name.upper()}!")
+                            reward = 5000.0 - (steps * 50)
+                            is_terminal = True
+                        else:
+                            print("🚨 [TRAPAÇA BLOQUEADA] Achou o arquivo específico sem selecionar o app antes!")
+                            reward = -800.0
 
                     elif "general.settings" in txt_clicado:
                         if etapa_atual >= 2:
@@ -341,7 +345,7 @@ class ClonerStressAI:
                             reward = 4000.0 - (steps * 50)
                             is_terminal = True
                         else:
-                            print("🚨 [TRAPAÇA BLOQUEADA] Tentou injetar sem abrir a pasta Download!")
+                            print("🚨 [TRAPAÇA BLOQUEADA] Tentou injetar sem abrir a pasta Download/Import!")
                             reward = -800.0
 
                     elif "load settings" in txt_clicado or "importar" in txt_clicado:
