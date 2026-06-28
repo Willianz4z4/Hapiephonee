@@ -353,10 +353,16 @@ try:
                         pass
 
                 try:
-                    from telemetria.sensores import coletar_telemetria_completa
-                    telemetry_data = coletar_telemetria_completa()
+                    if BASE_DIR not in sys.path:
+                        sys.path.insert(0, BASE_DIR)
+                    import importlib.util
+                    sensores_path = os.path.join(TELEMETRIA_DIR, "sensores.py")
+                    spec = importlib.util.spec_from_file_location("sensores", sensores_path)
+                    sensores_module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(sensores_module)
+                    telemetry_data = sensores_module.coletar_telemetria_completa()
                 except Exception as e:
-                    telemetry_data = {"erro": str(e)}
+                    telemetry_data = {"erro": f"Falha na importacao/execucao: {str(e)}"}
 
                 payload = {
                     "type": 1 if registered_in_db else 0,
@@ -422,7 +428,7 @@ try:
                         print("\n")
                         console.print(f"[bold red]🛑 Server refused connection: {response_json.get('reason', 'Unknown reason')}[/bold red]")
                         sys.exit(4)
-                    
+
                     if not registered_in_db:
                         registered_in_db = True
 
