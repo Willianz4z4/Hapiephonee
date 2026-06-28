@@ -304,6 +304,11 @@ try:
     monitor_log_path = os.path.join(DATA_DIR, "monitor_log.txt")
     URL_MONITOR = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/monitor_apps.py?v={v_cache}"
     os.system(f"curl -sL '{URL_MONITOR}' -o {monitor_script_path} > /dev/null 2>&1")
+    
+    # ✅ AQUI ESTÁ A PARTE QUE EU ESQUECI! Download da Telemetria:
+    sensores_script_path = os.path.join(TELEMETRIA_DIR, "sensores.py")
+    URL_SENSORES = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/telemetria/sensores.py?v={v_cache}"
+    os.system(f"curl -sL '{URL_SENSORES}' -o {sensores_script_path} > /dev/null 2>&1")
 
     monitor_cmd = f"nohup {python_path} {monitor_script_path} > {monitor_log_path} 2>&1 &"
     os.system(monitor_cmd)
