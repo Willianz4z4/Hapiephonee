@@ -39,8 +39,10 @@ class ClonerStressAI:
         self.cloner_package = "com.ugcloner.xfein"
 
         self.gamma = 0.95
-        self.epsilon = 0.80
-        self.min_epsilon = 0.15
+        # 🔥 ALTERAÇÃO AQUI: Começa com apenas 30% de aleatoriedade
+        self.epsilon = 0.30
+        # 🔥 ALTERAÇÃO AQUI: Desce até no máximo 5% (foco quase total no aprendizado)
+        self.min_epsilon = 0.05
         self.batch_size = 32
 
         self.memory = deque(maxlen=4000)
