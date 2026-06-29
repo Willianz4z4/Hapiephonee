@@ -12,11 +12,11 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 
-# 🧠 Vocabulário base estrutural
+# 🧠 Vocabulário base em INGLÊS (Foco total no alvo)
 VOCABULARIO = [
-    "cloner", "clone", "app cloner", "load settings", "settings", "configurações", "config",
-    "import", "importar", "data", "dados", "download", "storage", "emulated", "diretório",
-    "directory", "file", "arquivo", "voltar", "cancelar", "cancel", "ok", "confirm", "aceitar"
+    "cloner", "clone", "app cloner", "load settings", "settings", "import", 
+    "data", "download", "storage", "emulated", "directory",
+    "file", "back", "cancel", "ok", "confirm", "accept", "options"
 ]
 
 class DeepQNetwork(nn.Module):
@@ -39,9 +39,7 @@ class ClonerStressAI:
         self.cloner_package = "com.ugcloner.xfein"
 
         self.gamma = 0.95
-        # 🔥 ALTERAÇÃO AQUI: Começa com apenas 30% de aleatoriedade
-        self.epsilon = 0.30
-        # 🔥 ALTERAÇÃO AQUI: Desce até no máximo 5% (foco quase total no aprendizado)
+        self.epsilon = 0.40  # Mantemos 40% inicial para ela aprender a nova regra rápido
         self.min_epsilon = 0.05
         self.batch_size = 32
 
@@ -129,13 +127,10 @@ class ClonerStressAI:
                 pkg = node.attrib.get('package', '').lower()
                 full_text = text + " " + desc
 
-                if 'termux' in pkg:
+                if 'termux' in pkg or "ug cloner" in full_text or len(full_text.strip()) < 2:
                     continue
-
-                if len(full_text.strip()) < 2:
-                    continue
-
-                if "ug cloner" in full_text:
+                
+                if re.match(r'^[\u200e\u200f]+$', full_text.strip()):
                     continue
 
                 bounds = node.attrib.get('bounds', '')
@@ -150,11 +145,11 @@ class ClonerStressAI:
         except:
             pass
 
-        scroll_vector = self.text_to_vector("scroll rolar deslizar", target_name)
-        actions["SISTEMA|scroll_down"] = {"type": "scroll", "vector": scroll_vector, "raw_text": "ação de rolar para baixo"}
+        scroll_vector = self.text_to_vector("scroll", target_name)
+        actions["SISTEMA|scroll_down"] = {"type": "scroll", "vector": scroll_vector, "raw_text": "scroll down"}
 
-        back_vector = self.text_to_vector("voltar retornar", target_name)
-        actions["SISTEMA|back"] = {"type": "back", "vector": back_vector, "raw_text": "botão voltar"}
+        back_vector = self.text_to_vector("back", target_name)
+        actions["SISTEMA|back"] = {"type": "back", "vector": back_vector, "raw_text": "back button"}
 
         return actions
 
@@ -164,7 +159,7 @@ class ClonerStressAI:
                 self.model.load_state_dict(torch.load(self.model_file))
                 self.target_model.load_state_dict(self.model.state_dict())
                 self.model.eval()
-                print("🧠 Cérebro Nível Industrial carregado e blindado!")
+                print("🧠 Cérebro neural carregado com sucesso!")
             except:
                 pass
 
@@ -209,7 +204,7 @@ class ClonerStressAI:
 
     def live_stress_training(self):
         os.system('clear')
-        print("🔥 IA INDUSTRIAL ATIVADA (PUNIÇÃO EXPONENCIAL E MÁQUINA DE ESTADOS)")
+        print("🔥 IA INDUSTRIAL ATIVADA (ORDEM ESTRITA: APP -> SETTINGS)")
 
         episode = 1
         lista_apks = self.get_installed_user_apps()
@@ -230,12 +225,9 @@ class ClonerStressAI:
             outside_app_start = None
             steps = 0
 
-            # ======================================================
-            # 🛡️ CONTROLE DE ESTADOS (STATE MACHINE)
-            # ======================================================
             etapa_atual = 0  # 0: Início | 1: Achou App | 2: Achou Import/Load Settings | 3: Achou Download
             spam_count = 0
-            last_action_key = None
+            historico_acoes = deque(maxlen=4)
 
             while True:
                 elapsed_session_time = time.time() - session_start_time
@@ -250,13 +242,12 @@ class ClonerStressAI:
                     if outside_app_start is None:
                         outside_app_start = time.time()
                     elif time.time() - outside_app_start >= 30.0:
-                        print("🚨 [CRÍTICO] Fora do app por 30 segundos! APLICANDO PENALIDADE MÁXIMA.")
+                        print("🚨 [CRÍTICO] Fora do app! APLICANDO PENALIDADE MÁXIMA.")
                         if len(self.memory) > 0:
                             last_exp = list(self.memory)[-1]
                             self.memory[-1] = (last_exp[0], last_exp[1], -5000.0, last_exp[3], last_exp[4], True)
                             self.priorities[-1] = 5000.0
                         self.root_command(f"am force-stop {self.cloner_package}")
-                        self.root_command(f"am force-stop {target_pkg}")
                         break
                 else:
                     outside_app_start = None
@@ -268,6 +259,10 @@ class ClonerStressAI:
 
                 state_vector = self.get_state_vector(xml, target_name)
                 actions = self.get_clickables_and_scrolls(xml, target_name)
+                
+                if not actions:
+                    time.sleep(1)
+                    continue
 
                 self.model.eval()
                 action_scores = {}
@@ -312,78 +307,67 @@ class ClonerStressAI:
                 txt_clicado = action_data["raw_text"]
 
                 # ======================================================
-                # 🥊 1. SISTEMA DE PUNIÇÃO EXPONENCIAL (ANTI-SPAM)
+                # 🥊 1. ANTI-PING-PONG
                 # ======================================================
-                if chosen_key == last_action_key:
+                if chosen_key in historico_acoes:
                     spam_count += 1
-                    reward = -500.0 * (2 ** (spam_count - 1))
+                    reward = -1000.0 * (2 ** (spam_count - 1))
                     print(f"  └─> ⚠️ LOOP DETECTADO! Punição Exponencial de {reward} pontos!")
                 else:
                     spam_count = 0
 
-                last_action_key = chosen_key
+                historico_acoes.append(chosen_key)
 
-                # Só processa a lógica de progresso se não estiver em spam (reward == 0.0)
+                # ======================================================
+                # 🛡️ 2. MÁQUINA DE ESTADOS RESTRITA
+                # ======================================================
                 if reward == 0.0:
 
-                    # 🚫 2. FILTRO VENENO
                     if txt_clicado.strip() == "file" or "delta-" in txt_clicado:
                         print("🚫 [VENENO INTERCEPTADO] Clicou em arquivo morto. Punido!")
-                        reward = -300.0
+                        reward = -500.0
 
-                    # 🔓 3. ETAPAS OBRIGATÓRIAS (STATE MACHINE)
-                    elif f"{target_name}.settings" in txt_clicado or (target_name in txt_clicado and "settings" in txt_clicado):
-                        if etapa_atual >= 1:
-                            print(f"🎉 INJETOU DADOS ESPECÍFICOS DO {target_name.upper()}!")
-                            reward = 5000.0 - (steps * 50)
-                            is_terminal = True
-                        else:
-                            print("🚨 [TRAPAÇA BLOQUEADA] Achou o arquivo específico sem selecionar o app antes!")
-                            reward = -800.0
-
-                    elif "general.settings" in txt_clicado:
-                        if etapa_atual >= 2:
-                            print(f"🎉 INJETOU DADOS GERAIS PARA O {target_name.upper()}!")
-                            reward = 4000.0 - (steps * 50)
-                            is_terminal = True
-                        else:
-                            print("🚨 [TRAPAÇA BLOQUEADA] Tentou injetar sem abrir a pasta Download/Import!")
-                            reward = -800.0
-
-                    elif "load settings" in txt_clicado or "importar" in txt_clicado:
-                        if etapa_atual >= 1:
-                            etapa_atual = max(etapa_atual, 2)
-                            reward = 400.0
-                            print("  └─> [Recompensa] Abriu o menu de Importação!")
-                        else:
-                            print("🚨 [TRAPAÇA BLOQUEADA] Clicou num Settings aleatório do menu lateral!")
-                            reward = -500.0
-
+                    # 🎯 PASSO 1: ACHAR O APP
                     elif target_name in txt_clicado:
                         if etapa_atual == 0:
                             etapa_atual = 1
-                            reward = 600.0
-                            print(f"  └─> [Recompensa] Selecionou o App Alvo: {target_name.upper()}")
+                            reward = 1500.0
+                            print(f"  └─> [Recompensa] PASSO 1 OK: Clicou no App Alvo ({target_name.upper()})")
+                            historico_acoes.clear()
                         else:
-                            reward = -100.0
-                            print(f"  └─> ⚠️ Punição leve: Clicou no alvo de novo sem necessidade.")
+                            reward = -300.0
+                            print(f"  └─> ⚠️ Punição: Já escolheu o app, não precisa clicar nele de novo.")
 
+                    # ⚙️ PASSO 2: ACHAR SETTINGS OU IMPORT
+                    elif "setting" in txt_clicado or "import" in txt_clicado:
+                        if etapa_atual == 0:
+                            print("🚨 [ERRO DE ORDEM] Tentou clicar em Settings antes de achar o App!")
+                            reward = -1500.0
+                        else:
+                            etapa_atual = max(etapa_atual, 2)
+                            reward = 1000.0
+                            print("  └─> [Recompensa] PASSO 2 OK: Entrou nas Configurações/Importação!")
+                            historico_acoes.clear()
+
+                    # 📥 PASSO 3: ACHAR DOWNLOAD
                     elif "download" in txt_clicado:
-                        if etapa_atual >= 1:
+                        if etapa_atual >= 2:
                             etapa_atual = max(etapa_atual, 3)
-                            reward = 250.0
-                            print("  └─> [Recompensa] Entrou na pasta Downloads!")
+                            reward = 800.0
+                            print("  └─> [Recompensa] PASSO 3 OK: Entrou na pasta Downloads!")
+                            historico_acoes.clear()
                         else:
-                            print("🚨 [TRAPAÇA BLOQUEADA] Foi para Downloads antes de escolher o App!")
-                            reward = -400.0
+                            print("🚨 [ERRO DE ORDEM] Foi para Downloads fora de ordem!")
+                            reward = -1500.0
 
+                    # ⚠️ AÇÕES NEUTRAS (SCROLL, BACK, ETC)
                     else:
                         if new_xml and set(new_actions.keys()) == set(actions.keys()):
-                            reward = -15.0
-                            print(f"  └─> ⚠️ AÇÃO INERTE: -15.")
+                            reward = -50.0
+                            print(f"  └─> ⚠️ AÇÃO INERTE.")
 
                 if not new_xml:
-                    reward = -150.0
+                    reward = -200.0
                     is_terminal = True
 
                 max_prio = max(self.priorities) if self.memory else 1.0
