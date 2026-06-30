@@ -14,7 +14,7 @@ import numpy as np
 
 # 🧠 Vocabulário base em INGLÊS (Foco total no alvo)
 VOCABULARIO = [
-    "cloner", "clone", "app cloner", "load settings", "settings", "import", 
+    "cloner", "clone", "app cloner", "load settings", "settings", "import",
     "data", "download", "storage", "emulated", "directory",
     "file", "back", "cancel", "ok", "confirm", "accept", "options"
 ]
@@ -46,8 +46,10 @@ class ClonerStressAI:
         self.memory = deque(maxlen=4000)
         self.priorities = deque(maxlen=4000)
 
+        # Atualização Crítica: O vetor de estado agora recebe +1 espaço para a "etapa_atual"
         self.vector_length = len(VOCABULARIO) + 2
-        self.input_size = self.vector_length * 2
+        self.state_size = self.vector_length + 1 
+        self.input_size = self.state_size + self.vector_length
 
         self.device = torch.device("cpu")
 
@@ -129,7 +131,7 @@ class ClonerStressAI:
 
                 if 'termux' in pkg or "ug cloner" in full_text or len(full_text.strip()) < 2:
                     continue
-                
+
                 if re.match(r'^[\u200e\u200f]+$', full_text.strip()):
                     continue
 
@@ -178,8 +180,8 @@ class ClonerStressAI:
         batch = [self.memory[i] for i in indices]
         self.model.train()
 
-        for idx, (i, (state_vec, action_vec, reward, next_state_vec, next_actions_vecs, is_terminal)) in enumerate(zip(indices, batch)):
-            input_tensor = torch.FloatTensor(np.concatenate([state_vec, action_vec])).unsqueeze(0).to(self.device)
+        for idx, (i, (current_state, action_vec, reward, next_current_state, next_actions_vecs, is_terminal)) in enumerate(zip(indices, batch)):
+            input_tensor = torch.FloatTensor(np.concatenate([current_state, action_vec])).unsqueeze(0).to(self.device)
             current_q = self.model(input_tensor)
 
             if is_terminal or not next_actions_vecs:
@@ -187,7 +189,7 @@ class ClonerStressAI:
             else:
                 next_qs = []
                 for n_a_vec in next_actions_vecs:
-                    n_input = torch.FloatTensor(np.concatenate([next_state_vec, n_a_vec])).unsqueeze(0).to(self.device)
+                    n_input = torch.FloatTensor(np.concatenate([next_current_state, n_a_vec])).unsqueeze(0).to(self.device)
                     with torch.no_grad():
                         next_qs.append(self.target_model(n_input).item())
                 target_q_val = reward + self.gamma * max(next_qs)
@@ -245,8 +247,9 @@ class ClonerStressAI:
                         print("🚨 [CRÍTICO] Fora do app! APLICANDO PENALIDADE MÁXIMA.")
                         if len(self.memory) > 0:
                             last_exp = list(self.memory)[-1]
-                            self.memory[-1] = (last_exp[0], last_exp[1], -5000.0, last_exp[3], last_exp[4], True)
-                            self.priorities[-1] = 5000.0
+                            # Escala reduzida: de -5000 para -5.0
+                            self.memory[-1] = (last_exp[0], last_exp[1], -5.0, last_exp[3], last_exp[4], True)
+                            self.priorities[-1] = 5.0 
                         self.root_command(f"am force-stop {self.cloner_package}")
                         break
                 else:
@@ -258,8 +261,12 @@ class ClonerStressAI:
                     continue
 
                 state_vector = self.get_state_vector(xml, target_name)
+                # Injetando a etapa atual no vetor de visão da IA (Normalizado 0.0 a 1.0)
+                etapa_norm = etapa_atual / 3.0
+                current_state = np.concatenate([state_vector, [etapa_norm]])
+
                 actions = self.get_clickables_and_scrolls(xml, target_name)
-                
+
                 if not actions:
                     time.sleep(1)
                     continue
@@ -267,7 +274,7 @@ class ClonerStressAI:
                 self.model.eval()
                 action_scores = {}
                 for key, data in actions.items():
-                    input_tensor = torch.FloatTensor(np.concatenate([state_vector, data["vector"]])).unsqueeze(0)
+                    input_tensor = torch.FloatTensor(np.concatenate([current_state, data["vector"]])).unsqueeze(0)
                     with torch.no_grad():
                         action_scores[key] = self.model(input_tensor).item()
 
@@ -307,45 +314,45 @@ class ClonerStressAI:
                 txt_clicado = action_data["raw_text"]
 
                 # ======================================================
-                # 🥊 1. ANTI-PING-PONG
+                # 🥊 1. ANTI-PING-PONG (Recompensas achatadas)
                 # ======================================================
                 if chosen_key in historico_acoes:
                     spam_count += 1
-                    reward = -1000.0 * (2 ** (spam_count - 1))
-                    print(f"  └─> ⚠️ LOOP DETECTADO! Punição Exponencial de {reward} pontos!")
+                    reward = -0.5 * spam_count  # Punição gradativa suave
+                    print(f"  └─> ⚠️ LOOP DETECTADO! Punição de {reward:.1f} pontos!")
                 else:
                     spam_count = 0
 
                 historico_acoes.append(chosen_key)
 
                 # ======================================================
-                # 🛡️ 2. MÁQUINA DE ESTADOS RESTRITA
+                # 🛡️ 2. MÁQUINA DE ESTADOS RESTRITA (Recompensas achatadas)
                 # ======================================================
                 if reward == 0.0:
 
                     if txt_clicado.strip() == "file" or "delta-" in txt_clicado:
                         print("🚫 [VENENO INTERCEPTADO] Clicou em arquivo morto. Punido!")
-                        reward = -500.0
+                        reward = -0.5
 
                     # 🎯 PASSO 1: ACHAR O APP
                     elif target_name in txt_clicado:
                         if etapa_atual == 0:
                             etapa_atual = 1
-                            reward = 1500.0
+                            reward = 1.5
                             print(f"  └─> [Recompensa] PASSO 1 OK: Clicou no App Alvo ({target_name.upper()})")
                             historico_acoes.clear()
                         else:
-                            reward = -300.0
+                            reward = -0.3
                             print(f"  └─> ⚠️ Punição: Já escolheu o app, não precisa clicar nele de novo.")
 
                     # ⚙️ PASSO 2: ACHAR SETTINGS OU IMPORT
                     elif "setting" in txt_clicado or "import" in txt_clicado:
                         if etapa_atual == 0:
                             print("🚨 [ERRO DE ORDEM] Tentou clicar em Settings antes de achar o App!")
-                            reward = -1500.0
+                            reward = -1.5
                         else:
                             etapa_atual = max(etapa_atual, 2)
-                            reward = 1000.0
+                            reward = 1.0
                             print("  └─> [Recompensa] PASSO 2 OK: Entrou nas Configurações/Importação!")
                             historico_acoes.clear()
 
@@ -353,25 +360,29 @@ class ClonerStressAI:
                     elif "download" in txt_clicado:
                         if etapa_atual >= 2:
                             etapa_atual = max(etapa_atual, 3)
-                            reward = 800.0
+                            reward = 0.8
                             print("  └─> [Recompensa] PASSO 3 OK: Entrou na pasta Downloads!")
                             historico_acoes.clear()
                         else:
                             print("🚨 [ERRO DE ORDEM] Foi para Downloads fora de ordem!")
-                            reward = -1500.0
+                            reward = -1.5
 
                     # ⚠️ AÇÕES NEUTRAS (SCROLL, BACK, ETC)
                     else:
                         if new_xml and set(new_actions.keys()) == set(actions.keys()):
-                            reward = -50.0
+                            reward = -0.05
                             print(f"  └─> ⚠️ AÇÃO INERTE.")
 
                 if not new_xml:
-                    reward = -200.0
+                    reward = -0.2
                     is_terminal = True
 
+                # Salva o novo estado considerando se a etapa_atual mudou
+                new_etapa_norm = etapa_atual / 3.0
+                new_current_state = np.concatenate([new_state_vec, [new_etapa_norm]])
+
                 max_prio = max(self.priorities) if self.memory else 1.0
-                self.memory.append((state_vector, action_data["vector"], reward, new_state_vec, new_actions_vecs, is_terminal))
+                self.memory.append((current_state, action_data["vector"], reward, new_current_state, new_actions_vecs, is_terminal))
                 self.priorities.append(max_prio)
 
                 self.replay_experience()
