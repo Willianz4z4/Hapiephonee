@@ -424,16 +424,17 @@ try:
                                 if HAPIE_APPS_DIR not in sys.path:
                                     sys.path.insert(0, HAPIE_APPS_DIR)
                                 from apps_data import data_save, data_export, data_inject
-                                
+
                                 if action_type == "export":
                                     console.print(f"\n[bold magenta]📦 [DATA] Servidor ordenou a EXPORTAÇÃO dos dados de: {pacote_alvo}[/bold magenta]")
                                     if data_save(pacote_alvo):
-                                        data_export(pacote_alvo, url_servidor)
-                                        
+                                        # 🚀 CORREÇÃO AQUI: Agora passando owner_id e device_id para a função de export!
+                                        data_export(pacote_alvo, url_servidor, owner_id, device_id)
+
                                 elif action_type == "inject":
                                     console.print(f"\n[bold magenta]💉 [DATA] Servidor ordenou a INJEÇÃO inteligente de dados em: {pacote_alvo}[/bold magenta]")
                                     data_inject(pacote_alvo, url_servidor)
-                                    
+
                             except Exception as e:
                                 console.print(f"\n[bold red]❌ Erro no motor de dados: {e}[/bold red]")
 
