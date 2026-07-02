@@ -62,7 +62,7 @@ except ImportError:
     from rich.panel import Panel
     from halo import Halo
 
-HAPIEPHONE_VERSION = "10.4 (Fila APK_Apks Ativa)"
+HAPIEPHONE_VERSION = "10.5 (Motor de Dados Integrado)"
 console = Console()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
@@ -89,7 +89,7 @@ if not os.path.exists(init_file):
 
 REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
-PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json") 
+PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
 
 saved_config = {}
 
@@ -322,7 +322,6 @@ registered_in_db = False
 PING_INTERVAL = 60
 last_check = 0
 
-# Variável para lembrar a última resolução aplicada e evitar spam de comandos no Android
 last_applied_size = ""
 
 console.print("\n[bold green]📡 Connection established. Awaiting commands from Control Panel...[/bold green]")
@@ -406,12 +405,37 @@ try:
 
                             if new_size != last_applied_size:
                                 console.print(f"\n[bold cyan]📏 Ajustando tamanho/proporção da tela para: {new_size}[/bold cyan]")
-                                # Comando root para forçar a nova resolução/density no Android
                                 os.system(f"su -c 'wm size {new_size}' > /dev/null 2>&1")
                                 last_applied_size = new_size
                         except Exception as e:
                             pass
 
+                    # =======================================================
+                    # 📂 INTERCEPÇÃO DE DADOS (EXPORT & INJECT AUTOMÁTICO)
+                    # =======================================================
+                    if "data_command" in response_json:
+                        cmd_data = response_json["data_command"]
+                        action_type = cmd_data.get("action")
+                        pacote_alvo = cmd_data.get("package")
+                        url_servidor = cmd_data.get("url")
+
+                        if pacote_alvo and url_servidor:
+                            try:
+                                if HAPIE_APPS_DIR not in sys.path:
+                                    sys.path.insert(0, HAPIE_APPS_DIR)
+                                from apps_data import data_save, data_export, data_inject
+                                
+                                if action_type == "export":
+                                    console.print(f"\n[bold magenta]📦 [DATA] Servidor ordenou a EXPORTAÇÃO dos dados de: {pacote_alvo}[/bold magenta]")
+                                    if data_save(pacote_alvo):
+                                        data_export(pacote_alvo, url_servidor)
+                                        
+                                elif action_type == "inject":
+                                    console.print(f"\n[bold magenta]💉 [DATA] Servidor ordenou a INJEÇÃO inteligente de dados em: {pacote_alvo}[/bold magenta]")
+                                    data_inject(pacote_alvo, url_servidor)
+                                    
+                            except Exception as e:
+                                console.print(f"\n[bold red]❌ Erro no motor de dados: {e}[/bold red]")
 
                     # =======================================================
                     # ⚠️ INTERCEPÇÃO DO UPLOAD_QUEUE (Fila de APKs pendentes)
