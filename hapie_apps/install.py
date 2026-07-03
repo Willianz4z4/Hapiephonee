@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import subprocess
+import re
 from datetime import datetime
 
 try:
@@ -54,9 +55,14 @@ def install_apk(url, visibility):
         log("❌ A URL fornecida é uma página da loja, não um link direto de APK.", "bold red")
         return None, None, False
 
-    # 2. Download melhorado (Gdown sem fuzzy p/ Drive, Curl silencioso p/ resto)
+    # 2. Download extraindo ID do GDrive
     if "drive.google.com" in url:
-        os.system(f"gdown -q '{url}' -O {tmp_path}")
+        match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
+        if match:
+            file_id = match.group(1)
+            os.system(f"gdown -q --id '{file_id}' -O {tmp_path}")
+        else:
+            os.system(f"gdown -q '{url}' -O {tmp_path}")
     else:
         os.system(f"curl -sL '{url}' -o {tmp_path}")
 
@@ -115,7 +121,12 @@ def inject_data(data_url, package_name, app_name):
     console.print(Panel(f"Baixando Dados Extras para [bold]{app_name}[/bold]...", style="magenta", title="📁 INJEÇÃO DE DADOS"))
 
     if "drive.google.com" in data_url:
-        os.system(f"gdown -q '{data_url}' -O {tmp_data}")
+        match = re.search(r'/d/([a-zA-Z0-9_-]+)', data_url)
+        if match:
+            file_id = match.group(1)
+            os.system(f"gdown -q --id '{file_id}' -O {tmp_data}")
+        else:
+            os.system(f"gdown -q '{data_url}' -O {tmp_data}")
     else:
         os.system(f"curl -sL '{data_url}' -o {tmp_data}")
 
