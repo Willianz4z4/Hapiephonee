@@ -55,12 +55,12 @@ def install_apk(url, visibility):
         log("❌ A URL fornecida é uma página da loja, não um link direto de APK.", "bold red")
         return None, None, False
 
-    # 2. Download extraindo ID do GDrive
+    # 2. Download passando apenas o ID diretamente (para gdown legado)
     if "drive.google.com" in url:
         match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
         if match:
             file_id = match.group(1)
-            os.system(f"gdown -q --id '{file_id}' -O {tmp_path}")
+            os.system(f"gdown -q '{file_id}' -O {tmp_path}")
         else:
             os.system(f"gdown -q '{url}' -O {tmp_path}")
     else:
@@ -124,7 +124,7 @@ def inject_data(data_url, package_name, app_name):
         match = re.search(r'/d/([a-zA-Z0-9_-]+)', data_url)
         if match:
             file_id = match.group(1)
-            os.system(f"gdown -q --id '{file_id}' -O {tmp_data}")
+            os.system(f"gdown -q '{file_id}' -O {tmp_data}")
         else:
             os.system(f"gdown -q '{data_url}' -O {tmp_data}")
     else:
