@@ -39,7 +39,7 @@ def run_su(cmd):
     return subprocess.run(f"su -c '{cmd}'", shell=True, capture_output=True, text=True)
 
 def get_app_name(tmp_path, default_pkg):
-    cmd = f"aapt dump badging {tmp_path} 2>/dev/null | grep 'application-label:' | head -n 1 | cut -d\\' -f2"
+    cmd = f"aapt dump badging {tmp_path} 2>/dev/null | grep 'application-label:' | head -n 1 | cut -d\' -f2"
     app_name = subprocess.getoutput(cmd).strip()
     return app_name if app_name else default_pkg
 
@@ -54,9 +54,9 @@ def install_apk(url, visibility):
         log("❌ A URL fornecida é uma página da loja, não um link direto de APK.", "bold red")
         return None, None, False
 
-    # 2. Download melhorado (Gdown fuzzy p/ Drive, Curl silencioso p/ resto)
+    # 2. Download melhorado (Gdown sem fuzzy p/ Drive, Curl silencioso p/ resto)
     if "drive.google.com" in url:
-        os.system(f"gdown -q --fuzzy '{url}' -O {tmp_path}")
+        os.system(f"gdown -q '{url}' -O {tmp_path}")
     else:
         os.system(f"curl -sL '{url}' -o {tmp_path}")
 
@@ -72,7 +72,7 @@ def install_apk(url, visibility):
         return None, None, False
 
     console.print("[bold yellow]⚙️ Processando pacote e burlando Play Protect...[/bold yellow]")
-    
+
     # 5. Tratamento de erros do aapt
     cmd_get_pkg = f"aapt dump badging {tmp_path} 2>/dev/null | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
     pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
@@ -115,7 +115,7 @@ def inject_data(data_url, package_name, app_name):
     console.print(Panel(f"Baixando Dados Extras para [bold]{app_name}[/bold]...", style="magenta", title="📁 INJEÇÃO DE DADOS"))
 
     if "drive.google.com" in data_url:
-        os.system(f"gdown -q --fuzzy '{data_url}' -O {tmp_data}")
+        os.system(f"gdown -q '{data_url}' -O {tmp_data}")
     else:
         os.system(f"curl -sL '{data_url}' -o {tmp_data}")
 
