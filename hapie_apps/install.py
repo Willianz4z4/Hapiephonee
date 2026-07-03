@@ -16,8 +16,8 @@ except ImportError:
 # ==========================================
 # 📍 ROTAS ATUALIZADAS E ORGANIZADAS
 # ==========================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # ~/Hapiephonee/hapie_apps
-REPO_ROOT = os.path.dirname(BASE_DIR)                 # ~/Hapiephonee
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(BASE_DIR)
 
 DATA_DIR = os.path.join(REPO_ROOT, "Data")
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -39,7 +39,7 @@ def run_su(cmd):
     return subprocess.run(f"su -c '{cmd}'", shell=True, capture_output=True, text=True)
 
 def get_app_name(tmp_path, default_pkg):
-    cmd = f"aapt dump badging {tmp_path} | grep 'application-label:' | head -n 1 | cut -d\\' -f2"
+    cmd = f"aapt dump badging {tmp_path} 2>/dev/null | grep 'application-label:' | head -n 1 | cut -d\\' -f2"
     app_name = subprocess.getoutput(cmd).strip()
     return app_name if app_name else default_pkg
 
@@ -49,51 +49,63 @@ def install_apk(url, visibility):
 
     console.print(Panel(f"Baixando APK...\n[dim]{url}[/dim]", style="yellow", title="📥 DOWNLOAD INICIADO"))
 
+    # 1. Barreira contra links web da Play Store (Impede falha silenciosa)
+    if "play.google.com" in url:
+        log("❌ A URL fornecida é uma página da loja, não um link direto de APK.", "bold red")
+        return None, None, False
+
+    # 2. Download melhorado (Gdown fuzzy p/ Drive, Curl silencioso p/ resto)
     if "drive.google.com" in url:
-        os.system(f"gdown '{url}' -O {tmp_path}")
+        os.system(f"gdown -q --fuzzy '{url}' -O {tmp_path}")
     else:
-        os.system(f"curl -L '{url}' -o {tmp_path}")
+        os.system(f"curl -sL '{url}' -o {tmp_path}")
 
-    if os.path.exists(tmp_path):
-        console.print("[bold yellow]⚙️ Processando pacote e burlando Play Protect...[/bold yellow]")
-        cmd_get_pkg = f"aapt dump badging {tmp_path} | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
-        pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
+    # 3. Verifica se o arquivo foi realmente criado
+    if not os.path.exists(tmp_path):
+        log("❌ Erro: O arquivo APK não pôde ser baixado (falha de rede).", "bold red")
+        return None, None, False
 
-        if "not found" in pkg_name or not pkg_name:
-            log("❌ ERRO FATAL: Comando 'aapt' não encontrado no Termux!", "bold red")
-            log("Execute no celular: pkg install aapt -y", "bold yellow")
-            if os.path.exists(tmp_path): os.remove(tmp_path)
-            return None, None, False
+    # 4. Verifica o tamanho (Evita falsos downloads de HTML de 100kb do Google Drive)
+    if os.path.getsize(tmp_path) < 500000:
+        log("❌ Erro: Arquivo corrompido ou bloqueio de download detectado (provável página HTML de erro).", "bold red")
+        os.remove(tmp_path)
+        return None, None, False
 
-        if pkg_name:
-            app_name = get_app_name(tmp_path, pkg_name)
+    console.print("[bold yellow]⚙️ Processando pacote e burlando Play Protect...[/bold yellow]")
+    
+    # 5. Tratamento de erros do aapt
+    cmd_get_pkg = f"aapt dump badging {tmp_path} 2>/dev/null | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
+    pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
 
-            run_su("pm disable-user --user 0 com.android.vending > /dev/null 2>&1")
-            run_su("settings put global package_verifier_enable 0")
+    if not pkg_name or "not found" in pkg_name or "W/zipro" in pkg_name:
+        log("❌ ERRO FATAL: Arquivo APK inválido ou corrompido (o aapt não conseguiu ler).", "bold red")
+        if os.path.exists(tmp_path): os.remove(tmp_path)
+        return None, None, False
 
-            install_result = run_su(f"pm install -r -g -d {tmp_path}")
+    app_name = get_app_name(tmp_path, pkg_name)
 
-            run_su("settings put global package_verifier_enable 1")
-            run_su("pm enable com.android.vending > /dev/null 2>&1")
+    run_su("pm disable-user --user 0 com.android.vending > /dev/null 2>&1")
+    run_su("settings put global package_verifier_enable 0")
 
-            success_flag = False
-            if "Success" in install_result.stdout:
-                success_flag = True
-                if visibility == "oculto":
-                    run_su(f"pm hide {pkg_name}")
-                    log(f"✅ {app_name} ({pkg_name}) - Instalado & Oculto", "bold green")
-                else:
-                    run_su(f"pm unhide {pkg_name}")
-                    log(f"✅ {app_name} ({pkg_name}) - Instalado com Sucesso", "bold green")
-            else:
-                log(f"❌ Falha ao instalar {app_name}: {install_result.stderr}", "bold red")
+    install_result = run_su(f"pm install -r -g -d {tmp_path}")
 
-            os.remove(tmp_path)
-            return pkg_name, app_name, success_flag
+    run_su("settings put global package_verifier_enable 1")
+    run_su("pm enable com.android.vending > /dev/null 2>&1")
+
+    success_flag = False
+    if "Success" in install_result.stdout:
+        success_flag = True
+        if visibility == "oculto":
+            run_su(f"pm hide {pkg_name}")
+            log(f"✅ {app_name} ({pkg_name}) - Instalado & Oculto", "bold green")
+        else:
+            run_su(f"pm unhide {pkg_name}")
+            log(f"✅ {app_name} ({pkg_name}) - Instalado com Sucesso", "bold green")
     else:
-        log("❌ Erro: O arquivo APK não pôde ser baixado.", "bold red")
+        log(f"❌ Falha ao instalar {app_name}: {install_result.stderr}", "bold red")
 
-    return None, None, False
+    os.remove(tmp_path)
+    return pkg_name, app_name, success_flag
 
 def inject_data(data_url, package_name, app_name):
     tmp_data = os.path.join(BASE_DIR, "data_inject.tar.gz")
@@ -103,9 +115,9 @@ def inject_data(data_url, package_name, app_name):
     console.print(Panel(f"Baixando Dados Extras para [bold]{app_name}[/bold]...", style="magenta", title="📁 INJEÇÃO DE DADOS"))
 
     if "drive.google.com" in data_url:
-        os.system(f"gdown '{data_url}' -O {tmp_data}")
+        os.system(f"gdown -q --fuzzy '{data_url}' -O {tmp_data}")
     else:
-        os.system(f"curl -L '{data_url}' -o {tmp_data}")
+        os.system(f"curl -sL '{data_url}' -o {tmp_data}")
 
     if os.path.exists(tmp_data):
         console.print("[bold yellow]⚙️ Descompactando scripts e permissões...[/bold yellow]")
