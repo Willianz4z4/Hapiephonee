@@ -50,41 +50,57 @@ def install_apk(url, visibility):
 
     console.print(Panel(f"Baixando APK...\n[dim]{url}[/dim]", style="yellow", title="📥 DOWNLOAD INICIADO"))
 
-    # 1. Barreira contra links web da Play Store (Impede falha silenciosa)
     if "play.google.com" in url:
         log("❌ A URL fornecida é uma página da loja, não um link direto de APK.", "bold red")
         return None, None, False
 
-    # 2. Download passando apenas o ID diretamente (para gdown legado)
+    # Download GDrive totalmente focado no CURL para burlar limite do Roblox
     if "drive.google.com" in url:
-        match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
-        if match:
-            file_id = match.group(1)
-            os.system(f"gdown -q '{file_id}' -O {tmp_path}")
+        file_id = None
+        match_d = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
+        if match_d:
+            file_id = match_d.group(1)
         else:
-            os.system(f"gdown -q '{url}' -O {tmp_path}")
+            match_id = re.search(r'id=([a-zA-Z0-9_-]+)', url)
+            if match_id:
+                file_id = match_id.group(1)
+
+        if file_id:
+            cookie_path = os.path.join(BASE_DIR, "gdrive_cookies.txt")
+            os.system(f"curl -sL -c '{cookie_path}' 'https://docs.google.com/uc?export=download&id={file_id}' -o '{tmp_path}'")
+            
+            if os.path.exists(tmp_path):
+                try:
+                    with open(tmp_path, 'r', errors='ignore') as f:
+                        head = f.read(15000)
+                    confirm_match = re.search(r'confirm=([A-Za-z0-9_-]+)', head)
+                    if confirm_match:
+                        token = confirm_match.group(1)
+                        os.system(f"curl -sL -b '{cookie_path}' 'https://docs.google.com/uc?export=download&confirm={token}&id={file_id}' -o '{tmp_path}'")
+                except:
+                    pass
+            if os.path.exists(cookie_path): os.remove(cookie_path)
+        else:
+            os.system(f"curl -sL '{url}' -o {tmp_path}")
     else:
         os.system(f"curl -sL '{url}' -o {tmp_path}")
 
-    # 3. Verifica se o arquivo foi realmente criado
     if not os.path.exists(tmp_path):
         log("❌ Erro: O arquivo APK não pôde ser baixado (falha de rede).", "bold red")
         return None, None, False
 
-    # 4. Verifica o tamanho (Evita falsos downloads de HTML de 100kb do Google Drive)
     if os.path.getsize(tmp_path) < 500000:
-        log("❌ Erro: Arquivo corrompido ou bloqueio de download detectado (provável página HTML de erro).", "bold red")
+        log("❌ Erro: Arquivo corrompido ou bloqueio de download detectado.", "bold red")
         os.remove(tmp_path)
         return None, None, False
 
     console.print("[bold yellow]⚙️ Processando pacote e burlando Play Protect...[/bold yellow]")
 
-    # 5. Tratamento de erros do aapt
     cmd_get_pkg = f"aapt dump badging {tmp_path} 2>/dev/null | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
     pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
 
     if not pkg_name or "not found" in pkg_name or "W/zipro" in pkg_name:
-        log("❌ ERRO FATAL: Arquivo APK inválido ou corrompido (o aapt não conseguiu ler).", "bold red")
+        log("❌ ERRO FATAL: Arquivo APK inválido ou corrompido.", "bold red")
         if os.path.exists(tmp_path): os.remove(tmp_path)
         return None, None, False
 
@@ -121,12 +137,31 @@ def inject_data(data_url, package_name, app_name):
     console.print(Panel(f"Baixando Dados Extras para [bold]{app_name}[/bold]...", style="magenta", title="📁 INJEÇÃO DE DADOS"))
 
     if "drive.google.com" in data_url:
-        match = re.search(r'/d/([a-zA-Z0-9_-]+)', data_url)
-        if match:
-            file_id = match.group(1)
-            os.system(f"gdown -q '{file_id}' -O {tmp_data}")
+        file_id = None
+        match_d = re.search(r'/d/([a-zA-Z0-9_-]+)', data_url)
+        if match_d:
+            file_id = match_d.group(1)
         else:
-            os.system(f"gdown -q '{data_url}' -O {tmp_data}")
+            match_id = re.search(r'id=([a-zA-Z0-9_-]+)', data_url)
+            if match_id:
+                file_id = match_id.group(1)
+
+        if file_id:
+            cookie_path = os.path.join(BASE_DIR, "gdrive_cookies.txt")
+            os.system(f"curl -sL -c '{cookie_path}' 'https://docs.google.com/uc?export=download&id={file_id}' -o '{tmp_data}'")
+            if os.path.exists(tmp_data):
+                try:
+                    with open(tmp_data, 'r', errors='ignore') as f:
+                        head = f.read(15000)
+                    confirm_match = re.search(r'confirm=([A-Za-z0-9_-]+)', head)
+                    if confirm_match:
+                        token = confirm_match.group(1)
+                        os.system(f"curl -sL -b '{cookie_path}' 'https://docs.google.com/uc?export=download&confirm={token}&id={file_id}' -o '{tmp_data}'")
+                except:
+                    pass
+            if os.path.exists(cookie_path): os.remove(cookie_path)
+        else:
+            os.system(f"curl -sL '{data_url}' -o {tmp_data}")
     else:
         os.system(f"curl -sL '{data_url}' -o {tmp_data}")
 
