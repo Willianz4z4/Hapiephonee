@@ -5,6 +5,16 @@ import subprocess
 import re
 from datetime import datetime
 
+# Tenta importar o gdown. Se não existir, tenta instalar automaticamente
+try:
+    import gdown
+except ImportError:
+    try:
+        subprocess.run([sys.executable, "-m", "pip", "install", "gdown"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        import gdown
+    except:
+        gdown = None
+
 try:
     from rich.console import Console
     from rich.panel import Panel
@@ -54,7 +64,7 @@ def install_apk(url, visibility):
         log("❌ A URL fornecida é uma página da loja, não um link direto de APK.", "bold red")
         return None, None, False
 
-    # Download GDrive totalmente focado no CURL para burlar limite do Roblox
+    # Download focado no GDOWN para APKs pesados do Google Drive
     if "drive.google.com" in url:
         file_id = None
         match_d = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
@@ -66,20 +76,27 @@ def install_apk(url, visibility):
                 file_id = match_id.group(1)
 
         if file_id:
-            cookie_path = os.path.join(BASE_DIR, "gdrive_cookies.txt")
-            os.system(f"curl -sL -c '{cookie_path}' 'https://docs.google.com/uc?export=download&id={file_id}' -o '{tmp_path}'")
-            
-            if os.path.exists(tmp_path):
-                try:
-                    with open(tmp_path, 'r', errors='ignore') as f:
-                        head = f.read(15000)
-                    confirm_match = re.search(r'confirm=([A-Za-z0-9_-]+)', head)
-                    if confirm_match:
-                        token = confirm_match.group(1)
-                        os.system(f"curl -sL -b '{cookie_path}' 'https://docs.google.com/uc?export=download&confirm={token}&id={file_id}' -o '{tmp_path}'")
-                except:
-                    pass
-            if os.path.exists(cookie_path): os.remove(cookie_path)
+            if gdown:
+                console.print("[bold datetime][bold yellow]🚀 Usando o motor GDown para contornar restrições de APK pesado...[/bold yellow]")
+                gdown_url = f"https://drive.google.com/uc?id={file_id}"
+                # quiet=False mostra a barra de progresso nativa do gdown, ideal para arquivos grandes
+                gdown.download(gdown_url, tmp_path, quiet=False)
+            else:
+                # Fallback caso o gdown falhe completamente em ser instalado
+                console.print("[bold red]⚠️ GDown indisponível. Tentando método alternativo com curl...[/bold red]")
+                cookie_path = os.path.join(BASE_DIR, "gdrive_cookies.txt")
+                os.system(f"curl -sL -c '{cookie_path}' 'https://docs.google.com/uc?export=download&id={file_id}' -o '{tmp_path}'")
+                if os.path.exists(tmp_path):
+                    try:
+                        with open(tmp_path, 'r', errors='ignore') as f:
+                            head = f.read(15000)
+                        confirm_match = re.search(r'confirm=([A-Za-z0-9_-]+)', head)
+                        if confirm_match:
+                            token = confirm_match.group(1)
+                            os.system(f"curl -sL -b '{cookie_path}' 'https://docs.google.com/uc?export=download&confirm={token}&id={file_id}' -o '{tmp_path}'")
+                    except:
+                        pass
+                if os.path.exists(cookie_path): os.remove(cookie_path)
         else:
             os.system(f"curl -sL '{url}' -o {tmp_path}")
     else:
@@ -89,9 +106,10 @@ def install_apk(url, visibility):
         log("❌ Erro: O arquivo APK não pôde ser baixado (falha de rede).", "bold red")
         return None, None, False
 
+    # Validação de tamanho para garantir que não baixou uma página HTML de erro
     if os.path.getsize(tmp_path) < 500000:
         log("❌ Erro: Arquivo corrompido ou bloqueio de download detectado.", "bold red")
-        os.remove(tmp_path)
+        log(f"⚠️ O arquivo foi mantido em {tmp_path} para análise do bug.", "yellow")
         return None, None, False
 
     console.print("[bold yellow]⚙️ Processando pacote e burlando Play Protect...[/bold yellow]")
@@ -147,25 +165,34 @@ def inject_data(data_url, package_name, app_name):
                 file_id = match_id.group(1)
 
         if file_id:
-            cookie_path = os.path.join(BASE_DIR, "gdrive_cookies.txt")
-            os.system(f"curl -sL -c '{cookie_path}' 'https://docs.google.com/uc?export=download&id={file_id}' -o '{tmp_data}'")
-            if os.path.exists(tmp_data):
-                try:
-                    with open(tmp_data, 'r', errors='ignore') as f:
-                        head = f.read(15000)
-                    confirm_match = re.search(r'confirm=([A-Za-z0-9_-]+)', head)
-                    if confirm_match:
-                        token = confirm_match.group(1)
-                        os.system(f"curl -sL -b '{cookie_path}' 'https://docs.google.com/uc?export=download&confirm={token}&id={file_id}' -o '{tmp_data}'")
-                except:
-                    pass
-            if os.path.exists(cookie_path): os.remove(cookie_path)
+            if gdown:
+                gdown_url = f"https://drive.google.com/uc?id={file_id}"
+                gdown.download(gdown_url, tmp_data, quiet=False)
+            else:
+                cookie_path = os.path.join(BASE_DIR, "gdrive_cookies.txt")
+                os.system(f"curl -sL -c '{cookie_path}' 'https://docs.google.com/uc?export=download&id={file_id}' -o '{tmp_data}'")
+                if os.path.exists(tmp_data):
+                    try:
+                        with open(tmp_data, 'r', errors='ignore') as f:
+                            head = f.read(15000)
+                        confirm_match = re.search(r'confirm=([A-Za-z0-9_-]+)', head)
+                        if confirm_match:
+                            token = confirm_match.group(1)
+                            os.system(f"curl -sL -b '{cookie_path}' 'https://docs.google.com/uc?export=download&confirm={token}&id={file_id}' -o '{tmp_data}'")
+                    except:
+                        pass
+                if os.path.exists(cookie_path): os.remove(cookie_path)
         else:
             os.system(f"curl -sL '{data_url}' -o {tmp_data}")
     else:
         os.system(f"curl -sL '{data_url}' -o {tmp_data}")
 
     if os.path.exists(tmp_data):
+        if os.path.getsize(tmp_data) < 10000:
+            log("❌ Erro: Arquivo de dados corrompido ou bloqueio de download detectado.", "bold red")
+            log(f"⚠️ O arquivo de dados foi mantido em {tmp_data} para análise.", "yellow")
+            return
+
         console.print("[bold yellow]⚙️ Descompactando scripts e permissões...[/bold yellow]")
         run_su(f"am force-stop {package_name}")
         extraction = run_su(f"tar -xzf {tmp_data} -C {target_path}")
