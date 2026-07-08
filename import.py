@@ -4,6 +4,7 @@ import subprocess
 import time
 import json
 import uuid
+import signal
 from datetime import datetime
 
 # ==========================================
@@ -14,39 +15,58 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
     os.system("clear" if os.name == "posix" else "cls")
     print("🛡️ [Watchdog] Escudo de Resiliência ativado. O bot agora é imortal a crashs de código.")
 
+    p_process = None
+
+    # Se o sistema tentar matar o Watchdog, ele mata o bot filho junto
+    def handle_watchdog_sigterm(signum, frame):
+        if p_process:
+            try: p_process.terminate()
+            except: pass
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, handle_watchdog_sigterm)
+
     while True:
         try:
             # Inicia o processo filho (o verdadeiro bot)
-            p = subprocess.Popen([sys.executable, __file__] + sys.argv[1:])
-            p.wait()
+            p_process = subprocess.Popen([sys.executable, __file__] + sys.argv[1:])
+            p_process.wait()
 
             # Analisa o motivo da morte do bot:
-            if p.returncode == 0:
-                print("🛡️ [Watchdog] Desligamento seguro detectado (CTRL+C). Encerrando o nó.")
+            # -15 e 143 significam morte via 'kill' pelo terminal
+            if p_process.returncode in (0, -15, 143):
+                print("🛡️ [Watchdog] Desligamento seguro detectado (Sinal ou CTRL+C). Encerrando o nó.")
                 sys.exit(0)
-            elif p.returncode == 2:
+            elif p_process.returncode == 2:
                 print("\n⚠️ [Watchdog] CONFIGURAÇÃO INCOMPLETA: Faltam os IDs de Autenticação!")
                 print("👉 Execute o comando assim na primeira vez: python import.py <GUILD_ID> <OWNER_ID>")
                 sys.exit(2)
-            elif p.returncode == 3:
+            elif p_process.returncode == 3:
                 print("\n⚠️ [Watchdog] ERRO DE AMBIENTE: Dispositivo sem permissão ROOT!")
                 sys.exit(3)
-            elif p.returncode == 4:
+            elif p_process.returncode == 4:
                 print("\n⚠️ [Watchdog] Conexão recusada pelo Servidor Central (Shutdown).")
                 sys.exit(4)
             else:
-                print(f"\n💀 [Watchdog] CRASH DE CÓDIGO DETECTADO (Código {p.returncode})!")
+                print(f"\n💀 [Watchdog] CRASH DE CÓDIGO DETECTADO (Código {p_process.returncode})!")
                 print("🔄 [Watchdog] A versão atual está quebrada. Buscando correções no GitHub em 10 segundos...")
                 time.sleep(10)
                 os.system("git pull > /dev/null 2>&1")
                 print("🚀 [Watchdog] Tentando ressuscitar o bot com o código novo...\n")
         except KeyboardInterrupt:
             print("\n🛡️ [Watchdog] Interrompido à força pelo usuário.")
+            if p_process:
+                try: p_process.terminate()
+                except: pass
             sys.exit(0)
 
 # ==========================================
 # 🤖 CÓDIGO NORMAL DO BOT COMEÇA AQUI
 # ==========================================
+
+# 🚀 ENSINA O BOT A MORRER PELO 'ps/kill' COMO SE FOSSE UM CTRL+C
+def handle_child_sigterm(signum, frame):
+    raise KeyboardInterrupt
+signal.signal(signal.SIGTERM, handle_child_sigterm)
 
 try:
     import requests
@@ -394,9 +414,6 @@ try:
                 if response.status_code == 200:
                     response_json = response.json()
 
-                    # =======================================================
-                    # 📏 INTERCEPÇÃO DE MUDANÇA DE RESOLUÇÃO (Device Radius)
-                    # =======================================================
                     if "radius_width" in response_json and "radius_height" in response_json:
                         try:
                             rw = int(float(response_json["radius_width"]))
@@ -410,9 +427,6 @@ try:
                         except Exception as e:
                             pass
 
-                    # =======================================================
-                    # 📂 INTERCEPÇÃO DE DADOS (EXPORT & INJECT AUTOMÁTICO)
-                    # =======================================================
                     if "data_command" in response_json:
                         cmd_data = response_json["data_command"]
                         action_type = cmd_data.get("action")
@@ -428,7 +442,6 @@ try:
                                 if action_type == "export":
                                     console.print(f"\n[bold magenta]📦 [DATA] Servidor ordenou a EXPORTAÇÃO dos dados de: {pacote_alvo}[/bold magenta]")
                                     if data_save(pacote_alvo):
-                                        # 🚀 CORREÇÃO AQUI: Agora passando owner_id e device_id para a função de export!
                                         data_export(pacote_alvo, url_servidor, owner_id, device_id)
 
                                 elif action_type == "inject":
@@ -438,9 +451,6 @@ try:
                             except Exception as e:
                                 console.print(f"\n[bold red]❌ Erro no motor de dados: {e}[/bold red]")
 
-                    # =======================================================
-                    # ⚠️ INTERCEPÇÃO DO UPLOAD_QUEUE (Fila de APKs pendentes)
-                    # =======================================================
                     if "upload_queue" in response_json:
                         lista_pendentes = response_json["upload_queue"]
                         if isinstance(lista_pendentes, list) and len(lista_pendentes) > 0:
