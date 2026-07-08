@@ -3,6 +3,7 @@ import sys
 import json
 import subprocess
 import re
+import zipfile
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
@@ -56,12 +57,16 @@ def get_app_name(tmp_path, default_pkg):
     return app_name if app_name else default_pkg
 
 def download_worker(item, index):
-    """Trabalhador focado em baixar arquivos em paralelo sem colisão de nomes"""
+    """Trabalhador focado em baixar arquivos em paralelo e tratar ZIPs automaticamente com a senha 123"""
     apk_url, visibility, _, extra = item[0], item[1], item[2], item[3]
-    tmp_path = os.path.join(BASE_DIR, f"temp_install_{index}.apk")
+    
+    # Arquivo temporário inicial de download
+    download_path = os.path.join(BASE_DIR, f"temp_download_{index}")
+    final_apk_path = os.path.join(BASE_DIR, f"temp_install_{index}.apk")
     tmp_data = os.path.join(BASE_DIR, f"data_inject_{index}.tar.gz")
 
-    if os.path.exists(tmp_path): os.remove(tmp_path)
+    if os.path.exists(download_path): os.remove(download_path)
+    if os.path.exists(final_apk_path): os.remove(final_apk_path)
     if os.path.exists(tmp_data): os.remove(tmp_data)
 
     log(f"📥 [Download Iniciado] ID #{index} - {apk_url[:60]}...", "yellow")
@@ -70,7 +75,7 @@ def download_worker(item, index):
         log(f"❌ ID #{index} - A URL fornecida é uma página da loja.", "bold red")
         return {"index": index, "success": False, "item": item}
 
-    # Gerenciamento de download do Google Drive
+    # Baixando do Google Drive usando GDown ou Curl
     if "drive.google.com" in apk_url:
         file_id = None
         match_d = re.search(r'/d/([a-zA-Z0-9_-]+)', apk_url)
@@ -81,38 +86,63 @@ def download_worker(item, index):
 
         if file_id:
             if gdown:
-                try:
-                    # quiet=True para não quebrar a tela rodando várias barras de progresso ao mesmo tempo
-                    gdown.download(f"https://drive.google.com/uc?id={file_id}", tmp_path, quiet=True)
-                except:
-                    pass
+                try: gdown.download(f"https://drive.google.com/uc?id={file_id}", download_path, quiet=True)
+                except: pass
             
-            # Fallback caso o gdown não consiga ou falte
-            if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) < 500000:
+            if not os.path.exists(download_path) or os.path.getsize(download_path) < 1000:
                 cookie_path = os.path.join(BASE_DIR, f"gdrive_cookies_{index}.txt")
-                os.system(f"curl -sL -c '{cookie_path}' 'https://docs.google.com/uc?export=download&id={file_id}' -o '{tmp_path}'")
-                if os.path.exists(tmp_path):
+                os.system(f"curl -sL -c '{cookie_path}' 'https://docs.google.com/uc?export=download&id={file_id}' -o '{download_path}'")
+                if os.path.exists(download_path):
                     try:
-                        with open(tmp_path, 'r', errors='ignore') as f:
+                        with open(download_path, 'r', errors='ignore') as f:
                             head = f.read(15000)
                         confirm_match = re.search(r'confirm=([A-Za-z0-9_-]+)', head)
                         if confirm_match:
                             token = confirm_match.group(1)
-                            os.system(f"curl -sL -b '{cookie_path}' 'https://docs.google.com/uc?export=download&confirm={token}&id={file_id}' -o '{tmp_path}'")
-                    except:
-                        pass
+                            os.system(f"curl -sL -b '{cookie_path}' 'https://docs.google.com/uc?export=download&confirm={token}&id={file_id}' -o '{download_path}'")
+                    except: pass
                 if os.path.exists(cookie_path): os.remove(cookie_path)
         else:
-            os.system(f"curl -sL '{apk_url}' -o '{tmp_path}'")
+            os.system(f"curl -sL '{apk_url}' -o '{download_path}'")
     else:
-        os.system(f"curl -sL '{apk_url}' -o '{tmp_path}'")
+        os.system(f"curl -sL '{apk_url}' -o '{download_path}'")
 
-    # Validação do APK baixado
-    if not os.path.exists(tmp_path) or os.path.getsize(tmp_path) < 500000:
-        log(f"❌ Erro no ID #{index}: Download falhou ou arquivo corrompido.", "bold red")
+    if not os.path.exists(download_path) or os.path.getsize(download_path) < 1000:
+        log(f"❌ Erro no ID #{index}: Download falhou.", "bold red")
         return {"index": index, "success": False, "item": item}
 
-    # Download de Dados Extras em paralelo se existirem
+    # ========================================================
+    # 🧠 DECRIPTAÇÃO E EXTRAÇÃO AUTOMÁTICA COM A SENHA 123
+    # ========================================================
+    if zipfile.is_zipfile(download_path):
+        log(f"📦 ID #{index} detectado como ZIP. Aplicando a senha '123' automaticamente...", "cyan")
+        try:
+            with zipfile.ZipFile(download_path, 'r') as zip_ref:
+                # b'123' vem primeiro para descriptografar de imediato os APKs protegidos
+                for senha in [b'123', None]:
+                    try:
+                        apk_dentro_do_zip = next((f for f in zip_ref.namelist() if f.endswith('.apk')), None)
+                        if apk_dentro_do_zip:
+                            zip_ref.extract(apk_dentro_do_zip, BASE_DIR, pwd=senha)
+                            os.rename(os.path.join(BASE_DIR, apk_dentro_do_zip), final_apk_path)
+                            break
+                    except:
+                        continue
+        except Exception as e:
+            log(f"❌ Falha ao extrair ZIP do ID #{index}: {e}", "bold red")
+
+        if os.path.exists(download_path): os.remove(download_path)
+    else:
+        # Se for um APK antigo direto sem estar em ZIP, apenas move para o instalador
+        os.rename(download_path, final_apk_path)
+
+    # Validação Final do APK extraído
+    if not os.path.exists(final_apk_path) or os.path.getsize(final_apk_path) < 500000:
+        log(f"❌ Erro no ID #{index}: Arquivo APK inválido ou falha na senha do ZIP.", "bold red")
+        if os.path.exists(final_apk_path): os.remove(final_apk_path)
+        return {"index": index, "success": False, "item": item}
+
+    # Download de Dados Extras se houver
     data_url = extra.get("data_link") if extra else None
     has_data = False
     if data_url:
@@ -148,12 +178,12 @@ def download_worker(item, index):
         if os.path.exists(tmp_data) and os.path.getsize(tmp_data) >= 10000:
             has_data = True
 
-    log(f"✨ [Download Concluído] ID #{index} pronto para instalação.", "green")
+    log(f"✨ [Processado] ID #{index} pronto para instalação.", "green")
     return {
         "index": index,
         "success": True,
         "item": item,
-        "tmp_path": tmp_path,
+        "tmp_path": final_apk_path,
         "tmp_data": tmp_data if has_data else None
     }
 
@@ -178,28 +208,23 @@ if __name__ == "__main__":
 
         lista_instalar = data.get("install", []) + data.get("instalar", [])
         if lista_instalar:
-            console.print(Panel(f"Iniciando download simultâneo de {len(lista_instalar)} aplicativos...", style="bold cyan", title="🚀 ENGINE MULTI-THREAD"))
+            console.print(Panel(f"Iniciando download e descompactação de {len(lista_instalar)} aplicativos...", style="bold cyan", title="🚀 ENGINE MULTI-THREAD + AUTO ZIP KEY"))
             
-            # Fase 1: Baixar tudo em paralelo (máximo de 4 conexões simultâneas para estabilidade)
             download_results = []
             with ThreadPoolExecutor(max_workers=4) as executor:
                 futures = [executor.submit(download_worker, item, idx) for idx, item in enumerate(lista_instalar)]
                 for future in futures:
-                    try:
-                        download_results.append(future.result())
-                    except Exception as e:
-                        log(f"❌ Erro crítico em uma das threads de download: {e}", "bold red")
+                    try: download_results.append(future.result())
+                    except Exception as e: log(f"❌ Erro na thread de download: {e}", "bold red")
 
-            # Fase 2: Instalação sequencial em lote (Evita travamento e otimiza o Play Protect)
             print("\n")
-            console.print(Panel("Desativando Play Protect e instalando os pacotes em lote...", style="bold yellow", title="⚙️ INSTALAÇÃO EM MASSA"))
+            console.print(Panel("Instalando pacotes extraídos em lote...", style="bold yellow", title="⚙️ INSTALAÇÃO EM MASSA"))
             
             run_su("pm disable-user --user 0 com.android.vending > /dev/null 2>&1")
             run_su("settings put global package_verifier_enable 0")
 
             for res in download_results:
-                if not res or not res.get("success"):
-                    continue
+                if not res or not res.get("success"): continue
 
                 item = res["item"]
                 tmp_path = res["tmp_path"]
@@ -210,7 +235,7 @@ if __name__ == "__main__":
                 pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
 
                 if not pkg_name or "not found" in pkg_name or "W/zipro" in pkg_name:
-                    log(f"❌ ERRO FATAL: Pacote inválido ou corrompido no ID #{res['index']}.", "bold red")
+                    log(f"❌ ERRO: Pacote corrompido pós-extração no ID #{res['index']}.", "bold red")
                     if os.path.exists(tmp_path): os.remove(tmp_path)
                     if tmp_data and os.path.exists(tmp_data): os.remove(tmp_data)
                     continue
@@ -229,13 +254,10 @@ if __name__ == "__main__":
                         run_su(f"pm unhide {pkg_name}")
                         log(f"✅ {app_name} ({pkg_name}) - Instalado com Sucesso", "bold green")
 
-                    # Injeção de dados extras se o app foi instalado com sucesso
                     if tmp_data and os.path.exists(tmp_data):
                         target_path = f"/data/data/{pkg_name}"
-                        log(f"⚙️ Extraindo scripts e permissões adicionais para {app_name}...", "cyan")
                         run_su(f"am force-stop {pkg_name}")
                         extraction = run_su(f"tar -xzf {tmp_data} -C {target_path}")
-
                         if extraction.returncode == 0:
                             run_su(f"chown -R $(stat -c %u {target_path}):$(stat -c %g {target_path}) {target_path}")
                             log(f"✅ Dados injetados com perfeição em {target_path}", "bold green")
@@ -245,22 +267,16 @@ if __name__ == "__main__":
                     log(f"❌ Falha ao instalar {app_name}: {install_result.stderr}", "bold red")
                     failed_list.append(pkg_name)
 
-                # Limpeza dos arquivos temporários deste item específico
                 if os.path.exists(tmp_path): os.remove(tmp_path)
                 if tmp_data and os.path.exists(tmp_data): os.remove(tmp_data)
 
-            # Restaura as configurações padrão do Play Protect ao finalizar o lote
             run_su("settings put global package_verifier_enable 1")
             run_su("pm enable com.android.vending > /dev/null 2>&1")
 
         if "comandos" in data:
-            for cmd in data["comandos"]:
-                if cmd.startswith("remove "):
-                    target_pkg = cmd.replace("remove ", "").strip()
-                    remove_app(target_pkg)
-                else:
-                    run_su(cmd)
-                    log(f"⚡ Comando executado: {cmd}", "cyan")
+            for cmd in data["commands"]:
+                if cmd.startswith("remove "): remove_app(cmd.replace("remove ", "").strip())
+                else: run_su(cmd)
 
         if success_list or failed_list:
             with open(REPORT_FILE, "w", encoding="utf-8") as f:

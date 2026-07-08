@@ -29,6 +29,9 @@ CONFIG_FILE = os.path.join(REPO_ROOT, "hapie_config.json")
 os.makedirs(ICONS_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# Garante que o Termux tem o compactador zip instalado
+os.system("pkg install zip -y -q > /dev/null 2>&1")
+
 def load_data():
     if os.path.exists(JSON_FILE):
         try:
@@ -173,7 +176,7 @@ def print_app_panel(app_package, info, is_new=False):
     console.print(Panel(detalhes, border_style=border_color))
 
 # ========================================================
-# 🚀 PENDÊNCIAS: EXTRAÇÃO E UPLOAD PARA O FLASK
+# 🚀 PENDÊNCIAS: EXTRAÇÃO E UPLOAD PARA O FLASK (COM ZIP + SENHA 123)
 # ========================================================
 def process_pending_uploads():
     if not os.path.exists(PENDING_TASKS_FILE):
@@ -197,11 +200,10 @@ def process_pending_uploads():
     except:
         pass
 
-    # A rota do seu Flask que configuramos no connection.py
     UPLOAD_URL = "https://iodize-scrounger-auction.ngrok-free.dev/upload_apk"
 
     for pkg in tasks:
-        console.print(f"\n[bold magenta]🚀 [FILA] Iniciando extração e upload do APK: {pkg}[/bold magenta]")
+        console.print(f"\n[bold magenta]🚀 [FILA] Iniciando extração e camuflagem do APK: {pkg}[/bold magenta]")
         try:
             apk_path_cmd = f"su -c 'pm path {pkg}'"
             apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
@@ -213,26 +215,32 @@ def process_pending_uploads():
 
             apk_path = lines[0]
             temp_apk = f"/sdcard/Download/{pkg}_temp.apk"
+            temp_zip = f"/sdcard/Download/{pkg}_temp.zip"
 
-            # 1. Copia o APK protegido para a pasta de downloads pública do celular
+            # 1. Copia o APK protegido
             os.system(f"su -c 'cp \"{apk_path}\" \"{temp_apk}\"'")
-            os.system(f"su -c 'chmod 777 \"{temp_apk}\"'")
-
-            console.print(f"[dim]Enviando para o Drive da VPS (Isso pode demorar dependendo do tamanho)...[/dim]")
             
-            # 2. Faz o envio Multipart-Form-Data para o seu connection.py
-            upload_cmd = f'curl -s -X POST -F "file=@{temp_apk}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
+            console.print(f"[cyan]📦 Zipando arquivo com senha '123' para burlar o Drive...[/cyan]")
+            
+            # 2. Transforma em ZIP com senha 123 usando o comando nativo do Linux
+            os.system(f"su -c 'cd /sdcard/Download && zip -j -P 123 \"{pkg}_temp.zip\" \"{pkg}_temp.apk\"'")
+            os.system(f"su -c 'chmod 777 \"{temp_zip}\"'")
+
+            console.print(f"[dim]Enviando arquivo ZIP seguro para a VPS...[/dim]")
+
+            # 3. Faz o envio do arquivo ZIP (em vez do APK) para o seu connection.py
+            upload_cmd = f'curl -s -X POST -F "file=@{temp_zip}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
             response = subprocess.check_output(upload_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
 
-            # 3. Limpa o arquivo temporário para não entupir a memória do celular
-            os.system(f"su -c 'rm \"{temp_apk}\"'")
+            # 4. Limpa ambos os arquivos temporários da memória
+            os.system(f"su -c 'rm \"{temp_apk}\" \"{temp_zip}\"'")
 
-            console.print(f"[bold green]✅ Upload concluído com sucesso: {response}[/bold green]")
+            console.print(f"[bold green]✅ Upload ZIP concluído com sucesso: {response}[/bold green]")
 
         except Exception as e:
             console.print(f"[bold red]❌ Erro crítico no upload de {pkg}: {e}[/bold red]")
 
-    # 4. Apaga o arquivo de pendências após processar todos
+    # Apaga o arquivo de pendências após processar
     try:
         os.remove(PENDING_TASKS_FILE)
         console.print("[dim]🗑️ Fila de pendências concluída e resetada.[/dim]\n")
@@ -282,7 +290,7 @@ def start_monitor():
         try:
             # INTERCEPTA AS ORDENS DE UPLOAD VINDAS DO IMPORT.PY
             process_pending_uploads()
-            
+
             time.sleep(2)
             new_apps = get_user_apps()
 
