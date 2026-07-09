@@ -206,7 +206,8 @@ def process_pending_uploads():
         console.print(f"\n[bold magenta]🚀 [FILA] Iniciando extração e camuflagem do APK: {pkg}[/bold magenta]")
         try:
             apk_path_cmd = f"su -c 'pm path {pkg}'"
-            apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+            # Removido o DEVNULL para não ocultarmos mais os erros caso o 'pm path' falhe
+            apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True).decode('utf-8').strip()
             lines = [line.replace("package:", "").strip() for line in apk_path_raw.split("\n") if line.strip()]
 
             if not lines:
@@ -219,26 +220,50 @@ def process_pending_uploads():
 
             # 1. Copia o APK protegido
             os.system(f"su -c 'cp \"{apk_path}\" \"{temp_apk}\"'")
-            
+
             console.print(f"[cyan]📦 Zipando arquivo com senha '123' para burlar o Drive...[/cyan]")
+
+            # 2. Transforma em ZIP capturando os logs de erro do console
+            zip_cmd = f"su -c 'cd /sdcard/Download && zip -j -P 123 \"{pkg}_temp.zip\" \"{pkg}_temp.apk\"'"
+            zip_process = subprocess.run(zip_cmd, shell=True, capture_output=True, text=True)
             
-            # 2. Transforma em ZIP com senha 123 usando o comando nativo do Linux
-            os.system(f"su -c 'cd /sdcard/Download && zip -j -P 123 \"{pkg}_temp.zip\" \"{pkg}_temp.apk\"'")
-            os.system(f"su -c 'chmod 777 \"{temp_zip}\"'")
+            if zip_process.returncode != 0:
+                console.print(f"[bold red]❌ Erro ao zipar o APK:[/bold red]\n{zip_process.stderr}")
+                os.system(f"su -c 'rm -f \"{temp_apk}\" \"{temp_zip}\"'")
+                continue
 
-            console.print(f"[dim]Enviando arquivo ZIP seguro para a VPS...[/dim]")
+            # 2.5 Verifica se o arquivo zip realmente existe e o seu tamanho
+            size_check = subprocess.run(f"su -c 'stat -c %s \"{temp_zip}\"'", shell=True, capture_output=True, text=True)
+            if size_check.returncode == 0:
+                tamanho_mb = int(size_check.stdout.strip()) / (1024 * 1024)
+                console.print(f"[dim]Tamanho do ZIP gerado: {tamanho_mb:.2f} MB[/dim]")
+            else:
+                console.print(f"[bold red]❌ Arquivo ZIP falhou em ser criado no armazenamento![/bold red]")
+                os.system(f"su -c 'rm -f \"{temp_apk}\"'")
+                continue
 
-            # 3. Faz o envio do arquivo ZIP (em vez do APK) para o seu connection.py
-            upload_cmd = f'curl -s -X POST -F "file=@{temp_zip}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
-            response = subprocess.check_output(upload_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+            console.print(f"[dim]Enviando arquivo ZIP seguro para a VPS (Isso pode levar alguns minutos)...[/dim]")
+
+            # 3. Faz o envio do arquivo ZIP. 
+            # Mudanças chave: Adicionado 'su -c' para ler o arquivo como root, limitador de 10 minutos (-m 600) e status HTTP.
+            upload_cmd = f"su -c 'curl -s -m 600 -w \"\\nHTTP_STATUS:%{{http_code}}\" -X POST -F \"file=@{temp_zip}\" -F \"pkg_name={pkg}\" -F \"owner_id={owner_id}\" {UPLOAD_URL}'"
+            upload_process = subprocess.run(upload_cmd, shell=True, capture_output=True, text=True)
 
             # 4. Limpa ambos os arquivos temporários da memória
-            os.system(f"su -c 'rm \"{temp_apk}\" \"{temp_zip}\"'")
+            os.system(f"su -c 'rm -f \"{temp_apk}\" \"{temp_zip}\"'")
 
-            console.print(f"[bold green]✅ Upload ZIP concluído com sucesso: {response}[/bold green]")
+            # 5. Análise do retorno do servidor VPS
+            if upload_process.returncode != 0:
+                console.print(f"[bold red]❌ Falha de Conexão com o Flask (cURL exit {upload_process.returncode}):[/bold red]\n{upload_process.stderr}")
+            else:
+                saida_curl = upload_process.stdout.strip()
+                if "HTTP_STATUS:200" in saida_curl:
+                    console.print(f"[bold green]✅ Upload ZIP concluído com sucesso![/bold green]\n[dim]{saida_curl}[/dim]")
+                else:
+                    console.print(f"[bold red]⚠️ A VPS negou o arquivo (Ngrok ou Flask retornou erro):[/bold red]\n{saida_curl}")
 
         except Exception as e:
-            console.print(f"[bold red]❌ Erro crítico no upload de {pkg}: {e}[/bold red]")
+            console.print(f"[bold red]❌ Erro crítico inesperado no upload de {pkg}: {e}[/bold red]")
 
     # Apaga o arquivo de pendências após processar
     try:
