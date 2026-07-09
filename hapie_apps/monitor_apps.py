@@ -206,7 +206,6 @@ def process_pending_uploads():
         console.print(f"\n[bold magenta]🚀 [FILA] Iniciando extração e camuflagem do APK: {pkg}[/bold magenta]")
         try:
             apk_path_cmd = f"su -c 'pm path {pkg}'"
-            # Removido o DEVNULL para não ocultarmos mais os erros caso o 'pm path' falhe
             apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True).decode('utf-8').strip()
             lines = [line.replace("package:", "").strip() for line in apk_path_raw.split("\n") if line.strip()]
 
@@ -215,42 +214,43 @@ def process_pending_uploads():
                 continue
 
             apk_path = lines[0]
-            temp_apk = f"/sdcard/Download/{pkg}_temp.apk"
-            temp_zip = f"/sdcard/Download/{pkg}_temp.zip"
+            
+            # TRUQUE DE MESTRE: Trazendo o APK para a própria pasta do Termux (Data)
+            temp_apk = os.path.join(DATA_DIR, f"{pkg}_temp.apk")
+            temp_zip = os.path.join(DATA_DIR, f"{pkg}_temp.zip")
 
-            # 1. Copia o APK protegido
-            os.system(f"su -c 'cp \"{apk_path}\" \"{temp_apk}\"'")
+            # 1. Root copia o APK e dá permissão total (777) para o Termux manipular
+            os.system(f"su -c 'cp \"{apk_path}\" \"{temp_apk}\" && chmod 777 \"{temp_apk}\"'")
 
             console.print(f"[cyan]📦 Zipando arquivo com senha '123' para burlar o Drive...[/cyan]")
 
-            # 2. Transforma em ZIP capturando os logs de erro do console
-            zip_cmd = f"su -c 'cd /sdcard/Download && zip -j -P 123 \"{pkg}_temp.zip\" \"{pkg}_temp.apk\"'"
+            # 2. Transforma em ZIP NATIVAMENTE no Termux (sem su -c)
+            zip_cmd = f"zip -j -P 123 \"{temp_zip}\" \"{temp_apk}\""
             zip_process = subprocess.run(zip_cmd, shell=True, capture_output=True, text=True)
             
             if zip_process.returncode != 0:
                 console.print(f"[bold red]❌ Erro ao zipar o APK:[/bold red]\n{zip_process.stderr}")
-                os.system(f"su -c 'rm -f \"{temp_apk}\" \"{temp_zip}\"'")
+                os.system(f"rm -f \"{temp_apk}\" \"{temp_zip}\"")
                 continue
 
-            # 2.5 Verifica se o arquivo zip realmente existe e o seu tamanho
-            size_check = subprocess.run(f"su -c 'stat -c %s \"{temp_zip}\"'", shell=True, capture_output=True, text=True)
+            # 2.5 Verifica se o arquivo zip realmente existe
+            size_check = subprocess.run(f"stat -c %s \"{temp_zip}\"", shell=True, capture_output=True, text=True)
             if size_check.returncode == 0:
                 tamanho_mb = int(size_check.stdout.strip()) / (1024 * 1024)
                 console.print(f"[dim]Tamanho do ZIP gerado: {tamanho_mb:.2f} MB[/dim]")
             else:
-                console.print(f"[bold red]❌ Arquivo ZIP falhou em ser criado no armazenamento![/bold red]")
-                os.system(f"su -c 'rm -f \"{temp_apk}\"'")
+                console.print(f"[bold red]❌ Arquivo ZIP falhou em ser criado![/bold red]")
+                os.system(f"rm -f \"{temp_apk}\"")
                 continue
 
             console.print(f"[dim]Enviando arquivo ZIP seguro para a VPS (Isso pode levar alguns minutos)...[/dim]")
 
-            # 3. Faz o envio do arquivo ZIP. 
-            # Mudanças chave: Adicionado 'su -c' para ler o arquivo como root, limitador de 10 minutos (-m 600) e status HTTP.
-            upload_cmd = f"su -c 'curl -s -m 600 -w \"\\nHTTP_STATUS:%{{http_code}}\" -X POST -F \"file=@{temp_zip}\" -F \"pkg_name={pkg}\" -F \"owner_id={owner_id}\" {UPLOAD_URL}'"
+            # 3. Faz o envio NATIVO via cURL
+            upload_cmd = f'curl -s -m 600 -w "\\nHTTP_STATUS:%{{http_code}}" -X POST -F "file=@{temp_zip}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
             upload_process = subprocess.run(upload_cmd, shell=True, capture_output=True, text=True)
 
             # 4. Limpa ambos os arquivos temporários da memória
-            os.system(f"su -c 'rm -f \"{temp_apk}\" \"{temp_zip}\"'")
+            os.system(f"rm -f \"{temp_apk}\" \"{temp_zip}\"")
 
             # 5. Análise do retorno do servidor VPS
             if upload_process.returncode != 0:
