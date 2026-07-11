@@ -61,21 +61,32 @@ def get_app_name(tmp_path, default_pkg):
 def download_file(url, out_path, index_identifier):
     if not url: return False
     if "play.google.com" in url: return False
-    
+
     if "drive.google.com" in url:
         file_id = None
         match_d = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
-        if match_d: file_id = match_d.group(1)
+        if match_d: 
+            file_id = match_d.group(1)
         else:
             match_id = re.search(r'id=([a-zA-Z0-9_-]+)', url)
-            if match_id: file_id = match_id.group(1)
+            if match_id: 
+                file_id = match_id.group(1)
 
         if file_id:
+            download_success = False
+            # Tentativa principal e robusta usando gdown
             if gdown:
-                try: gdown.download(f"https://drive.google.com/uc?id={file_id}", out_path, quiet=True)
-                except: pass
-            
-            if not os.path.exists(out_path) or os.path.getsize(out_path) < 1000:
+                try: 
+                    log(f"🔄 Tentando gdown para o ID: {file_id}", "cyan")
+                    gdown.download(f"https://drive.google.com/uc?id={file_id}", out_path, quiet=True)
+                    if os.path.exists(out_path) and os.path.getsize(out_path) > 150000:
+                        download_success = True
+                except Exception as e: 
+                    log(f"⚠️ Aviso gdown: {e}", "yellow")
+
+            # Fallback manual com curl se o gdown falhar
+            if not download_success:
+                log(f"🔄 Fallback curl ativado para o ID: {file_id}", "cyan")
                 cookie_path = os.path.join(BASE_DIR, f"cookies_{index_identifier}.txt")
                 os.system(f"curl -sL -c '{cookie_path}' 'https://docs.google.com/uc?export=download&id={file_id}' -o '{out_path}'")
                 if os.path.exists(out_path):
@@ -87,11 +98,21 @@ def download_file(url, out_path, index_identifier):
                             token = confirm_match.group(1)
                             os.system(f"curl -sL -b '{cookie_path}' 'https://docs.google.com/uc?export=download&confirm={token}&id={file_id}' -o '{out_path}'")
                     except: pass
-                if os.path.exists(cookie_path): os.remove(cookie_path)
+                if os.path.exists(cookie_path): 
+                    os.remove(cookie_path)
     else:
+        # Download comum sem ser do Drive
         os.system(f"curl -sL '{url}' -o '{out_path}'")
-        
-    return os.path.exists(out_path) and os.path.getsize(out_path) >= 1000
+
+    # Verificação final e rigorosa (Se for menor que 150KB, é lixo/HTML do Drive)
+    if os.path.exists(out_path):
+        tamanho = os.path.getsize(out_path)
+        if tamanho < 150000:
+            log(f"❌ Arquivo corrompido ou bloqueado pelo Drive (Tamanho: {tamanho} bytes).", "bold red")
+            os.remove(out_path)
+            return False
+        return True
+    return False
 
 def download_worker(item, index):
     apk_url, visibility = item[0], item[1]
@@ -99,12 +120,12 @@ def download_worker(item, index):
     extract_dir = os.path.join(BASE_DIR, f"temp_extract_{index}")
     if os.path.exists(extract_dir): shutil.rmtree(extract_dir)
     os.makedirs(extract_dir, exist_ok=True)
-    
+
     download_path = os.path.join(extract_dir, "payload.tmp")
     log(f"📥 [Download APK/ZIP] ID #{index} iniciado...", "yellow")
-    
+
     if not download_file(apk_url, download_path, f"apk_{index}"):
-        log(f"❌ Erro no ID #{index}: Falha no download.", "bold red")
+        log(f"❌ Erro no ID #{index}: Falha no download ou arquivo inválido baixado.", "bold red")
         return []
 
     # Escavação recursiva de Matrioskas (Abre qualquer zip interno)
@@ -112,7 +133,7 @@ def download_worker(item, index):
         zip_path = download_path + ".zip"
         os.rename(download_path, zip_path)
         log(f"📦 Pacote ID #{index} detectado como ZIP. Executando abertura recursiva total...", "cyan")
-        
+
         while True:
             zips_encontrados = []
             for root, dirs, files in os.walk(extract_dir):
@@ -141,14 +162,14 @@ def download_worker(item, index):
         for f in files:
             if f.lower().endswith('.apk'):
                 apk_files.append(os.path.join(root, f))
-                
+
     resultados = []
     for apk_path in apk_files:
         cmd_get_pkg = f"aapt dump badging {apk_path} 2>/dev/null | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
         pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
         if not pkg_name or "not found" in pkg_name or "W/zipro" in pkg_name:
             continue
-            
+
         resultados.append({
             "apk_path": apk_path,
             "pkg_name": pkg_name,
@@ -173,7 +194,7 @@ if __name__ == "__main__":
                 remove_app(pkg)
 
         lista_instalar = data.get("install", []) + data.get("instalar", [])
-        
+
         # Coleta e mapeia globalmente o dicionário de links de data do payload recebido
         mapa_global_datas = {}
         for item in lista_instalar:
@@ -224,7 +245,7 @@ if __name__ == "__main__":
             if success_list and mapa_global_datas and data_inject:
                 print("\n")
                 console.print(Panel("Iniciando injeção de dados isolados para os aplicativos instalados...", style="bold magenta", title="⚡ FASE DE CONEXÃO: APPS_DATA"))
-                
+
                 for pkg_verificado in set(success_list):
                     link_da_data = mapa_global_datas.get(pkg_verificado)
                     if link_da_data:
