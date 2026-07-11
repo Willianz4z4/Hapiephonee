@@ -8,7 +8,6 @@ import shutil
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
-# Importação blindada do seu gerenciador especialista de data
 try:
     from apps_data import data_inject
 except ImportError:
@@ -39,6 +38,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 LOG_FILE = os.path.join(DATA_DIR, "install_log.txt")
 REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
+PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
 
 def log(msg, color="cyan", write_file=True):
     console.print(f"[{color}]{msg}[/{color}]")
@@ -74,17 +74,15 @@ def download_file(url, out_path, index_identifier):
 
         if file_id:
             download_success = False
-            # Tentativa principal e robusta usando gdown
             if gdown:
                 try: 
                     log(f"🔄 Tentando gdown para o ID: {file_id}", "cyan")
                     gdown.download(f"https://drive.google.com/uc?id={file_id}", out_path, quiet=True)
-                    if os.path.exists(out_path) and os.path.getsize(out_path) > 150000:
+                    if os.path.exists(out_path) and zipfile.is_zipfile(out_path):
                         download_success = True
                 except Exception as e: 
                     log(f"⚠️ Aviso gdown: {e}", "yellow")
 
-            # Fallback manual com curl se o gdown falhar
             if not download_success:
                 log(f"🔄 Fallback curl ativado para o ID: {file_id}", "cyan")
                 cookie_path = os.path.join(BASE_DIR, f"cookies_{index_identifier}.txt")
@@ -101,17 +99,16 @@ def download_file(url, out_path, index_identifier):
                 if os.path.exists(cookie_path): 
                     os.remove(cookie_path)
     else:
-        # Download comum sem ser do Drive
         os.system(f"curl -sL '{url}' -o '{out_path}'")
 
-    # Verificação final e rigorosa (Se for menor que 150KB, é lixo/HTML do Drive)
     if os.path.exists(out_path):
-        tamanho = os.path.getsize(out_path)
-        if tamanho < 150000:
-            log(f"❌ Arquivo corrompido ou bloqueado pelo Drive (Tamanho: {tamanho} bytes).", "bold red")
+        if zipfile.is_zipfile(out_path):
+            return True
+        else:
+            tamanho = os.path.getsize(out_path)
+            log(f"❌ Arquivo corrompido ou bloqueado pelo Drive (Tamanho: {tamanho} bytes). Não é um ZIP/APK.", "bold red")
             os.remove(out_path)
             return False
-        return True
     return False
 
 def download_worker(item, index):
@@ -128,7 +125,6 @@ def download_worker(item, index):
         log(f"❌ Erro no ID #{index}: Falha no download ou arquivo inválido baixado.", "bold red")
         return []
 
-    # Escavação recursiva de Matrioskas (Abre qualquer zip interno)
     if zipfile.is_zipfile(download_path):
         zip_path = download_path + ".zip"
         os.rename(download_path, zip_path)
@@ -182,10 +178,19 @@ def remove_app(package_name):
     log(f"🗑️ {package_name} - Removido com sucesso", "bold red")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2: sys.exit(1)
+    if len(sys.argv) < 2: 
+        log("❌ Erro fatal: Nenhum payload recebido pelo instalador.", "bold red")
+        sys.exit(1)
 
     try:
-        data = json.loads(sys.argv[1])
+        # LÓGICA NOVA: LER DO ARQUIVO OU DA LINHA DE COMANDO
+        if sys.argv[1] == "--file":
+            arquivo_alvo = sys.argv[2]
+            with open(arquivo_alvo, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            data = json.loads(sys.argv[1])
+            
         success_list = []
         failed_list = []
 
@@ -195,7 +200,6 @@ if __name__ == "__main__":
 
         lista_instalar = data.get("install", []) + data.get("instalar", [])
 
-        # Coleta e mapeia globalmente o dicionário de links de data do payload recebido
         mapa_global_datas = {}
         for item in lista_instalar:
             extra = item[3] if len(item) > 3 else {}
@@ -216,7 +220,6 @@ if __name__ == "__main__":
             run_su("pm disable-user --user 0 com.android.vending > /dev/null 2>&1")
             run_su("settings put global package_verifier_enable 0")
 
-            # FASE 1: INSTALA TODOS OS APLICATIVOS DO LOTE PRIMEIRO
             for app_data in all_extracted_apps:
                 tmp_path = app_data["apk_path"]
                 pkg_name = app_data["pkg_name"]
@@ -241,7 +244,6 @@ if __name__ == "__main__":
             run_su("settings put global package_verifier_enable 1")
             run_su("pm enable com.android.vending > /dev/null 2>&1")
 
-            # FASE 2: APÓS INSTALAR TUDO, CHAMA O APPS_DATA.PY APENAS PARA OS QUE TIVERAM SUCESSO COBRINDO SÓ OS QUE EXISTEM!
             if success_list and mapa_global_datas and data_inject:
                 print("\n")
                 console.print(Panel("Iniciando injeção de dados isolados para os aplicativos instalados...", style="bold magenta", title="⚡ FASE DE CONEXÃO: APPS_DATA"))
@@ -251,12 +253,10 @@ if __name__ == "__main__":
                     if link_da_data:
                         log(f"🔋 Acionando 'apps_data.py' para injetar backup de: {pkg_verificado}...", "cyan")
                         try:
-                            # Chama o seu script especialista passando o pacote real e o link da nuvem
                             data_inject(pkg_verificado, link_da_data)
                         except Exception as e_data:
                             log(f"❌ Erro ao processar apps_data para {pkg_verificado}: {e_data}", "bold red")
 
-            # Limpeza dos diretórios temporários de extração
             for idx in range(len(lista_instalar)):
                 shutil.rmtree(os.path.join(BASE_DIR, f"temp_extract_{idx}"), ignore_errors=True)
 

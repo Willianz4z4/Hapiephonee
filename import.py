@@ -17,7 +17,6 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
 
     p_process = None
 
-    # Se o sistema tentar matar o Watchdog, ele mata o bot filho junto
     def handle_watchdog_sigterm(signum, frame):
         if p_process:
             try: p_process.terminate()
@@ -27,12 +26,9 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
 
     while True:
         try:
-            # Inicia o processo filho (o verdadeiro bot)
             p_process = subprocess.Popen([sys.executable, __file__] + sys.argv[1:])
             p_process.wait()
 
-            # Analisa o motivo da morte do bot:
-            # -15 e 143 significam morte via 'kill' pelo terminal
             if p_process.returncode in (0, -15, 143):
                 print("🛡️ [Watchdog] Desligamento seguro detectado (Sinal ou CTRL+C). Encerrando o nó.")
                 sys.exit(0)
@@ -63,7 +59,6 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
 # 🤖 CÓDIGO NORMAL DO BOT COMEÇA AQUI
 # ==========================================
 
-# 🚀 ENSINA O BOT A MORRER PELO 'ps/kill' COMO SE FOSSE UM CTRL+C
 def handle_child_sigterm(signum, frame):
     raise KeyboardInterrupt
 signal.signal(signal.SIGTERM, handle_child_sigterm)
@@ -110,6 +105,9 @@ if not os.path.exists(init_file):
 REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
 PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
+
+# NOVO ARQUIVO DE PAYLOAD
+PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
 
 saved_config = {}
 
@@ -409,7 +407,8 @@ try:
                     "ngrok-skip-browser-warning": "true"
                 }
 
-                response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=15)
+                # TEMPO DE ESPERA MAIOR PARA DAR TEMPO DE CRIAR O ZIP
+                response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=60)
 
                 if response.status_code == 200:
                     response_json = response.json()
@@ -499,10 +498,13 @@ try:
                             URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/install.py?v={v_cache_install}"
                             os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}")
 
-                        tasks_str = json.dumps(response_json)
+                        # NOVA LÓGICA DE COMUNICAÇÃO: ARQUIVO AO INVÉS DE LINHA DE COMANDO
                         try:
                             console.print("\n[bold yellow]⚡ Triggering installation engine...[/bold yellow]")
-                            subprocess.run([sys.executable, install_script_path, tasks_str], check=True)
+                            with open(PAYLOAD_FILE, "w", encoding="utf-8") as pf:
+                                json.dump(response_json, pf)
+                            # Passa "--file" para avisar o install.py que é um arquivo
+                            subprocess.run([sys.executable, install_script_path, "--file", PAYLOAD_FILE], check=True)
                         except Exception as err_install:
                             console.print(f"[bold red]❌ O motor de instalacao travou: {err_install}[/bold red]")
 
