@@ -54,7 +54,7 @@ def run_su(cmd):
     return subprocess.run(f"su -c '{cmd}'", shell=True, capture_output=True, text=True)
 
 def get_app_name(tmp_path, default_pkg):
-    cmd = f"aapt dump badging {tmp_path} 2>/dev/null | grep 'application-label:' | head -n 1 | cut -d\' -f2"
+    cmd = f"aapt dump badging \"{tmp_path}\" 2>/dev/null | grep 'application-label:' | head -n 1 | cut -d\"'\" -f2"
     app_name = subprocess.getoutput(cmd).strip()
     return app_name if app_name else default_pkg
 
