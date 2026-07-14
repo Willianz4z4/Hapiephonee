@@ -16,16 +16,15 @@ def inicializar_ambiente():
         os.makedirs(BASE_DATA_DIR, exist_ok=True)
 
 def executar_root(comando):
-    try:
-        resultado = subprocess.run(
-            ['su', '-c', comando],
-            check=True,
-            capture_output=True,
-            text=True
-        )
+    resultado = subprocess.run(
+        ['su', '-c', comando],
+        capture_output=True,
+        text=True
+    )
+    if resultado.returncode in [0, 1]:
         return True, resultado.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        return False, e.stderr.strip()
+    else:
+        return False, resultado.stderr.strip()
 
 def data_save(pacote):
     inicializar_ambiente()
