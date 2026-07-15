@@ -408,7 +408,7 @@ try:
                 }
 
                 # TEMPO DE ESPERA MAIOR PARA DAR TEMPO DE CRIAR O ZIP
-                response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=180)
+                response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=30)
 
                 if response.status_code == 200:
                     response_json = response.json()
