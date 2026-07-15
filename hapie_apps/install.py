@@ -113,6 +113,8 @@ def download_file(url, out_path, index_identifier):
 
 def download_worker(item, index):
     apk_url, visibility = item[0], item[1]
+    extra_data = item[3] if len(item) > 3 else {}
+    force_apk = extra_data.get("force_apk", False) or (extra_data.get("is_zip") is False)
 
     extract_dir = os.path.join(BASE_DIR, f"temp_extract_{index}")
     if os.path.exists(extract_dir): shutil.rmtree(extract_dir)
@@ -125,7 +127,7 @@ def download_worker(item, index):
         log(f"❌ Erro no ID #{index}: Falha no download ou arquivo inválido baixado.", "bold red")
         return []
 
-    if zipfile.is_zipfile(download_path):
+    if zipfile.is_zipfile(download_path) and not force_apk:
         zip_path = download_path + ".zip"
         os.rename(download_path, zip_path)
         log(f"📦 Pacote ID #{index} detectado como ZIP. Executando abertura recursiva total...", "cyan")
