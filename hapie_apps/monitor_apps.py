@@ -200,7 +200,7 @@ def process_pending_uploads():
     except:
         pass
 
-    UPLOAD_URL = "https://iodize-scrounger-auction.ngrok-free.dev/upload_apk"
+    UPLOAD_URL = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/upload_apk"
 
     for pkg in tasks:
         console.print(f"\n[bold magenta]🚀 [FILA] Iniciando extração e camuflagem do APK: {pkg}[/bold magenta]")

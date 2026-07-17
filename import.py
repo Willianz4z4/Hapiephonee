@@ -145,7 +145,7 @@ else:
     console.print("[bold red]❌ Authentication IDs missing. Exiting.[/bold red]")
     sys.exit(2)
 
-URL_WEBHOOK = "https://iodize-scrounger-auction.ngrok-free.dev/webhook"
+URL_WEBHOOK = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/webhook"
 report = {"installation_status": "pending", "steps": {}, "system_info": {}}
 
 console.print("[bold yellow]⏳ Executando e verificando Protocolos...[/bold yellow]")
