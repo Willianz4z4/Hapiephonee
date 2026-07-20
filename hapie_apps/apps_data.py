@@ -82,7 +82,7 @@ def data_export(pacote, url_servidor, owner_id, device_id):
             }
             # Adicionado timeout para evitar congelamento da thread
             response = requests.post(url_servidor, files=files, data=data, timeout=TIMEOUT_REDE)
-            
+
             if response.status_code in [200, 201]:
                 print(f"[+] Exportado com sucesso! Servidor respondeu: {response.json()}")
                 os.remove(arquivo_bot)
@@ -97,20 +97,20 @@ def data_export(pacote, url_servidor, owner_id, device_id):
 def baixar_data_com_cookies(url, out_path):
     file_id = None
     match_d = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
-    if match_d: 
+    if match_d:
         file_id = match_d.group(1)
     else:
         match_id = re.search(r'id=([a-zA-Z0-9_-]+)', url)
-        if match_id: 
+        if match_id:
             file_id = match_id.group(1)
 
     if file_id:
         if gdown:
             try:
                 gdown.download(f"https://drive.google.com/uc?id={file_id}", out_path, quiet=True)
-                if os.path.exists(out_path) and os.path.getsize(out_path) > 1000: 
+                if os.path.exists(out_path) and os.path.getsize(out_path) > 1000:
                     return True
-            except Exception as e: 
+            except Exception as e:
                 print(f"[!] Aviso gdown falhou, tentando método nativo. Erro: {e}")
 
         # Fallback manual para o Google Drive
@@ -119,13 +119,13 @@ def baixar_data_com_cookies(url, out_path):
         params = {'id': file_id}
         try:
             response = session.get(confirm_url, params=params, stream=True, timeout=TIMEOUT_REDE)
-            
+
             token = None
             for key, value in response.cookies.items():
                 if key.startswith('download_warning'):
                     token = value
                     break
-            
+
             if token:
                 params['confirm'] = token
                 response = session.get(confirm_url, params=params, stream=True, timeout=TIMEOUT_REDE)
@@ -150,14 +150,14 @@ def baixar_data_com_cookies(url, out_path):
         except requests.exceptions.RequestException as e:
             print(f"[X] Erro de rede ao baixar dados genéricos: {e}")
             return False
-            
+
     return False
 
 def data_inject(pacote, url_servidor):
     if not pacote_eh_valido(pacote):
         print(f"[X] Erro: Nome do pacote inválido '{pacote}'")
         return False
-        
+
     inicializar_ambiente()
     print(f"=== [data_inject] INJETANDO DADOS NO PACOTE '{pacote}' ===")
     safe_pkg = pacote.replace(".", "_")
@@ -176,12 +176,12 @@ def data_inject(pacote, url_servidor):
                 print(f"[+] Download da nuvem concluído com sucesso.")
             else:
                 print(f"[X] Falha ao baixar os dados da nuvem ou arquivo muito pequeno.")
-                if os.path.exists(arquivo_local): 
+                if os.path.exists(arquivo_local):
                     os.remove(arquivo_local)
                 return False
         except Exception as e:
             print(f"[X] Falha crítica ao fazer o download: {e}")
-            if os.path.exists(arquivo_local): 
+            if os.path.exists(arquivo_local):
                 os.remove(arquivo_local)
             return False
 
@@ -197,13 +197,13 @@ def data_inject(pacote, url_servidor):
 
     # Força a parada do aplicativo antes de injetar
     am force-stop "{pacote}"
-    
+
     # Captura o dono (UID:GID) original da pasta
     APP_OWNER=$(stat -c '%U:%G' /data/data/{pacote})
-    
+
     # Extrai sobrescrevendo os dados
     tar -xzf "{arquivo_local}" -C /data/data/ 2>/dev/null || true
-    
+
     # Restaura permissões e contexto SELinux
     chown -R $APP_OWNER /data/data/{pacote}
     restorecon -R /data/data/{pacote}
@@ -213,9 +213,9 @@ def data_inject(pacote, url_servidor):
 
     # Limpeza do arquivo de injeção local
     if os.path.exists(arquivo_local):
-        try: 
+        try:
             os.remove(arquivo_local)
-        except OSError as e: 
+        except OSError as e:
             print(f"[!] Aviso: Não foi possível remover o arquivo temporário. Erro: {e}")
 
     if "erro_pacote_nao_instalado" in saida:
@@ -229,7 +229,7 @@ def data_inject(pacote, url_servidor):
             report_file = os.path.join(os.path.dirname(SCRIPT_DIR), "Data", "install_report.json")
             os.makedirs(os.path.dirname(report_file), exist_ok=True)
             report_data = {"install_success": [], "install_failed": []}
-            
+
             if os.path.exists(report_file):
                 with open(report_file, "r") as f:
                     report_data = json.load(f)
@@ -239,11 +239,79 @@ def data_inject(pacote, url_servidor):
 
             with open(report_file, "w") as f:
                 json.dump(report_data, f, indent=4)
-                
+
         except Exception as e:
             print(f"[!] Erro ao atualizar install_report.json: {e}")
 
         return True
     else:
         print(f"[X] Falha crítica na injeção dos dados via root: {saida}")
+        return False
+
+def add_ugclone_config(pacote_alvo, configs):
+    print(f"=== [add_ugclone_config] INJETANDO CONFIGS PARA '{pacote_alvo}' ===")
+    master_xml = "/data/data/com.ugcloner.xfein/shared_prefs/com.ugcloner.xfein_preferences.xml"
+    ug_pkg = "com.ugcloner.xfein"
+
+    # 1. Puxa o XML atual direto da raiz do sistema
+    sucesso, xml_content = executar_root(f"cat {master_xml} 2>/dev/null || echo 'FILE_NOT_FOUND'")
+
+    # Se não existir, cria a casca básica
+    if "FILE_NOT_FOUND" in xml_content or not xml_content.strip():
+        print("[!] XML Master não encontrado ou vazio. Criando estrutura base...")
+        xml_content = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n<map>\n</map>"
+
+    # 2. Atualiza ou insere as tags via Regex
+    for key, value in configs.items():
+        if isinstance(value, bool) or str(value).lower() in ['true', 'false']:
+            val_str = str(value).lower()
+            tag = f'    <boolean name="{key}" value="{val_str}" />'
+            regex = rf'<boolean name="{key}" value=".*?" />'
+        else:
+            tag = f'    <string name="{key}">{value}</string>'
+            regex = rf'<string name="{key}">.*?</string>'
+
+        # Se a tag já existe, substitui. Se não, joga antes do </map>
+        if re.search(regex, xml_content):
+            xml_content = re.sub(regex, tag.strip(), xml_content)
+        else:
+            xml_content = xml_content.replace("</map>", f"{tag}\n</map>")
+
+    # 3. Salva em um arquivo temporário para facilitar a injeção via root
+    temp_file = os.path.join(BASE_DATA_DIR, "temp_ug.xml")
+    try:
+        with open(temp_file, "w", encoding="utf-8") as f:
+            f.write(xml_content)
+    except Exception as e:
+        print(f"[X] Erro ao criar arquivo temporário: {e}")
+        return False
+
+    # 4. Motor Root: Move, ajusta o dono (UID:GID), contexto SELinux e reinicia o Clone
+    comando = f"""
+    mkdir -p /data/data/{ug_pkg}/shared_prefs/
+    cp "{temp_file}" "{master_xml}"
+    
+    # Captura o dono correto pra não dar Crash no app
+    APP_OWNER=$(stat -c '%U:%G' /data/data/{ug_pkg} 2>/dev/null || echo "10000:10000")
+    
+    chown $APP_OWNER "{master_xml}"
+    chmod 660 "{master_xml}"
+    restorecon "{master_xml}" 2>/dev/null || true
+    
+    # Mata o UGClone pra forçar ele a ler o XML novo
+    am force-stop {ug_pkg}
+    echo "sucesso"
+    """
+    
+    sucesso_write, saida = executar_root(comando)
+    
+    # Limpa a bagunça
+    if os.path.exists(temp_file):
+        os.remove(temp_file)
+        
+    if "sucesso" in saida:
+        print(f"[+] XML do UGClone atualizado e pacote reiniciado com sucesso!")
+        return True
+    else:
+        print(f"[X] Falha de permissão ao gravar XML: {saida}")
         return False
