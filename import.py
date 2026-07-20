@@ -79,7 +79,6 @@ except ImportError:
 
 HAPIEPHONE_VERSION = "10.5 (Motor de Dados Integrado)"
 console = Console()
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 sys.path.insert(0, BASE_DIR)
 
@@ -105,12 +104,12 @@ if not os.path.exists(init_file):
 REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
 PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
-
-# NOVO ARQUIVO DE PAYLOAD
 PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
 
-saved_config = {}
+# 🔥 A PONTE QUE FALTAVA: Declarando o arquivo pending_apps.json
+PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")
 
+saved_config = {}
 console.print(Panel.fit(f"[bold cyan]Hapiephone Cloud Node[/bold cyan]\n[dim]Version {HAPIEPHONE_VERSION} | Powered by Evollogic[/dim]", border_style="cyan"))
 
 if os.path.exists(CONFIG_FILE):
@@ -206,7 +205,6 @@ except:
     report["steps"]["pip_packages"] = "Failed"
 
 spinner.succeed("Environment verified and updated.")
-
 spinner = Halo(text='Scanning hardware data...', spinner='dots')
 spinner.start()
 
@@ -335,11 +333,9 @@ except Exception as e:
     spinner.fail(f"Error deploying modules: {e}")
 
 spinner.succeed("Persistent boot skipped (UgPhone compatibility module active).")
-
 registered_in_db = False
 PING_INTERVAL = 60
 last_check = 0
-
 last_applied_size = ""
 
 console.print("\n[bold green]📡 Connection established. Awaiting commands from Control Panel...[/bold green]")
@@ -379,7 +375,7 @@ try:
                         sys.path.insert(0, BASE_DIR)
                     import importlib.util
                     sensores_path = os.path.join(TELEMETRIA_DIR, "sensores.py")
-                    spec = importlib.util.spec_from_file_location("sensores", পুষ্প_path)
+                    spec = importlib.util.spec_from_file_location("sensores", sensores_path)
                     sensores_module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(sensores_module)
                     telemetry_data = sensores_module.coletar_telemetria_completa()
@@ -406,12 +402,11 @@ try:
                     "Content-Type": "application/json",
                     "ngrok-skip-browser-warning": "true"
                 }
-
                 response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=30)
 
                 if response.status_code == 200:
                     response_json = response.json()
-
+                    
                     if "radius_width" in response_json and "radius_height" in response_json:
                         try:
                             rw = int(float(response_json["radius_width"]))
@@ -433,7 +428,7 @@ try:
                         action_type = cmd_data.get("action")
                         pacote_alvo = cmd_data.get("package")
                         url_servidor = cmd_data.get("url")
-
+                        
                         if pacote_alvo and url_servidor:
                             try:
                                 if HAPIE_APPS_DIR not in sys.path:
@@ -451,27 +446,22 @@ try:
 
                                 elif action_type == "update_ugclone":
                                     console.print(f"\n[bold cyan]🧠 [UGCLONE] Lendo configurações para {pacote_alvo}...[/bold cyan]")
-                                    
                                     json_path = os.path.join(DATA_DIR, f"ug_{pacote_alvo}.json")
                                     os.system(f"curl -sL '{url_servidor}' -o {json_path} > /dev/null 2>&1")
-                                    
                                     if os.path.exists(json_path):
                                         with open(json_path, "r", encoding="utf-8") as f:
                                             ug_data = json.load(f)
-                                            
+
                                         if "tasks" in ug_data:
                                             for ug_task in ug_data["tasks"]:
                                                 alvo = ug_task.get("target_pkg")
                                                 configs = ug_task.get("settings")
                                                 if alvo and configs:
                                                     add_ugclone_config(alvo, configs)
-                                        
                                         os.remove(json_path)
                                         console.print("[bold green]✅ Master do UGClone atualizado via JSON com sucesso![/bold green]")
-
                             except Exception as e:
                                 console.print(f"\n[bold red]❌ Erro no motor de dados/ugclone: {e}[/bold red]")
-                    # ==========================================
 
                     if "upload_queue" in response_json:
                         lista_pendentes = response_json["upload_queue"]
@@ -479,6 +469,14 @@ try:
                             with open(PENDING_TASKS_FILE, "w", encoding="utf-8") as pf:
                                 json.dump(lista_pendentes, pf, indent=4)
                             console.print(f"\n[bold yellow] 📦 [FILA] Recebidas {len(lista_pendentes)} tarefas de extração de APK.[/bold yellow]")
+
+                    # 🔥 A PONTE: Baixando as automações (UGClone JSON) para o monitor_apps.py
+                    if "pending_apps" in response_json:
+                        lista_pending_apps = response_json["pending_apps"]
+                        if isinstance(lista_pending_apps, list) and len(lista_pending_apps) > 0:
+                            with open(PENDING_APPS_FILE, "w", encoding="utf-8") as pf:
+                                json.dump(lista_pending_apps, pf, indent=4)
+                            console.print(f"\n[bold yellow] 📥 [FILA] Recebidas {len(lista_pending_apps)} tarefas do UGClone/Automações.[/bold yellow]")
 
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
@@ -507,7 +505,7 @@ try:
                         print("\n")
                         console.print(f"[bold red]🛑 Server refused connection: {response_json.get('reason', 'Unknown reason')}[/bold red]")
                         sys.exit(4)
-
+                        
                     if not registered_in_db:
                         registered_in_db = True
 
@@ -520,7 +518,6 @@ try:
                             v_cache_install = int(time.time())
                             URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/install.py?v={v_cache_install}"
                             os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}")
-
                         try:
                             console.print("\n[bold yellow]⚡ Triggering installation engine...[/bold yellow]")
                             with open(PAYLOAD_FILE, "w", encoding="utf-8") as pf:
@@ -532,7 +529,6 @@ try:
                 current_time = datetime.now().strftime("%H:%M:%S")
                 sys.stdout.write(f"\r\033[K\033[90m📡 {current_protocol} | Last connection: {current_time} - Awaiting tasks...\033[0m")
                 sys.stdout.flush()
-
             except Exception as e:
                 sys.stdout.write(f"\r\033[K")
                 console.print(f"[bold red]❌ Falha na conexão com o Webhook: {e}[/bold red]")
