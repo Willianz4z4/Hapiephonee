@@ -235,47 +235,48 @@ def data_inject(pacote, url_servidor):
         return False
 
 def add_ugclone_config(pacote_alvo, configs):
-    print(f"=== [add_ugclone_config] INJETANDO CONFIGS PARA '{pacote_alvo}' ===")
-    
-    inicializar_ambiente()
+    print(f"\n=== [add_ugclone_config] INJETANDO CONFIGS PARA '{pacote_alvo}' ===")
 
+    inicializar_ambiente()
     master_xml = "/data/data/com.ugcloner.xfein/shared_prefs/com.ugcloner.xfein_preferences.xml"
     ug_pkg = "com.ugcloner.xfein"
     tag_name = f"clone_settings_{pacote_alvo}"
 
-    sucesso, xml_content = executar_root(f"cat {master_xml} 2>/dev/null || echo 'FILE_NOT_FOUND'")
+    # 🛑 TRUQUE DE MESTRE: Parar o app ANTES de ler/escrever!
+    # Se editarmos com ele em cache, o Android apaga nossa edição.
+    executar_root(f"am force-stop {ug_pkg}")
 
-    if "FILE_NOT_FOUND" in xml_content or not xml_content.strip():
-        print("[!] XML Master não encontrado ou vazio. Criando estrutura base...")
+    # Agora sim, lemos o arquivo real salvo no disco
+    sucesso, xml_content = executar_root(f"cat {master_xml} 2>/dev/null || echo 'FILE_NOT_FOUND'")
+    xml_content = xml_content.strip()
+
+    if "FILE_NOT_FOUND" in xml_content or not xml_content:
         xml_content = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n<map>\n</map>"
 
-    # Transforma o dict recebido em JSON sem espaços extras e escapa as aspas para o padrão XML do UG
+    # Gera a string JSON compacta e escapa as aspas
     settings_json_str = json.dumps(configs, separators=(',', ':'))
     escaped_json = settings_json_str.replace('"', '&quot;')
     
-    # Monta a string exata que o UGClone usa
     nova_tag = f'    <string name="{tag_name}">{escaped_json}</string>'
-    
-    # Regex para achar se o pacote já tinha uma config salva antes
     regex = rf'<string name="{tag_name}">.*?</string>'
 
-    if re.search(regex, xml_content):
-        # Substitui a configuração antiga pela nova
-        xml_content = re.sub(regex, nova_tag, xml_content)
+    # Injeção à prova de balas
+    if re.search(regex, xml_content, flags=re.DOTALL):
+        xml_content = re.sub(regex, nova_tag, xml_content, flags=re.DOTALL)
         print(f"[!] Substituindo configuração existente para: {tag_name}")
-    else:
-        # Injeta a nova configuração antes do fechamento do <map>
+    elif "</map>" in xml_content:
         xml_content = xml_content.replace("</map>", f"{nova_tag}\n</map>")
-        print(f"[+] Criando nova configuração para: {tag_name}")
-
-    temp_file = os.path.join(BASE_DATA_DIR, "temp_ug.xml")
-    try:
-        with open(temp_file, "w", encoding="utf-8") as f:
-            f.write(xml_content)
-    except Exception as e:
-        print(f"[X] Erro ao criar arquivo temporário: {e}")
+        print(f"[+] Criando nova configuração e injetando antes do </map>")
+    else:
+        print("[X] ERRO CRÍTICO: Não encontrei a tag <map>!")
         return False
 
+    # Salvando temporário
+    temp_file = os.path.join(BASE_DATA_DIR, "temp_ug.xml")
+    with open(temp_file, "w", encoding="utf-8") as f:
+        f.write(xml_content)
+
+    # Copiando via Root e ajustando permissões
     comando = f"""
     mkdir -p /data/data/{ug_pkg}/shared_prefs/
     cp "{temp_file}" "{master_xml}"
@@ -285,19 +286,17 @@ def add_ugclone_config(pacote_alvo, configs):
     chown $APP_OWNER "{master_xml}"
     chmod 660 "{master_xml}"
     restorecon "{master_xml}" 2>/dev/null || true
-    
-    am force-stop {ug_pkg}
     echo "sucesso"
     """
-    
+
     sucesso_write, saida = executar_root(comando)
-    
+
     if os.path.exists(temp_file):
         os.remove(temp_file)
-        
+
     if "sucesso" in saida:
-        print(f"[+] XML do UGClone atualizado e pacote reiniciado com sucesso!")
+        print(f"[+] XML gravado e protegido com sucesso!")
         return True
     else:
-        print(f"[X] Falha de permissão ao gravar XML: {saida}")
+        print(f"[X] Falha na gravação via ROOT: {saida}")
         return False
