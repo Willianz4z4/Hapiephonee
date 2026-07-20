@@ -4,6 +4,7 @@ import subprocess
 import time
 import re
 import json
+import requests
 
 print("🚀 Carregando Monitor Estruturado (hapie_apps)...")
 
@@ -24,6 +25,7 @@ ICONS_DIR = os.path.join(REPO_ROOT, "icons")
 DATA_DIR = os.path.join(REPO_ROOT, "Data")
 JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
 PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
+PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")  # 📥 NOVA FILA PARA DOWNLOADS/AÇÕES
 CONFIG_FILE = os.path.join(REPO_ROOT, "hapie_config.json")
 
 os.makedirs(ICONS_DIR, exist_ok=True)
@@ -176,7 +178,69 @@ def print_app_panel(app_package, info, is_new=False):
     console.print(Panel(detalhes, border_style=border_color))
 
 # ========================================================
-# 🚀 PENDÊNCIAS: EXTRAÇÃO E UPLOAD PARA O FLASK (COM ZIP + SENHA 123)
+# 💉 AÇÕES: INJEÇÃO DE JSON DO DISCORD NO UGCLONE
+# ========================================================
+def process_ugclone_action(task):
+    import apps_data
+    pkg_alvo = task.get("package_name", "Desconhecido")
+    link = task.get("link")
+    
+    console.print(f"\n[bold magenta]🚀 [FILA] Injeção de configuração (UGClone): {pkg_alvo}[/bold magenta]")
+    if not link:
+        console.print("[bold red]❌ Nenhum link de JSON fornecido.[/bold red]")
+        return
+    
+    console.print(f"[cyan]📥 Baixando payload JSON do bot (Discord)...[/cyan]")
+    try:
+        r = requests.get(link, timeout=15)
+        if r.status_code in [200, 201]:
+            payload_data = r.json()
+            ug_tasks = payload_data.get("tasks", [])
+            
+            for ug_t in ug_tasks:
+                target_pkg = ug_t.get("target_pkg")
+                settings = ug_t.get("settings", {})
+                
+                if target_pkg and settings:
+                    apps_data.add_ugclone_config(target_pkg, settings)
+                    
+            console.print(f"[bold green]✅ UGClone atualizado com sucesso para {pkg_alvo}![/bold green]")
+        else:
+            console.print(f"[bold red]❌ Erro ao baixar JSON (HTTP {r.status_code})[/bold red]")
+    except Exception as e:
+        console.print(f"[bold red]❌ Falha de rede ou JSON inválido: {e}[/bold red]")
+
+# ========================================================
+# 🚀 PENDÊNCIAS DE AÇÕES (DOWNLOADS E INJEÇÕES)
+# ========================================================
+def process_pending_apps():
+    if not os.path.exists(PENDING_APPS_FILE):
+        return
+
+    try:
+        with open(PENDING_APPS_FILE, "r", encoding="utf-8") as f:
+            tasks = json.load(f)
+    except Exception:
+        return
+
+    if not tasks:
+        return
+
+    for task in tasks:
+        if isinstance(task, dict):
+            action = task.get("action")
+            if action == "update_ugclone":
+                process_ugclone_action(task)
+            # Pode adicionar outras actions aqui no futuro!
+
+    try:
+        os.remove(PENDING_APPS_FILE)
+        console.print("[dim]🗑️ Fila de ações (pending_apps) processada e resetada.[/dim]\n")
+    except:
+        pass
+
+# ========================================================
+# 🚀 PENDÊNCIAS: EXTRAÇÃO E UPLOAD PARA O FLASK
 # ========================================================
 def process_pending_uploads():
     if not os.path.exists(PENDING_TASKS_FILE):
@@ -203,6 +267,12 @@ def process_pending_uploads():
     UPLOAD_URL = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/upload_apk"
 
     for pkg in tasks:
+        # 🛡️ PROTEÇÃO: Se um dicionário vazar para o tasks de upload, tratamos como action
+        if isinstance(pkg, dict):
+            if pkg.get("action") == "update_ugclone":
+                process_ugclone_action(pkg)
+            continue
+
         console.print(f"\n[bold magenta]🚀 [FILA] Iniciando extração e camuflagem do APK: {pkg}[/bold magenta]")
         try:
             apk_path_cmd = f"su -c 'pm path {pkg}'"
@@ -214,7 +284,7 @@ def process_pending_uploads():
                 continue
 
             apk_path = lines[0]
-            
+
             # TRUQUE DE MESTRE: Trazendo o APK para a própria pasta do Termux (Data)
             temp_apk = os.path.join(DATA_DIR, f"{pkg}_temp.apk")
             temp_zip = os.path.join(DATA_DIR, f"{pkg}_temp.zip")
@@ -227,7 +297,7 @@ def process_pending_uploads():
             # 2. Transforma em ZIP NATIVAMENTE no Termux (sem su -c)
             zip_cmd = f"zip -j -P 123 \"{temp_zip}\" \"{temp_apk}\""
             zip_process = subprocess.run(zip_cmd, shell=True, capture_output=True, text=True)
-            
+
             if zip_process.returncode != 0:
                 console.print(f"[bold red]❌ Erro ao zipar o APK:[/bold red]\n{zip_process.stderr}")
                 os.system(f"rm -f \"{temp_apk}\" \"{temp_zip}\"")
@@ -243,7 +313,7 @@ def process_pending_uploads():
                 os.system(f"rm -f \"{temp_apk}\"")
                 continue
 
-            console.print(f"[dim]Enviando arquivo ZIP seguro para a VPS (Isso pode levar alguns minutos)...[/dim]")
+            console.print(f"[dim]Enviando arquivo ZIP seguro para a VPS (Isso pode levAlguns minutos)...[/dim]")
 
             # 3. Faz o envio NATIVO via cURL
             upload_cmd = f'curl -s -m 600 -w "\\nHTTP_STATUS:%{{http_code}}" -X POST -F "file=@{temp_zip}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
@@ -268,7 +338,7 @@ def process_pending_uploads():
     # Apaga o arquivo de pendências após processar
     try:
         os.remove(PENDING_TASKS_FILE)
-        console.print("[dim]🗑️ Fila de pendências concluída e resetada.[/dim]\n")
+        console.print("[dim]🗑️ Fila de pendências de upload concluída e resetada.[/dim]\n")
     except:
         pass
 
@@ -313,7 +383,10 @@ def start_monitor():
 
     while True:
         try:
-            # INTERCEPTA AS ORDENS DE UPLOAD VINDAS DO IMPORT.PY
+            # 1. LÊ FILA DE AÇÕES / DOWNLOADS (Injeção UGClone)
+            process_pending_apps()
+            
+            # 2. LÊ FILA DE UPLOADS (Backup de Data/APKs)
             process_pending_uploads()
 
             time.sleep(2)
