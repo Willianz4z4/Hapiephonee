@@ -9,17 +9,15 @@ try:
 except ImportError:
     gdown = None
 
-# Garante que o diretório base será na mesma pasta deste script, independentemente de onde ele seja executado.
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DATA_DIR = os.path.join(SCRIPT_DIR, "data_apps")
-TIMEOUT_REDE = 15 # Segundos para evitar travamento em requisições de rede
+TIMEOUT_REDE = 15
 
 def inicializar_ambiente():
     if not os.path.exists(BASE_DATA_DIR):
         os.makedirs(BASE_DATA_DIR, exist_ok=True)
 
 def pacote_eh_valido(pacote):
-    """Valida se o nome do pacote possui apenas caracteres permitidos no Android, evitando Shell Injection."""
     return bool(re.match(r'^[a-zA-Z0-9_.]+$', pacote))
 
 def executar_root(comando):
@@ -80,7 +78,6 @@ def data_export(pacote, url_servidor, owner_id, device_id):
                 'owner_id': str(owner_id),
                 'device_id': str(device_id)
             }
-            # Adicionado timeout para evitar congelamento da thread
             response = requests.post(url_servidor, files=files, data=data, timeout=TIMEOUT_REDE)
 
             if response.status_code in [200, 201]:
@@ -113,7 +110,6 @@ def baixar_data_com_cookies(url, out_path):
             except Exception as e:
                 print(f"[!] Aviso gdown falhou, tentando método nativo. Erro: {e}")
 
-        # Fallback manual para o Google Drive
         session = requests.Session()
         confirm_url = "https://docs.google.com/uc?export=download"
         params = {'id': file_id}
@@ -139,7 +135,6 @@ def baixar_data_com_cookies(url, out_path):
             print(f"[X] Erro de rede ao baixar do Drive: {e}")
             return False
     else:
-        # Download comum
         try:
             response = requests.get(url, stream=True, timeout=TIMEOUT_REDE)
             if response.status_code == 200:
@@ -195,23 +190,15 @@ def data_inject(pacote, url_servidor):
         exit 0
     fi
 
-    # Força a parada do aplicativo antes de injetar
     am force-stop "{pacote}"
-
-    # Captura o dono (UID:GID) original da pasta
     APP_OWNER=$(stat -c '%U:%G' /data/data/{pacote})
-
-    # Extrai sobrescrevendo os dados
     tar -xzf "{arquivo_local}" -C /data/data/ 2>/dev/null || true
-
-    # Restaura permissões e contexto SELinux
     chown -R $APP_OWNER /data/data/{pacote}
     restorecon -R /data/data/{pacote}
     echo "sucesso"
     """
     sucesso, saida = executar_root(comando)
 
-    # Limpeza do arquivo de injeção local
     if os.path.exists(arquivo_local):
         try:
             os.remove(arquivo_local)
@@ -224,7 +211,6 @@ def data_inject(pacote, url_servidor):
     elif "sucesso" in saida:
         print(f"[+] Dados injetados com sucesso no pacote '{pacote}'!")
 
-        # Processamento do Relatório de Instalação
         try:
             report_file = os.path.join(os.path.dirname(SCRIPT_DIR), "Data", "install_report.json")
             os.makedirs(os.path.dirname(report_file), exist_ok=True)
@@ -250,34 +236,38 @@ def data_inject(pacote, url_servidor):
 
 def add_ugclone_config(pacote_alvo, configs):
     print(f"=== [add_ugclone_config] INJETANDO CONFIGS PARA '{pacote_alvo}' ===")
+    
+    inicializar_ambiente()
+
     master_xml = "/data/data/com.ugcloner.xfein/shared_prefs/com.ugcloner.xfein_preferences.xml"
     ug_pkg = "com.ugcloner.xfein"
+    tag_name = f"clone_settings_{pacote_alvo}"
 
-    # 1. Puxa o XML atual direto da raiz do sistema
     sucesso, xml_content = executar_root(f"cat {master_xml} 2>/dev/null || echo 'FILE_NOT_FOUND'")
 
-    # Se não existir, cria a casca básica
     if "FILE_NOT_FOUND" in xml_content or not xml_content.strip():
         print("[!] XML Master não encontrado ou vazio. Criando estrutura base...")
         xml_content = "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>\n<map>\n</map>"
 
-    # 2. Atualiza ou insere as tags via Regex
-    for key, value in configs.items():
-        if isinstance(value, bool) or str(value).lower() in ['true', 'false']:
-            val_str = str(value).lower()
-            tag = f'    <boolean name="{key}" value="{val_str}" />'
-            regex = rf'<boolean name="{key}" value=".*?" />'
-        else:
-            tag = f'    <string name="{key}">{value}</string>'
-            regex = rf'<string name="{key}">.*?</string>'
+    # Transforma o dict recebido em JSON sem espaços extras e escapa as aspas para o padrão XML do UG
+    settings_json_str = json.dumps(configs, separators=(',', ':'))
+    escaped_json = settings_json_str.replace('"', '&quot;')
+    
+    # Monta a string exata que o UGClone usa
+    nova_tag = f'    <string name="{tag_name}">{escaped_json}</string>'
+    
+    # Regex para achar se o pacote já tinha uma config salva antes
+    regex = rf'<string name="{tag_name}">.*?</string>'
 
-        # Se a tag já existe, substitui. Se não, joga antes do </map>
-        if re.search(regex, xml_content):
-            xml_content = re.sub(regex, tag.strip(), xml_content)
-        else:
-            xml_content = xml_content.replace("</map>", f"{tag}\n</map>")
+    if re.search(regex, xml_content):
+        # Substitui a configuração antiga pela nova
+        xml_content = re.sub(regex, nova_tag, xml_content)
+        print(f"[!] Substituindo configuração existente para: {tag_name}")
+    else:
+        # Injeta a nova configuração antes do fechamento do <map>
+        xml_content = xml_content.replace("</map>", f"{nova_tag}\n</map>")
+        print(f"[+] Criando nova configuração para: {tag_name}")
 
-    # 3. Salva em um arquivo temporário para facilitar a injeção via root
     temp_file = os.path.join(BASE_DATA_DIR, "temp_ug.xml")
     try:
         with open(temp_file, "w", encoding="utf-8") as f:
@@ -286,26 +276,22 @@ def add_ugclone_config(pacote_alvo, configs):
         print(f"[X] Erro ao criar arquivo temporário: {e}")
         return False
 
-    # 4. Motor Root: Move, ajusta o dono (UID:GID), contexto SELinux e reinicia o Clone
     comando = f"""
     mkdir -p /data/data/{ug_pkg}/shared_prefs/
     cp "{temp_file}" "{master_xml}"
     
-    # Captura o dono correto pra não dar Crash no app
     APP_OWNER=$(stat -c '%U:%G' /data/data/{ug_pkg} 2>/dev/null || echo "10000:10000")
     
     chown $APP_OWNER "{master_xml}"
     chmod 660 "{master_xml}"
     restorecon "{master_xml}" 2>/dev/null || true
     
-    # Mata o UGClone pra forçar ele a ler o XML novo
     am force-stop {ug_pkg}
     echo "sucesso"
     """
     
     sucesso_write, saida = executar_root(comando)
     
-    # Limpa a bagunça
     if os.path.exists(temp_file):
         os.remove(temp_file)
         
