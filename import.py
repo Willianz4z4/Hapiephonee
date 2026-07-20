@@ -379,7 +379,7 @@ try:
                         sys.path.insert(0, BASE_DIR)
                     import importlib.util
                     sensores_path = os.path.join(TELEMETRIA_DIR, "sensores.py")
-                    spec = importlib.util.spec_from_file_location("sensores", sensores_path)
+                    spec = importlib.util.spec_from_file_location("sensores", পুষ্প_path)
                     sensores_module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(sensores_module)
                     telemetry_data = sensores_module.coletar_telemetria_completa()
@@ -407,7 +407,6 @@ try:
                     "ngrok-skip-browser-warning": "true"
                 }
 
-                # TEMPO DE ESPERA MAIOR PARA DAR TEMPO DE CRIAR O ZIP
                 response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=30)
 
                 if response.status_code == 200:
@@ -426,6 +425,9 @@ try:
                         except Exception as e:
                             pass
 
+                    # ==========================================
+                    # NOVO BLOCO: MOTOR DE DADOS & UGCLONE
+                    # ==========================================
                     if "data_command" in response_json:
                         cmd_data = response_json["data_command"]
                         action_type = cmd_data.get("action")
@@ -436,7 +438,7 @@ try:
                             try:
                                 if HAPIE_APPS_DIR not in sys.path:
                                     sys.path.insert(0, HAPIE_APPS_DIR)
-                                from apps_data import data_save, data_export, data_inject
+                                from apps_data import data_save, data_export, data_inject, add_ugclone_config
 
                                 if action_type == "export":
                                     console.print(f"\n[bold magenta]📦 [DATA] Servidor ordenou a EXPORTAÇÃO dos dados de: {pacote_alvo}[/bold magenta]")
@@ -447,15 +449,36 @@ try:
                                     console.print(f"\n[bold magenta]💉 [DATA] Servidor ordenou a INJEÇÃO inteligente de dados em: {pacote_alvo}[/bold magenta]")
                                     data_inject(pacote_alvo, url_servidor)
 
+                                elif action_type == "update_ugclone":
+                                    console.print(f"\n[bold cyan]🧠 [UGCLONE] Lendo configurações para {pacote_alvo}...[/bold cyan]")
+                                    
+                                    json_path = os.path.join(DATA_DIR, f"ug_{pacote_alvo}.json")
+                                    os.system(f"curl -sL '{url_servidor}' -o {json_path} > /dev/null 2>&1")
+                                    
+                                    if os.path.exists(json_path):
+                                        with open(json_path, "r", encoding="utf-8") as f:
+                                            ug_data = json.load(f)
+                                            
+                                        if "tasks" in ug_data:
+                                            for ug_task in ug_data["tasks"]:
+                                                alvo = ug_task.get("target_pkg")
+                                                configs = ug_task.get("settings")
+                                                if alvo and configs:
+                                                    add_ugclone_config(alvo, configs)
+                                        
+                                        os.remove(json_path)
+                                        console.print("[bold green]✅ Master do UGClone atualizado via JSON com sucesso![/bold green]")
+
                             except Exception as e:
-                                console.print(f"\n[bold red]❌ Erro no motor de dados: {e}[/bold red]")
+                                console.print(f"\n[bold red]❌ Erro no motor de dados/ugclone: {e}[/bold red]")
+                    # ==========================================
 
                     if "upload_queue" in response_json:
                         lista_pendentes = response_json["upload_queue"]
                         if isinstance(lista_pendentes, list) and len(lista_pendentes) > 0:
                             with open(PENDING_TASKS_FILE, "w", encoding="utf-8") as pf:
                                 json.dump(lista_pendentes, pf, indent=4)
-                            console.print(f"\n[bold yellow]📦 [FILA] Recebidas {len(lista_pendentes)} tarefas de extração de APK.[/bold yellow]")
+                            console.print(f"\n[bold yellow] 📦 [FILA] Recebidas {len(lista_pendentes)} tarefas de extração de APK.[/bold yellow]")
 
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
@@ -498,12 +521,10 @@ try:
                             URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/install.py?v={v_cache_install}"
                             os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}")
 
-                        # NOVA LÓGICA DE COMUNICAÇÃO: ARQUIVO AO INVÉS DE LINHA DE COMANDO
                         try:
                             console.print("\n[bold yellow]⚡ Triggering installation engine...[/bold yellow]")
                             with open(PAYLOAD_FILE, "w", encoding="utf-8") as pf:
                                 json.dump(response_json, pf)
-                            # Passa "--file" para avisar o install.py que é um arquivo
                             subprocess.run([sys.executable, install_script_path, "--file", PAYLOAD_FILE], check=True)
                         except Exception as err_install:
                             console.print(f"[bold red]❌ O motor de instalacao travou: {err_install}[/bold red]")
