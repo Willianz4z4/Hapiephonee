@@ -111,11 +111,8 @@ def extrair_candidatos_botao_laranja(xml_content):
 
 def achar_e_clicar_botao_laranja_sticky():
     """
-    Executa a prova real (elemento Sticky / Fixo):
-    1. Captura candidatos iniciais.
-    2. Dá um micro-scroll para movimentar os itens da lista de fundo.
-    3. Captura o XML de novo.
-    4. O elemento cujas coordenadas NÃO mudaram é o botão flutuante real.
+    Executa a prova real (elemento Sticky / Fixo) e filtra pelo eixo Y
+    para garantir que vai pegar o botão de baixo (laranja) e não a engrenagem do topo.
     """
     print("🔍 Analisando tela em busca do botão flutuante (Prova Real)...")
     
@@ -132,6 +129,8 @@ def achar_e_clicar_botao_laranja_sticky():
     xml2 = ler_tela()
     candidatos2 = extrair_candidatos_botao_laranja(xml2)
     
+    sobreviventes_sticky = []
+    
     for c1 in candidatos1:
         x1_1, y1_1, x2_1, y2_1 = c1
         estatico = False
@@ -144,12 +143,22 @@ def achar_e_clicar_botao_laranja_sticky():
                 break
                 
         if estatico:
-            centro_x = x1_1 + ((x2_1 - x1_1) // 2)
-            centro_y = y1_1 + ((y2_1 - y1_1) // 2)
+            sobreviventes_sticky.append(c1)
             
-            print(f"🎯 SUCESSO! Botão Laranja Sticky confirmado nas coordenadas X:{centro_x} Y:{centro_y}")
-            executar_root(f"input tap {centro_x} {centro_y}")
-            return True
+    if sobreviventes_sticky:
+        # Desempate inteligente: Ordena pelo eixo Y (do maior para o menor)
+        # O botão laranja fica na parte inferior, enquanto a engrenagem fica no topo.
+        sobreviventes_sticky.sort(key=lambda coords: coords[1], reverse=True)
+        
+        alvo_real = sobreviventes_sticky[0]
+        x1, y1, x2, y2 = alvo_real
+        
+        centro_x = x1 + ((x2 - x1) // 2)
+        centro_y = y1 + ((y2 - y1) // 2)
+        
+        print(f"🎯 SUCESSO! Botão Laranja Sticky confirmado nas coordenadas X:{centro_x} Y:{centro_y}")
+        executar_root(f"input tap {centro_x} {centro_y}")
+        return True
             
     return False
 
