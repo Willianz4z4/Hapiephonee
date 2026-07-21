@@ -12,6 +12,11 @@ def executar_root(comando):
     except subprocess.CalledProcessError as e:
         return e.output.strip()
 
+def obter_dpi_atual():
+    saida = executar_root("wm density")
+    match = re.search(r'(\d+)', saida)
+    return match.group(1) if match else "380"
+
 def desativar_teclado():
     print("🔒 Matando o Gboard e forçando modo oculto...")
     executar_root("ime disable com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
@@ -69,97 +74,33 @@ def achar_e_clicar(xml_content, atributo, valor_procurado, min_y=0):
         pass
     return False
 
-def extrair_candidatos_botao_laranja(xml_content):
-    """Filtra elementos candidatos ao botão flutuante (quadrados, sem texto, na metade direita)."""
-    candidatos = []
-    if not xml_content:
-        return candidatos
-        
+def achar_botao_laranja_padrao(xml_content):
+    if not xml_content: return False
     try:
         root = ET.fromstring(xml_content)
-        largura_tela = 0
-        
+        candidatos = []
         for node in root.iter('node'):
             bounds = node.attrib.get('bounds')
-            if bounds:
-                coords = re.findall(r'\d+', bounds)
-                if len(coords) == 4:
-                    largura_tela = max(largura_tela, int(coords[2]))
-                    
-        meio_da_tela = largura_tela / 2
-
-        for node in root.iter('node'):
+            texto = node.attrib.get('text', '')
+            desc = node.attrib.get('content-desc', '')
             classe = node.attrib.get('class', '')
             clicavel = node.attrib.get('clickable', 'false')
-            texto = node.attrib.get('text', '')
-            bounds = node.attrib.get('bounds')
-            
-            if clicavel == 'true' and 'Image' in classe and not texto:
-                if bounds:
-                    coords = re.findall(r'\d+', bounds)
-                    if len(coords) == 4:
-                        x1, y1, x2, y2 = map(int, coords)
-                        largura = x2 - x1
-                        altura = y2 - y1
-                        
-                        if x1 > meio_da_tela and abs(largura - altura) <= 10:
-                            candidatos.append((x1, y1, x2, y2))
+
+            if bounds and not texto and not desc and clicavel == 'true' and 'Image' in classe:
+                coords = re.findall(r'\d+', bounds)
+                if len(coords) == 4:
+                    x1, y1, x2, y2 = map(int, coords)
+                    # Filtra para pegar apenas na metade direita e descarta a engrenagem do topo
+                    if x1 > 400: 
+                        candidatos.append({'bounds': bounds, 'y2': y2})
+
+        if candidatos:
+            candidatos.sort(key=lambda c: c['y2'], reverse=True)
+            alvo = candidatos[0]['bounds']
+            print(f"🎯 Botão Laranja fixo detectado com sucesso! Coordenadas: {alvo}")
+            return clicar_no_centro(alvo)
     except Exception:
         pass
-        
-    return candidatos
-
-def achar_e_clicar_botao_laranja_sticky():
-    """
-    Executa a prova real (elemento Sticky / Fixo) e filtra pelo eixo Y
-    para garantir que vai pegar o botão de baixo (laranja) e não a engrenagem do topo.
-    """
-    print("🔍 Analisando tela em busca do botão flutuante (Prova Real)...")
-    
-    xml1 = ler_tela()
-    candidatos1 = extrair_candidatos_botao_laranja(xml1)
-    
-    if not candidatos1:
-        return False
-        
-    # Executa o micro-scroll de teste na tela
-    executar_root("input swipe 300 700 300 500 300")
-    time.sleep(0.6)
-    
-    xml2 = ler_tela()
-    candidatos2 = extrair_candidatos_botao_laranja(xml2)
-    
-    sobreviventes_sticky = []
-    
-    for c1 in candidatos1:
-        x1_1, y1_1, x2_1, y2_1 = c1
-        estatico = False
-        
-        for c2 in candidatos2:
-            x1_2, y1_2, x2_2, y2_2 = c2
-            # Se a posição permaneceu intacta enquanto a lista rodou
-            if abs(x1_1 - x1_2) <= 2 and abs(y1_1 - y1_2) <= 2:
-                estatico = True
-                break
-                
-        if estatico:
-            sobreviventes_sticky.append(c1)
-            
-    if sobreviventes_sticky:
-        # Desempate inteligente: Ordena pelo eixo Y (do maior para o menor)
-        # O botão laranja fica na parte inferior, enquanto a engrenagem fica no topo.
-        sobreviventes_sticky.sort(key=lambda coords: coords[1], reverse=True)
-        
-        alvo_real = sobreviventes_sticky[0]
-        x1, y1, x2, y2 = alvo_real
-        
-        centro_x = x1 + ((x2 - x1) // 2)
-        centro_y = y1 + ((y2 - y1) // 2)
-        
-        print(f"🎯 SUCESSO! Botão Laranja Sticky confirmado nas coordenadas X:{centro_x} Y:{centro_y}")
-        executar_root(f"input tap {centro_x} {centro_y}")
-        return True
-            
     return False
 
 def raspar_meus_apps(xml_content):
@@ -185,104 +126,108 @@ def raspar_meus_apps(xml_content):
         pass
     return list(set(meus_apps))
 
-def robo_teste_estresse():
+def automacao_clonagem():
     pacote_ug = "com.ugcloner.xfein"
-    print("\n🔥 INICIANDO O SUPER TESTE DE ESTRESSE EM ESCALA (10 RODADAS) 🔥")
+    
+    # 1. Pega e salva o DPI atual do usuário antes de mexer em qualquer coisa
+    dpi_original = obter_dpi_atual()
+    DPI_BOT = "380"  # DPI padrão e estável para o bot operar com precisão milimétrica
+
+    print(f"\n🔥 INICIANDO AUTOMAÇÃO (DPI Original do Usuário detectado: {dpi_original}) 🔥")
 
     try:
         desativar_teclado()
         time.sleep(1.5)
 
-        for rodada in range(1, 11):
-            nova_escala = random.choice([240, 300, 380, 440, 520])
-            print(f"\n" + "="*60)
-            print(f"🔄 RODADA {rodada}/10 | ESCALA: {nova_escala} dpi")
-            print("="*60)
-            executar_root(f"wm density {nova_escala}")
-            time.sleep(3)
+        # 2. Muda para o DPI padrão otimizado do bot
+        print(f"📐 Aplicando DPI padrão do bot ({DPI_BOT}) para operação estável...")
+        executar_root(f"wm density {DPI_BOT}")
+        time.sleep(2)
 
-            executar_root(f"am force-stop {pacote_ug}")
-            executar_root(f"monkey -p {pacote_ug} -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1")
-            time.sleep(4)
+        executar_root(f"am force-stop {pacote_ug}")
+        executar_root(f"monkey -p {pacote_ug} -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1")
+        time.sleep(4)
 
-            print("🕵️ Lendo os seus apps instalados...")
-            tela_inicial = ler_tela()
-            apps_reais = raspar_meus_apps(tela_inicial)
+        print("🕵️ Lendo os seus apps instalados...")
+        tela_inicial = ler_tela()
+        apps_reais = raspar_meus_apps(tela_inicial)
 
-            if not apps_reais:
-                print("⚠️ Nenhum app real capturado. Usando lista de segurança.")
-                apps_reais = ["Drive", "Chrome", "YouTube", "Gmail", "Calendar"]
+        if not apps_reais:
+            print("⚠️ Nenhum app real capturado. Usando lista de segurança.")
+            apps_reais = ["Drive", "Chrome", "YouTube", "Gmail", "Calendar"]
 
-            nome_app = random.choice(apps_reais)
-            print(f"📱 Alvo SEGURO da sua lista: {nome_app}")
+        nome_app = random.choice(apps_reais)
+        print(f"📱 Alvo SEGURO da sua lista: {nome_app}")
 
-            print("🔍 Procurando a lupa...")
-            if achar_e_clicar(tela_inicial, 'content-desc', 'Search apps'):
-                time.sleep(1)
+        print("🔍 Procurando a lupa...")
+        if achar_e_clicar(tela_inicial, 'content-desc', 'Search apps'):
+            time.sleep(1)
 
-                print(f"⌨️ Digitando: {nome_app}")
-                nome_formatado = nome_app.replace(" ", "%s")
-                executar_root(f"input text {nome_formatado}")
-                time.sleep(1)
-                executar_root("input keyevent 66") # Aperta Enter
-                time.sleep(1.5)
+            print(f"⌨️ Digitando: {nome_app}")
+            nome_formatado = nome_app.replace(" ", "%s")
+            executar_root(f"input text {nome_formatado}")
+            time.sleep(1)
+            executar_root("input keyevent 66") # Aperta Enter
+            time.sleep(1.5)
 
-                print("🎯 Procurando o app na lista limpa...")
-                tela_pesquisa = ler_tela()
+            print("🎯 Procurando o app na lista limpa...")
+            tela_pesquisa = ler_tela()
 
-                achou_app = achar_e_clicar(tela_pesquisa, 'text', nome_app, min_y=100)
+            achou_app = achar_e_clicar(tela_pesquisa, 'text', nome_app, min_y=100)
 
-                if achou_app:
-                    print("⏳ Carregando painel de clonagem...")
-                    time.sleep(4)
+            if achou_app:
+                print("⏳ Carregando painel de clonagem...")
+                time.sleep(3)
 
-                    print("📥 Acionando o botão laranja por prova real sticky...")
-                    clicou_laranja = False
-                    for tentativa_laranja in range(3):
-                        if achar_e_clicar_botao_laranja_sticky():
-                            clicou_laranja = True
-                            break
-                        print(f"🔄 Tentativa {tentativa_laranja+1} do botão laranja...")
+                print("📥 Acionando o botão laranja...")
+                clicou_laranja = False
+                for tentativa_laranja in range(3):
+                    tela_config = ler_tela()
+                    if achar_botao_laranja_padrao(tela_config):
+                        clicou_laranja = True
+                        break
+                    print(f"🔄 Tentativa {tentativa_laranja+1} do botão laranja...")
+                    time.sleep(1.5)
+
+                if clicou_laranja:
+                    print("⏳ Confirmando pop-up (OK)...")
+                    time.sleep(2)
+                    tela_popup = ler_tela()
+                    achar_e_clicar(tela_popup, 'text', 'OK')
+
+                    print("⏳ Aguardando botão INSTALL APP...")
+                    instalou = False
+                    for _ in range(20):
                         time.sleep(2)
+                        tela_clonando = ler_tela()
+                        if achar_e_clicar(tela_clonando, 'text', 'INSTALL APP'):
+                            print(f"\n🚀 SUCESSO! App instalado com sucesso!")
+                            instalou = True
+                            time.sleep(2)
+                            break
+                        sys.stdout.write(".")
+                        sys.stdout.flush()
 
-                    if clicou_laranja:
-                        print("⏳ Confirmando pop-up (OK)...")
-                        time.sleep(2.5)
-                        tela_popup = ler_tela()
-                        achar_e_clicar(tela_popup, 'text', 'OK')
-
-                        print("⏳ Aguardando botão INSTALL APP...")
-                        instalou = False
-                        for _ in range(20):
-                            time.sleep(3)
-                            tela_clonando = ler_tela()
-                            if achar_e_clicar(tela_clonando, 'text', 'INSTALL APP'):
-                                print(f"🚀 SUCESSO NA RODADA {rodada}! App instalado!")
-                                instalou = True
-                                time.sleep(3)
-                                break
-                            sys.stdout.write(".")
-                            sys.stdout.flush()
-
-                        if not instalou:
-                            print("\n⚠️ O botão 'INSTALL APP' não apareceu a tempo.")
-                    else:
-                        print("❌ Não achei o botão laranja após tentativas.")
+                    if not instalou:
+                        print("\n⚠️ O botão 'INSTALL APP' não apareceu a tempo.")
                 else:
-                    print(f"❌ Não achei o app '{nome_app}' na lista.")
+                    print("❌ Não achei o botão laranja após tentativas.")
             else:
-                print("❌ Lupa não encontrada.")
+                print(f"❌ Não achei o app '{nome_app}' na lista.")
+        else:
+            print("❌ Lupa não encontrada.")
 
-            executar_root(f"am force-stop {pacote_ug}")
-            time.sleep(2)
+        executar_root(f"am force-stop {pacote_ug}")
+        time.sleep(1)
 
     finally:
         print("\n" + "="*60)
         print("🛑 RESTAURAÇÃO DO SISTEMA INICIADA...")
         print("="*60)
         reativar_teclado()
-        executar_root("wm density reset")
-        print("✅ Tudo de volta ao normal com segurança!")
+        print(f"🔄 Retornando exatamente para o DPI original do usuário: {dpi_original}")
+        executar_root(f"wm density {dpi_original}")
+        print("✅ Tudo de volta ao padrão do usuário com total segurança!")
 
 if __name__ == "__main__":
-    robo_teste_estresse()
+    automacao_clonagem()
