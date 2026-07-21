@@ -13,12 +13,17 @@ def executar_root(comando):
         return e.output.strip()
 
 def desativar_teclado():
-    print("🔒 Desativando teclado virtual via sistema (ime)...")
-    executar_root("ime disable $(settings get secure default_input_method)")
+    print("🔒 Matando o Gboard e forçando modo oculto...")
+    # 1. Desativa o teclado do Google usando a string EXATA (sem variáveis)
+    executar_root("ime disable com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
+    # 2. Truque de mestre: diz ao Android que tem um teclado físico conectado (oculta o virtual na marra)
+    executar_root("settings put secure show_ime_with_hard_keyboard 0")
 
 def reativar_teclado():
-    print("🔓 Reativando teclado virtual via sistema (ime)...")
-    executar_root("ime enable $(settings get secure default_input_method); ime set $(settings get secure default_input_method)")
+    print("🔓 Reativando o Gboard...")
+    executar_root("ime enable com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
+    executar_root("ime set com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
+    executar_root("settings put secure show_ime_with_hard_keyboard 1")
 
 def clicar_no_centro(bounds):
     coords = re.findall(r'\d+', bounds)
@@ -124,9 +129,9 @@ def robo_teste_estresse():
     print("\n🔥 INICIANDO O SUPER TESTE DE ESTRESSE EM ESCALA (10 RODADAS) 🔥")
     
     try:
-        # Desativa o teclado do sistema logo no começo do teste
+        # AGORA VAI: Desativa e oculta o teclado usando as strings diretas
         desativar_teclado()
-        time.sleep(1)
+        time.sleep(1.5)
         
         for rodada in range(1, 11):
             nova_escala = random.choice([240, 300, 380, 440, 520])
@@ -216,7 +221,6 @@ def robo_teste_estresse():
         print("\n" + "="*60)
         print("🛑 RESTAURAÇÃO DO SISTEMA INICIADA...")
         print("="*60)
-        # Reativa o teclado do sistema obrigatoriamente no final ou se der erro
         reativar_teclado()
         executar_root("wm density reset")
         print("✅ Tudo de volta ao normal com segurança!")
