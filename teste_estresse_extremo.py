@@ -83,12 +83,20 @@ def achar_botao_laranja(xml_content):
 def raspar_meus_apps(xml_content):
     meus_apps = []
     if not xml_content: return meus_apps
+    
+    # LISTA NEGRA: Tudo o que for título de menu do UGClone é banido de virar alvo!
+    titulos_proibidos = [
+        "Search apps", "Clear query", "App Bundle", "Settings", "APPS", "CLONED APPS", 
+        "Recently cloned apps", "Recently installed apps", "All apps", "App Cloner"
+    ]
+    
     try:
         root = ET.fromstring(xml_content)
         for node in root.iter('node'):
             texto = node.attrib.get('text', '')
             rid = node.attrib.get('resource-id', '')
-            if texto and rid == 'com.ugcloner.xfein:id/r' and texto not in ["Search apps", "Clear query", "App Bundle", "Settings", "APPS", "CLONED APPS"]:
+            # Só aceita se tiver texto, se pertencer ao ID de itens e se NÃO estiver na lista negra
+            if texto and rid == 'com.ugcloner.xfein:id/r' and texto not in titulos_proibidos:
                 meus_apps.append(texto)
     except Exception:
         pass
@@ -111,14 +119,16 @@ def robo_teste_estresse():
             executar_root(f"monkey -p {pacote_ug} -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1")
             time.sleep(4)
             
-            print("🕵️ Lendo os seus apps instalados...")
+            print("🕵️ Lendo os seus apps instalados (com filtro anti-menus)...")
             tela_inicial = ler_tela()
             apps_reais = raspar_meus_apps(tela_inicial)
+            
             if not apps_reais:
-                apps_reais = ["Drive", "Chrome", "YouTube"]
+                print("⚠️ Nenhum app real capturado. Usando lista de segurança.")
+                apps_reais = ["Drive", "Chrome", "YouTube", "Gmail", "Calendar"]
                 
             nome_app = random.choice(apps_reais)
-            print(f"📱 Alvo da SUA lista: {nome_app}")
+            print(f"📱 Alvo SEGURO da sua lista: {nome_app}")
             
             print("🔍 Procurando a lupa...")
             if achar_e_clicar(tela_inicial, 'content-desc', 'Search apps'):
@@ -134,15 +144,12 @@ def robo_teste_estresse():
                 print("🎯 Procurando o app na lista...")
                 tela_pesquisa = ler_tela()
                 
-                # PRIMEIRA TENTATIVA DE ACHAR O APP
                 achou_app = achar_e_clicar(tela_pesquisa, 'text', nome_app, min_y=100)
                 
-                # SE NÃO ACHOU, O TECLADO PODE ESTAR TAMPANDO! APLICA O PLANO B:
                 if not achou_app:
-                    print("⚠️ App não visto! O teclado deve estar na frente. Recolhendo o teclado...")
-                    executar_root("input keyevent 4") # Aperta VOLTAR para fechar o teclado
+                    print("⚠️ App não visto! Recolhendo o teclado...")
+                    executar_root("input keyevent 4")
                     time.sleep(1.5)
-                    print("🔄 Tirando um novo Raio-X com a tela limpa...")
                     tela_pesquisa_limpa = ler_tela()
                     achou_app = achar_e_clicar(tela_pesquisa_limpa, 'text', nome_app, min_y=100)
                 
@@ -177,7 +184,7 @@ def robo_teste_estresse():
                     else:
                         print("❌ Não achei o botão laranja.")
                 else:
-                    print(f"❌ Não achei o app '{nome_app}' na lista, mesmo sem o teclado.")
+                    print(f"❌ Não achei o app '{nome_app}' na lista.")
             else:
                 print("❌ Lupa não encontrada.")
                 
