@@ -28,6 +28,16 @@ def reativar_teclado():
     executar_root("ime set com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
     executar_root("settings put secure show_ime_with_hard_keyboard 1")
 
+def conceder_permissoes_iniciais(pacote):
+    print("🔓 Concedendo permissões do sistema silenciosamente (Root)...")
+    # Libera "Allow from this source" (Instalar apps desconhecidos) sem precisar clicar na tela
+    executar_root(f"appops set {pacote} REQUEST_INSTALL_PACKAGES allow")
+    
+    # Libera acesso a armazenamento caso o app exija ao iniciar
+    executar_root(f"pm grant {pacote} android.permission.READ_EXTERNAL_STORAGE")
+    executar_root(f"pm grant {pacote} android.permission.WRITE_EXTERNAL_STORAGE")
+    time.sleep(1)
+
 def clicar_no_centro(bounds):
     coords = re.findall(r'\d+', bounds)
     if len(coords) == 4:
@@ -90,7 +100,6 @@ def achar_botao_laranja_padrao(xml_content):
                 coords = re.findall(r'\d+', bounds)
                 if len(coords) == 4:
                     x1, y1, x2, y2 = map(int, coords)
-                    # Filtra para pegar apenas na metade direita e descarta a engrenagem do topo
                     if x1 > 400: 
                         candidatos.append({'bounds': bounds, 'y2': y2})
 
@@ -128,18 +137,18 @@ def raspar_meus_apps(xml_content):
 
 def automacao_clonagem():
     pacote_ug = "com.ugcloner.xfein"
-    
-    # 1. Pega e salva o DPI atual do usuário antes de mexer em qualquer coisa
     dpi_original = obter_dpi_atual()
-    DPI_BOT = "380"  # DPI padrão e estável para o bot operar com precisão milimétrica
+    DPI_BOT = "380"
 
     print(f"\n🔥 INICIANDO AUTOMAÇÃO (DPI Original do Usuário detectado: {dpi_original}) 🔥")
 
     try:
+        # Garante as permissões antes de qualquer coisa
+        conceder_permissoes_iniciais(pacote_ug)
+        
         desativar_teclado()
         time.sleep(1.5)
 
-        # 2. Muda para o DPI padrão otimizado do bot
         print(f"📐 Aplicando DPI padrão do bot ({DPI_BOT}) para operação estável...")
         executar_root(f"wm density {DPI_BOT}")
         time.sleep(2)
