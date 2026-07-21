@@ -12,6 +12,14 @@ def executar_root(comando):
     except subprocess.CalledProcessError as e:
         return e.output.strip()
 
+def desativar_teclado():
+    print("🔒 Desativando teclado virtual via sistema (ime)...")
+    executar_root("ime disable $(settings get secure default_input_method)")
+
+def reativar_teclado():
+    print("🔓 Reativando teclado virtual via sistema (ime)...")
+    executar_root("ime enable $(settings get secure default_input_method); ime set $(settings get secure default_input_method)")
+
 def clicar_no_centro(bounds):
     coords = re.findall(r'\d+', bounds)
     if len(coords) == 4:
@@ -31,7 +39,6 @@ def ler_tela():
     return match.group(0) if match else None
 
 def limpar_texto(texto):
-    # Remove espaços extras, quebras de linha e caracteres invisíveis de formatação
     if not texto:
         return ""
     return re.sub(r'\s+', ' ', texto).strip()
@@ -93,7 +100,6 @@ def raspar_meus_apps(xml_content):
     meus_apps = []
     if not xml_content: return meus_apps
     
-    # LISTA NEGRA BLINDADA: Qualquer variação desses termos será ignorada
     titulos_proibidos = [
         "search apps", "clear query", "app bundle", "settings", "apps", "cloned apps", 
         "recently cloned apps", "recently installed apps", "all apps", "app cloner"
@@ -118,6 +124,10 @@ def robo_teste_estresse():
     print("\n🔥 INICIANDO O SUPER TESTE DE ESTRESSE EM ESCALA (10 RODADAS) 🔥")
     
     try:
+        # Desativa o teclado do sistema logo no começo do teste
+        desativar_teclado()
+        time.sleep(1)
+        
         for rodada in range(1, 11):
             nova_escala = random.choice([240, 300, 380, 440, 520])
             print(f"\n" + "="*60)
@@ -149,10 +159,8 @@ def robo_teste_estresse():
                 nome_formatado = nome_app.replace(" ", "%s")
                 executar_root(f"input text {nome_formatado}")
                 time.sleep(1)
-                
-                print("⌨️ Forçando o fechamento do teclado para limpar a visão da tela...")
-                executar_root("input keyevent 111") # Tecla ESC / Fecha teclado virtual com segurança
-                time.sleep(1)
+                executar_root("input keyevent 66") # Aperta Enter
+                time.sleep(1.5)
                 
                 print("🎯 Procurando o app na lista limpa...")
                 tela_pesquisa = ler_tela()
@@ -161,26 +169,33 @@ def robo_teste_estresse():
                 
                 if achou_app:
                     print("⏳ Carregando painel de clonagem...")
-                    time.sleep(3)
+                    time.sleep(4)
                     
                     print("📥 Acionando o botão laranja...")
-                    tela_config = ler_tela()
-                    if achar_botao_laranja(tela_config):
-                        
-                        print("⏳ Confirmando pop-up (OK)...")
+                    clicou_laranja = False
+                    for tentativa_laranja in range(3):
+                        tela_config = ler_tela()
+                        if achar_botao_laranja(tela_config):
+                            clicou_laranja = True
+                            break
+                        print(f"🔄 Tentativa {tentativa_laranja+1} do botão laranja...")
                         time.sleep(2)
+                        
+                    if clicou_laranja:
+                        print("⏳ Confirmando pop-up (OK)...")
+                        time.sleep(2.5)
                         tela_popup = ler_tela()
                         achar_e_clicar(tela_popup, 'text', 'OK')
                         
                         print("⏳ Aguardando botão INSTALL APP...")
                         instalou = False
-                        for _ in range(15):
+                        for _ in range(20):
                             time.sleep(3)
                             tela_clonando = ler_tela()
                             if achar_e_clicar(tela_clonando, 'text', 'INSTALL APP'):
                                 print(f"🚀 SUCESSO NA RODADA {rodada}! App instalado!")
                                 instalou = True
-                                time.sleep(2)
+                                time.sleep(3)
                                 break
                             sys.stdout.write(".")
                             sys.stdout.flush()
@@ -188,7 +203,7 @@ def robo_teste_estresse():
                         if not instalou:
                             print("\n⚠️ O botão 'INSTALL APP' não apareceu a tempo.")
                     else:
-                        print("❌ Não achei o botão laranja.")
+                        print("❌ Não achei o botão laranja após tentativas.")
                 else:
                     print(f"❌ Não achei o app '{nome_app}' na lista.")
             else:
@@ -201,6 +216,8 @@ def robo_teste_estresse():
         print("\n" + "="*60)
         print("🛑 RESTAURAÇÃO DO SISTEMA INICIADA...")
         print("="*60)
+        # Reativa o teclado do sistema obrigatoriamente no final ou se der erro
+        reativar_teclado()
         executar_root("wm density reset")
         print("✅ Tudo de volta ao normal com segurança!")
 
