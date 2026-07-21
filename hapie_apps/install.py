@@ -65,22 +65,22 @@ def download_file(url, out_path, index_identifier):
     if "drive.google.com" in url:
         file_id = None
         match_d = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
-        if match_d: 
+        if match_d:
             file_id = match_d.group(1)
         else:
             match_id = re.search(r'id=([a-zA-Z0-9_-]+)', url)
-            if match_id: 
+            if match_id:
                 file_id = match_id.group(1)
 
         if file_id:
             download_success = False
             if gdown:
-                try: 
+                try:
                     log(f"🔄 Tentando gdown para o ID: {file_id}", "cyan")
                     gdown.download(f"https://drive.google.com/uc?id={file_id}", out_path, quiet=True)
                     if os.path.exists(out_path) and zipfile.is_zipfile(out_path):
                         download_success = True
-                except Exception as e: 
+                except Exception as e:
                     log(f"⚠️ Aviso gdown: {e}", "yellow")
 
             if not download_success:
@@ -96,7 +96,7 @@ def download_file(url, out_path, index_identifier):
                             token = confirm_match.group(1)
                             os.system(f"curl -sL -b '{cookie_path}' 'https://docs.google.com/uc?export=download&confirm={token}&id={file_id}' -o '{out_path}'")
                     except: pass
-                if os.path.exists(cookie_path): 
+                if os.path.exists(cookie_path):
                     os.remove(cookie_path)
     else:
         os.system(f"curl -sL '{url}' -o '{out_path}'")
@@ -127,32 +127,47 @@ def download_worker(item, index):
         log(f"❌ Erro no ID #{index}: Falha no download ou arquivo inválido baixado.", "bold red")
         return []
 
-    if zipfile.is_zipfile(download_path) and not force_apk:
-        zip_path = download_path + ".zip"
-        os.rename(download_path, zip_path)
-        log(f"📦 Pacote ID #{index} detectado como ZIP. Executando abertura recursiva total...", "cyan")
+    # Se for um ZIP válido (APKs também são ZIPs válidos)
+    if zipfile.is_zipfile(download_path):
+        # Inspeção Inteligente: Tem o manifesto na raiz?
+        is_apk_by_content = False
+        try:
+            with zipfile.ZipFile(download_path, 'r') as zf:
+                if "AndroidManifest.xml" in zf.namelist():
+                    is_apk_by_content = True
+        except:
+            pass
 
-        while True:
-            zips_encontrados = []
-            for root, dirs, files in os.walk(extract_dir):
-                for f in files:
-                    if f.lower().endswith('.zip'):
-                        zips_encontrados.append(os.path.join(root, f))
-            if not zips_encontrados:
-                break
-            for zip_alvo in zips_encontrados:
-                try:
-                    with zipfile.ZipFile(zip_alvo, 'r') as zf:
-                        for pwd in [b'123', None]:
-                            try:
-                                zf.extractall(path=os.path.dirname(zip_alvo), pwd=pwd)
-                                break
-                            except: continue
-                except: pass
-                finally:
-                    try: os.remove(zip_alvo)
+        # Se for forçado pela TAG OU a inspeção detectar que é um APK real
+        if force_apk or is_apk_by_content:
+            os.rename(download_path, os.path.join(extract_dir, "app_puro.apk"))
+        else:
+            zip_path = download_path + ".zip"
+            os.rename(download_path, zip_path)
+            log(f"📦 Pacote ID #{index} detectado como ZIP. Executando abertura recursiva total...", "cyan")
+
+            while True:
+                zips_encontrados = []
+                for root, dirs, files in os.walk(extract_dir):
+                    for f in files:
+                        if f.lower().endswith('.zip'):
+                            zips_encontrados.append(os.path.join(root, f))
+                if not zips_encontrados:
+                    break
+                for zip_alvo in zips_encontrados:
+                    try:
+                        with zipfile.ZipFile(zip_alvo, 'r') as zf:
+                            for pwd in [b'123', None]:
+                                try:
+                                    zf.extractall(path=os.path.dirname(zip_alvo), pwd=pwd)
+                                    break
+                                except: continue
                     except: pass
+                    finally:
+                        try: os.remove(zip_alvo)
+                        except: pass
     else:
+        # Fallback de segurança caso algo passe
         os.rename(download_path, os.path.join(extract_dir, "app_puro.apk"))
 
     apk_files = []
@@ -180,19 +195,18 @@ def remove_app(package_name):
     log(f"🗑️ {package_name} - Removido com sucesso", "bold red")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2: 
+    if len(sys.argv) < 2:
         log("❌ Erro fatal: Nenhum payload recebido pelo instalador.", "bold red")
         sys.exit(1)
 
     try:
-        # LÓGICA NOVA: LER DO ARQUIVO OU DA LINHA DE COMANDO
         if sys.argv[1] == "--file":
             arquivo_alvo = sys.argv[2]
             with open(arquivo_alvo, "r", encoding="utf-8") as f:
                 data = json.load(f)
         else:
             data = json.loads(sys.argv[1])
-            
+
         success_list = []
         failed_list = []
 
@@ -228,8 +242,9 @@ if __name__ == "__main__":
                 visibility = app_data["visibility"]
 
                 app_name = get_app_name(tmp_path, pkg_name)
-                log(f"📦 Instalando Aplicativo: {app_name} ({pkg_name})...", "yellow")
+                log(f"📦 Instalando/Atualizando Aplicativo: {app_name} ({pkg_name})...", "yellow")
 
+                # 1. Tentativa de Atualização/Instalação normal
                 install_result = run_su(f"pm install -r -g -d '{tmp_path}'")
 
                 if "Success" in install_result.stdout:
@@ -240,8 +255,22 @@ if __name__ == "__main__":
                         run_su(f"pm unhide {pkg_name}")
                     log(f"✅ {app_name} ({pkg_name}) - Sucesso", "bold green")
                 else:
-                    log(f"❌ Falha ao instalar {app_name}: {install_result.stderr}", "bold red")
-                    failed_list.append(pkg_name)
+                    # 2. Plano B: Desinstala e Tenta de novo
+                    log(f"⚠️ Conflito ao atualizar {app_name}. Tentando reinstalação limpa...", "yellow")
+                    run_su(f"pm uninstall {pkg_name}")
+                    
+                    retry_result = run_su(f"pm install -r -g -d '{tmp_path}'")
+                    
+                    if "Success" in retry_result.stdout:
+                        success_list.append(pkg_name)
+                        if visibility == "oculto":
+                            run_su(f"pm hide {pkg_name}")
+                        else:
+                            run_su(f"pm unhide {pkg_name}")
+                        log(f"✅ {app_name} ({pkg_name}) - Sucesso (Reinstalado do zero)", "bold green")
+                    else:
+                        log(f"❌ Falha definitiva ao instalar {app_name}: {retry_result.stderr}", "bold red")
+                        failed_list.append(pkg_name)
 
             run_su("settings put global package_verifier_enable 1")
             run_su("pm enable com.android.vending > /dev/null 2>&1")
