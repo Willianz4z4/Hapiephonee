@@ -12,6 +12,15 @@ def executar_root(comando):
     except subprocess.CalledProcessError as e:
         return e.output.strip()
 
+def desativar_teclado():
+    print("🔒 Desativando o Gboard para limpar a visão do robô...")
+    executar_root("ime disable com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
+
+def reativar_teclado():
+    print("🔓 Reativando o Gboard para uso normal...")
+    executar_root("ime enable com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
+    executar_root("ime set com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
+
 def clicar_no_centro(bounds):
     coords = re.findall(r'\d+', bounds)
     if len(coords) == 4:
@@ -95,7 +104,6 @@ def raspar_meus_apps(xml_content):
         for node in root.iter('node'):
             texto = node.attrib.get('text', '')
             rid = node.attrib.get('resource-id', '')
-            # Só aceita se tiver texto, se pertencer ao ID de itens e se NÃO estiver na lista negra
             if texto and rid == 'com.ugcloner.xfein:id/r' and texto not in titulos_proibidos:
                 meus_apps.append(texto)
     except Exception:
@@ -107,6 +115,8 @@ def robo_teste_estresse():
     print("\n🔥 INICIANDO O SUPER TESTE DE ESTRESSE EM ESCALA (10 RODADAS) 🔥")
     
     try:
+        desativar_teclado()
+        
         for rodada in range(1, 11):
             nova_escala = random.choice([240, 300, 380, 440, 520])
             print(f"\n" + "="*60)
@@ -145,13 +155,6 @@ def robo_teste_estresse():
                 tela_pesquisa = ler_tela()
                 
                 achou_app = achar_e_clicar(tela_pesquisa, 'text', nome_app, min_y=100)
-                
-                if not achou_app:
-                    print("⚠️ App não visto! Recolhendo o teclado...")
-                    executar_root("input keyevent 4")
-                    time.sleep(1.5)
-                    tela_pesquisa_limpa = ler_tela()
-                    achou_app = achar_e_clicar(tela_pesquisa_limpa, 'text', nome_app, min_y=100)
                 
                 if achou_app:
                     print("⏳ Carregando painel de clonagem...")
@@ -195,6 +198,7 @@ def robo_teste_estresse():
         print("\n" + "="*60)
         print("🛑 RESTAURAÇÃO DO SISTEMA INICIADA...")
         print("="*60)
+        reativar_teclado()
         executar_root("wm density reset")
         print("✅ Tudo de volta ao normal com segurança!")
 
