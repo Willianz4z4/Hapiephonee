@@ -23,6 +23,20 @@ def clicar_no_centro(bounds):
         return True
     return False
 
+def fechar_teclado():
+    print("⌨️ Confirmando digitação (Apertando Enter/Lupa)...")
+    executar_root("input keyevent 66") # Keyevent 66 é o Enter (Geralmente fecha o teclado)
+    time.sleep(1.5)
+    
+    # Scanner inteligente: lê o status interno do Android para saber se o teclado continua na tela
+    status_teclado = executar_root("dumpsys input_method | grep mInputShown")
+    if "mInputShown=true" in status_teclado:
+        print("⚠️ Teclado teimoso detectado! Forçando o botão Voltar para recolhê-lo...")
+        executar_root("input keyevent 4") # Keyevent 4 é o Botão Voltar (recolhe o teclado com segurança)
+        time.sleep(1.5)
+    else:
+        print("✅ Tela já está limpa e sem teclado.")
+
 def ler_tela():
     arquivo_xml = "/data/local/tmp/tela_dump.xml"
     executar_root(f"uiautomator dump {arquivo_xml}")
@@ -50,7 +64,6 @@ def achar_e_clicar(xml_content, atributo, valor_procurado, min_y=0):
     return False
 
 def achar_botao_laranja(xml_content):
-    # Nova lógica: Caça o botão mais no Canto Inferior Direito!
     try:
         root = ET.fromstring(xml_content)
         candidatos = []
@@ -66,19 +79,17 @@ def achar_botao_laranja(xml_content):
                     largura = x2 - x1
                     altura = y2 - y1
                     
-                    # Verifica se é um quadrado (com tolerância) e se não é um pixel perdido
                     if largura > 20 and altura > 20 and abs(largura - altura) < (largura * 0.4):
                         candidatos.append({
                             'bounds': bounds,
-                            'y2': y2, # Borda inferior
-                            'x2': x2  # Borda direita
+                            'y2': y2, 
+                            'x2': x2  
                         })
         
         if candidatos:
-            # Ordena para pegar o que estiver mais para baixo (y2) e mais para direita (x2)
             candidatos.sort(key=lambda c: (c['y2'], c['x2']), reverse=True)
             alvo = candidatos[0]['bounds']
-            print(f"🎯 Botão Laranja (FAB) detectado no canto! Coordenadas: {alvo}")
+            print(f"🎯 Botão Laranja detectado matematicamente! Coordenadas: {alvo}")
             return clicar_no_centro(alvo)
             
     except Exception:
@@ -100,20 +111,9 @@ def raspar_meus_apps(xml_content):
 
 def robo_teste_estresse():
     pacote_ug = "com.ugcloner.xfein"
-    teclado_pkg = None
-    
     print("\n🔥 INICIANDO O SUPER TESTE DE ESTRESSE EM ESCALA (10 RODADAS) 🔥")
     
     try:
-        # 1. DESATIVAÇÃO TEMPORÁRIA DO TECLADO
-        print("🔕 Identificando o teclado do sistema...")
-        teclado_full = executar_root("settings get secure default_input_method")
-        if teclado_full and '/' in teclado_full:
-            teclado_pkg = teclado_full.split('/')[0]
-            print(f"⌨️ Desativando {teclado_pkg} temporariamente para limpar a tela!")
-            executar_root(f"pm disable {teclado_pkg}")
-            executar_root(f"am force-stop {teclado_pkg}")
-        
         for rodada in range(1, 11):
             nova_escala = random.choice([240, 300, 380, 440, 520])
             print(f"\n" + "="*60)
@@ -143,7 +143,10 @@ def robo_teste_estresse():
                 print(f"⌨️ Digitando: {nome_app}")
                 nome_formatado = nome_app.replace(" ", "%s")
                 executar_root(f"input text {nome_formatado}")
-                time.sleep(2)
+                time.sleep(1)
+                
+                # CHAMA A NOSSA FUNÇÃO INTELIGENTE PARA FECHAR O TECLADO
+                fechar_teclado() 
                 
                 print("🎯 Selecionando na lista...")
                 tela_pesquisa = ler_tela()
@@ -189,13 +192,6 @@ def robo_teste_estresse():
         print("\n" + "="*60)
         print("🛑 RESTAURAÇÃO DO SISTEMA INICIADA...")
         print("="*60)
-        
-        # 2. ATIVAÇÃO DO TECLADO DE VOLTA
-        if teclado_pkg:
-            print(f"⌨️ Reativando o teclado ({teclado_pkg})...")
-            executar_root(f"pm enable {teclado_pkg}")
-            
-        print("📺 Restaurando a escala da tela...")
         executar_root("wm density reset")
         print("✅ Tudo de volta ao normal com segurança!")
 
