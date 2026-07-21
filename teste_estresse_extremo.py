@@ -12,15 +12,6 @@ def executar_root(comando):
     except subprocess.CalledProcessError as e:
         return e.output.strip()
 
-def desativar_teclado():
-    print("🔒 Desativando o Gboard para limpar a visão do robô...")
-    executar_root("ime disable com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
-
-def reativar_teclado():
-    print("🔓 Reativando o Gboard para uso normal...")
-    executar_root("ime enable com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
-    executar_root("ime set com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
-
 def clicar_no_centro(bounds):
     coords = re.findall(r'\d+', bounds)
     if len(coords) == 4:
@@ -39,13 +30,22 @@ def ler_tela():
     match = re.search(r'<\?xml.*</hierarchy>', xml_content, re.DOTALL)
     return match.group(0) if match else None
 
+def limpar_texto(texto):
+    # Remove espaços extras, quebras de linha e caracteres invisíveis de formatação
+    if not texto:
+        return ""
+    return re.sub(r'\s+', ' ', texto).strip()
+
 def achar_e_clicar(xml_content, atributo, valor_procurado, min_y=0):
     if not xml_content: return False
+    valor_procurado_limpo = limpar_texto(valor_procurado).lower()
     try:
         root = ET.fromstring(xml_content)
         for node in root.iter('node'):
             valor_node = node.attrib.get(atributo, '')
-            if valor_procurado.lower() == valor_node.lower() or valor_procurado.lower() in valor_node.lower():
+            valor_node_limpo = limpar_texto(valor_node).lower()
+            
+            if valor_procurado_limpo == valor_node_limpo or valor_procurado_limpo in valor_node_limpo:
                 bounds = node.attrib.get('bounds')
                 if bounds:
                     coords = re.findall(r'\d+', bounds)
@@ -93,19 +93,22 @@ def raspar_meus_apps(xml_content):
     meus_apps = []
     if not xml_content: return meus_apps
     
-    # LISTA NEGRA: Tudo o que for título de menu do UGClone é banido de virar alvo!
+    # LISTA NEGRA BLINDADA: Qualquer variação desses termos será ignorada
     titulos_proibidos = [
-        "Search apps", "Clear query", "App Bundle", "Settings", "APPS", "CLONED APPS", 
-        "Recently cloned apps", "Recently installed apps", "All apps", "App Cloner"
+        "search apps", "clear query", "app bundle", "settings", "apps", "cloned apps", 
+        "recently cloned apps", "recently installed apps", "all apps", "app cloner"
     ]
     
     try:
         root = ET.fromstring(xml_content)
         for node in root.iter('node'):
             texto = node.attrib.get('text', '')
+            texto_limpo = limpar_texto(texto)
             rid = node.attrib.get('resource-id', '')
-            if texto and rid == 'com.ugcloner.xfein:id/r' and texto not in titulos_proibidos:
-                meus_apps.append(texto)
+            
+            if texto_limpo and rid == 'com.ugcloner.xfein:id/r':
+                if texto_limpo.lower() not in titulos_proibidos:
+                    meus_apps.append(texto_limpo)
     except Exception:
         pass
     return list(set(meus_apps))
@@ -115,8 +118,6 @@ def robo_teste_estresse():
     print("\n🔥 INICIANDO O SUPER TESTE DE ESTRESSE EM ESCALA (10 RODADAS) 🔥")
     
     try:
-        desativar_teclado()
-        
         for rodada in range(1, 11):
             nova_escala = random.choice([240, 300, 380, 440, 520])
             print(f"\n" + "="*60)
@@ -129,7 +130,7 @@ def robo_teste_estresse():
             executar_root(f"monkey -p {pacote_ug} -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1")
             time.sleep(4)
             
-            print("🕵️ Lendo os seus apps instalados (com filtro anti-menus)...")
+            print("🕵️ Lendo os seus apps instalados (com filtro anti-menus avançado)...")
             tela_inicial = ler_tela()
             apps_reais = raspar_meus_apps(tela_inicial)
             
@@ -148,10 +149,12 @@ def robo_teste_estresse():
                 nome_formatado = nome_app.replace(" ", "%s")
                 executar_root(f"input text {nome_formatado}")
                 time.sleep(1)
-                executar_root("input keyevent 66") # Aperta Enter
-                time.sleep(1.5)
                 
-                print("🎯 Procurando o app na lista...")
+                print("⌨️ Forçando o fechamento do teclado para limpar a visão da tela...")
+                executar_root("input keyevent 111") # Tecla ESC / Fecha teclado virtual com segurança
+                time.sleep(1)
+                
+                print("🎯 Procurando o app na lista limpa...")
                 tela_pesquisa = ler_tela()
                 
                 achou_app = achar_e_clicar(tela_pesquisa, 'text', nome_app, min_y=100)
@@ -198,7 +201,6 @@ def robo_teste_estresse():
         print("\n" + "="*60)
         print("🛑 RESTAURAÇÃO DO SISTEMA INICIADA...")
         print("="*60)
-        reativar_teclado()
         executar_root("wm density reset")
         print("✅ Tudo de volta ao normal com segurança!")
 
