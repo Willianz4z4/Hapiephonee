@@ -23,20 +23,6 @@ def clicar_no_centro(bounds):
         return True
     return False
 
-def fechar_teclado():
-    print("⌨️ Confirmando digitação (Apertando Enter/Lupa)...")
-    executar_root("input keyevent 66") # Keyevent 66 é o Enter (Geralmente fecha o teclado)
-    time.sleep(1.5)
-    
-    # Scanner inteligente: lê o status interno do Android para saber se o teclado continua na tela
-    status_teclado = executar_root("dumpsys input_method | grep mInputShown")
-    if "mInputShown=true" in status_teclado:
-        print("⚠️ Teclado teimoso detectado! Forçando o botão Voltar para recolhê-lo...")
-        executar_root("input keyevent 4") # Keyevent 4 é o Botão Voltar (recolhe o teclado com segurança)
-        time.sleep(1.5)
-    else:
-        print("✅ Tela já está limpa e sem teclado.")
-
 def ler_tela():
     arquivo_xml = "/data/local/tmp/tela_dump.xml"
     executar_root(f"uiautomator dump {arquivo_xml}")
@@ -45,6 +31,7 @@ def ler_tela():
     return match.group(0) if match else None
 
 def achar_e_clicar(xml_content, atributo, valor_procurado, min_y=0):
+    if not xml_content: return False
     try:
         root = ET.fromstring(xml_content)
         for node in root.iter('node'):
@@ -64,6 +51,7 @@ def achar_e_clicar(xml_content, atributo, valor_procurado, min_y=0):
     return False
 
 def achar_botao_laranja(xml_content):
+    if not xml_content: return False
     try:
         root = ET.fromstring(xml_content)
         candidatos = []
@@ -80,11 +68,7 @@ def achar_botao_laranja(xml_content):
                     altura = y2 - y1
                     
                     if largura > 20 and altura > 20 and abs(largura - altura) < (largura * 0.4):
-                        candidatos.append({
-                            'bounds': bounds,
-                            'y2': y2, 
-                            'x2': x2  
-                        })
+                        candidatos.append({'bounds': bounds, 'y2': y2, 'x2': x2})
         
         if candidatos:
             candidatos.sort(key=lambda c: (c['y2'], c['x2']), reverse=True)
@@ -98,6 +82,7 @@ def achar_botao_laranja(xml_content):
 
 def raspar_meus_apps(xml_content):
     meus_apps = []
+    if not xml_content: return meus_apps
     try:
         root = ET.fromstring(xml_content)
         for node in root.iter('node'):
@@ -128,8 +113,7 @@ def robo_teste_estresse():
             
             print("🕵️ Lendo os seus apps instalados...")
             tela_inicial = ler_tela()
-            apps_reais = raspar_meus_apps(tela_inicial) if tela_inicial else []
-            
+            apps_reais = raspar_meus_apps(tela_inicial)
             if not apps_reais:
                 apps_reais = ["Drive", "Chrome", "YouTube"]
                 
@@ -144,19 +128,31 @@ def robo_teste_estresse():
                 nome_formatado = nome_app.replace(" ", "%s")
                 executar_root(f"input text {nome_formatado}")
                 time.sleep(1)
+                executar_root("input keyevent 66") # Aperta Enter
+                time.sleep(1.5)
                 
-                # CHAMA A NOSSA FUNÇÃO INTELIGENTE PARA FECHAR O TECLADO
-                fechar_teclado() 
-                
-                print("🎯 Selecionando na lista...")
+                print("🎯 Procurando o app na lista...")
                 tela_pesquisa = ler_tela()
-                if tela_pesquisa and achar_e_clicar(tela_pesquisa, 'text', nome_app, min_y=100):
+                
+                # PRIMEIRA TENTATIVA DE ACHAR O APP
+                achou_app = achar_e_clicar(tela_pesquisa, 'text', nome_app, min_y=100)
+                
+                # SE NÃO ACHOU, O TECLADO PODE ESTAR TAMPANDO! APLICA O PLANO B:
+                if not achou_app:
+                    print("⚠️ App não visto! O teclado deve estar na frente. Recolhendo o teclado...")
+                    executar_root("input keyevent 4") # Aperta VOLTAR para fechar o teclado
+                    time.sleep(1.5)
+                    print("🔄 Tirando um novo Raio-X com a tela limpa...")
+                    tela_pesquisa_limpa = ler_tela()
+                    achou_app = achar_e_clicar(tela_pesquisa_limpa, 'text', nome_app, min_y=100)
+                
+                if achou_app:
                     print("⏳ Carregando painel de clonagem...")
                     time.sleep(3)
                     
                     print("📥 Acionando o botão laranja...")
                     tela_config = ler_tela()
-                    if tela_config and achar_botao_laranja(tela_config):
+                    if achar_botao_laranja(tela_config):
                         
                         print("⏳ Confirmando pop-up (OK)...")
                         time.sleep(2)
@@ -168,7 +164,7 @@ def robo_teste_estresse():
                         for _ in range(15):
                             time.sleep(3)
                             tela_clonando = ler_tela()
-                            if tela_clonando and achar_e_clicar(tela_clonando, 'text', 'INSTALL APP'):
+                            if achar_e_clicar(tela_clonando, 'text', 'INSTALL APP'):
                                 print(f"🚀 SUCESSO NA RODADA {rodada}! App instalado!")
                                 instalou = True
                                 time.sleep(2)
@@ -181,7 +177,7 @@ def robo_teste_estresse():
                     else:
                         print("❌ Não achei o botão laranja.")
                 else:
-                    print(f"❌ Não achei o app '{nome_app}' na lista.")
+                    print(f"❌ Não achei o app '{nome_app}' na lista, mesmo sem o teclado.")
             else:
                 print("❌ Lupa não encontrada.")
                 
