@@ -28,12 +28,19 @@ def reativar_teclado():
     executar_root("ime set com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
     executar_root("settings put secure show_ime_with_hard_keyboard 1")
 
+def desativar_play_protect():
+    print("🛡️ Desligando o Google Play Protect (Verificador de Pacotes)...")
+    executar_root("settings put global package_verifier_enable 0")
+    executar_root("settings put global upload_apk_enable 0")
+
+def reativar_play_protect():
+    print("🛡️ Reativando o Google Play Protect...")
+    executar_root("settings put global package_verifier_enable 1")
+    executar_root("settings put global upload_apk_enable 1")
+
 def conceder_permissoes_iniciais(pacote):
     print("🔓 Concedendo permissões do sistema silenciosamente (Root)...")
-    # Libera "Allow from this source" (Instalar apps desconhecidos) sem precisar clicar na tela
     executar_root(f"appops set {pacote} REQUEST_INSTALL_PACKAGES allow")
-    
-    # Libera acesso a armazenamento caso o app exija ao iniciar
     executar_root(f"pm grant {pacote} android.permission.READ_EXTERNAL_STORAGE")
     executar_root(f"pm grant {pacote} android.permission.WRITE_EXTERNAL_STORAGE")
     time.sleep(1)
@@ -78,7 +85,6 @@ def achar_e_clicar(xml_content, atributo, valor_procurado, min_y=0):
                         _, y1, _, _ = map(int, coords)
                         if y1 < min_y:
                             continue
-                        print(f"✅ Encontrou '{valor_node}'!")
                         return clicar_no_centro(bounds)
     except Exception:
         pass
@@ -115,12 +121,10 @@ def achar_botao_laranja_padrao(xml_content):
 def raspar_meus_apps(xml_content):
     meus_apps = []
     if not xml_content: return meus_apps
-
     titulos_proibidos = [
         "search apps", "clear query", "app bundle", "settings", "apps", "cloned apps",
         "recently cloned apps", "recently installed apps", "all apps", "app cloner"
     ]
-
     try:
         root = ET.fromstring(xml_content)
         for node in root.iter('node'):
@@ -135,6 +139,30 @@ def raspar_meus_apps(xml_content):
         pass
     return list(set(meus_apps))
 
+def cacar_e_instalar_fantasma(pacote_ug):
+    print("\n🕵️ O APK FOI GERADO! Entrando na pasta secreta do UGClone...")
+    
+    # ls -t ordena por data de modificação. O head -n 1 pega APENAS o último arquivo criado.
+    comando_busca = f"ls -t /data/data/{pacote_ug}/files/*.apk 2>/dev/null | head -n 1"
+    apk_alvo = executar_root(comando_busca)
+    
+    if apk_alvo and apk_alvo.endswith('.apk'):
+        print(f"🎯 ÚLTIMO APK GERADO ENCONTRADO: {apk_alvo}")
+        print("👻 Executando instalação invisível via Root...")
+        
+        # pm install -r instala silenciosamente
+        resultado = executar_root(f"pm install -r '{apk_alvo}'")
+        
+        if "Success" in resultado:
+            print("✅ SUCESSO! O aplicativo foi instalado direto no sistema. Nenhuma janela se abriu.")
+            return True
+        else:
+            print(f"⚠️ Falha na instalação silenciosa. O Android respondeu: {resultado}")
+            return False
+    else:
+        print("❌ Nenhum APK encontrado na pasta /files/.")
+        return False
+
 def automacao_clonagem():
     pacote_ug = "com.ugcloner.xfein"
     dpi_original = obter_dpi_atual()
@@ -143,9 +171,8 @@ def automacao_clonagem():
     print(f"\n🔥 INICIANDO AUTOMAÇÃO (DPI Original do Usuário detectado: {dpi_original}) 🔥")
 
     try:
-        # Garante as permissões antes de qualquer coisa
+        desativar_play_protect()
         conceder_permissoes_iniciais(pacote_ug)
-        
         desativar_teclado()
         time.sleep(1.5)
 
@@ -162,65 +189,54 @@ def automacao_clonagem():
         apps_reais = raspar_meus_apps(tela_inicial)
 
         if not apps_reais:
-            print("⚠️ Nenhum app real capturado. Usando lista de segurança.")
             apps_reais = ["Drive", "Chrome", "YouTube", "Gmail", "Calendar"]
 
         nome_app = random.choice(apps_reais)
         print(f"📱 Alvo SEGURO da sua lista: {nome_app}")
 
-        print("🔍 Procurando a lupa...")
         if achar_e_clicar(tela_inicial, 'content-desc', 'Search apps'):
             time.sleep(1)
-
-            print(f"⌨️ Digitando: {nome_app}")
             nome_formatado = nome_app.replace(" ", "%s")
             executar_root(f"input text {nome_formatado}")
             time.sleep(1)
-            executar_root("input keyevent 66") # Aperta Enter
+            executar_root("input keyevent 66") 
             time.sleep(1.5)
 
-            print("🎯 Procurando o app na lista limpa...")
             tela_pesquisa = ler_tela()
-
-            achou_app = achar_e_clicar(tela_pesquisa, 'text', nome_app, min_y=100)
-
-            if achou_app:
-                print("⏳ Carregando painel de clonagem...")
+            if achar_e_clicar(tela_pesquisa, 'text', nome_app, min_y=100):
                 time.sleep(3)
-
-                print("📥 Acionando o botão laranja...")
+                
                 clicou_laranja = False
-                for tentativa_laranja in range(3):
-                    tela_config = ler_tela()
-                    if achar_botao_laranja_padrao(tela_config):
+                for _ in range(3):
+                    if achar_botao_laranja_padrao(ler_tela()):
                         clicou_laranja = True
                         break
-                    print(f"🔄 Tentativa {tentativa_laranja+1} do botão laranja...")
                     time.sleep(1.5)
 
                 if clicou_laranja:
-                    print("⏳ Confirmando pop-up (OK)...")
                     time.sleep(2)
-                    tela_popup = ler_tela()
-                    achar_e_clicar(tela_popup, 'text', 'OK')
+                    achar_e_clicar(ler_tela(), 'text', 'OK')
 
-                    print("⏳ Aguardando botão INSTALL APP...")
+                    print("⏳ Aguardando a clonagem terminar...")
                     instalou = False
+                    
+                    # Fica lendo a tela por até 40s até o botão INSTALL APP aparecer
                     for _ in range(20):
                         time.sleep(2)
                         tela_clonando = ler_tela()
-                        if achar_e_clicar(tela_clonando, 'text', 'INSTALL APP'):
-                            print(f"\n🚀 SUCESSO! App instalado com sucesso!")
+                        
+                        if tela_clonando and 'text="INSTALL APP"' in tela_clonando:
+                            sucesso = cacar_e_instalar_fantasma(pacote_ug)
+                            if sucesso:
+                                print("\n🎉 Desliguei mesmo!")
                             instalou = True
-                            time.sleep(2)
                             break
+                            
                         sys.stdout.write(".")
                         sys.stdout.flush()
 
                     if not instalou:
-                        print("\n⚠️ O botão 'INSTALL APP' não apareceu a tempo.")
-                else:
-                    print("❌ Não achei o botão laranja após tentativas.")
+                        print("\n⚠️ O processo de clonagem demorou demais.")
             else:
                 print(f"❌ Não achei o app '{nome_app}' na lista.")
         else:
@@ -233,6 +249,7 @@ def automacao_clonagem():
         print("\n" + "="*60)
         print("🛑 RESTAURAÇÃO DO SISTEMA INICIADA...")
         print("="*60)
+        reativar_play_protect()
         reativar_teclado()
         print(f"🔄 Retornando exatamente para o DPI original do usuário: {dpi_original}")
         executar_root(f"wm density {dpi_original}")
