@@ -4,7 +4,6 @@ import json
 import xml.etree.ElementTree as ET
 
 def executar_root_leitura(comando):
-    """Executa um comando root silencioso apenas para leitura e retorna a saída."""
     resultado = subprocess.run(
         ['su', '-c', comando],
         capture_output=True,
@@ -12,11 +11,8 @@ def executar_root_leitura(comando):
     )
     return resultado.stdout.strip()
 
-def ler_configs_ugclone(pacotes_filhos):
-    """Lê o XML do UGClone e extrai as configurações ativas dos filhos informados."""
+def ler_configs_ugclone(child_parent_pairs):
     master_xml = "/data/data/com.ugcloner.xfein/shared_prefs/com.ugcloner.xfein_preferences.xml"
-    
-    # Leitura pura, sem modificação
     xml_content = executar_root_leitura(f"cat {master_xml} 2>/dev/null")
     
     if not xml_content or "No such file" in xml_content:
@@ -30,11 +26,11 @@ def ler_configs_ugclone(pacotes_filhos):
     filhos_setup = {}
     clones_validos = 0
 
-    for filho in pacotes_filhos:
-        tag_name = f"clone_settings_{filho}"
+    for child_pkg, parent_pkg in child_parent_pairs:
+        # 👑 O SEGREDO: O motor sempre salva a config com o nome do App Pai Original!
+        tag_name = f"clone_settings_{parent_pkg}"
         config_str = None
         
-        # Busca a tag exata do pacote filho no XML
         for string_tag in root.findall('string'):
             if string_tag.get('name') == tag_name:
                 config_str = string_tag.text
@@ -45,7 +41,6 @@ def ler_configs_ugclone(pacotes_filhos):
                 configs_completas = json.loads(config_str)
                 configs_ativas = {}
                 
-                # Filtragem inteligente: Pega apenas o que foi ativado (True) ou customizado
                 for chave, valor in configs_completas.items():
                     if valor is True:
                         configs_ativas[chave] = valor
@@ -56,14 +51,13 @@ def ler_configs_ugclone(pacotes_filhos):
                     elif isinstance(valor, list) and len(valor) > 0:
                         configs_ativas[chave] = valor
 
-                filhos_setup[filho] = configs_ativas
+                filhos_setup[child_pkg] = configs_ativas
                 clones_validos += 1
             except json.JSONDecodeError:
-                filhos_setup[filho] = {"erro": "Estrutura JSON corrompida dentro do XML."}
+                filhos_setup[child_pkg] = {"erro": "Estrutura JSON corrompida dentro do XML."}
         else:
-            filhos_setup[filho] = {"status": "Sem configurações registradas no motor."}
+            filhos_setup[child_pkg] = {"status": "Sem configurações registradas no motor."}
 
-    # Retorna o pacote completo e mastigado para o bot processar e atualizar o banco
     return {
         "status": "sucesso",
         "quantidade_clones_pai": clones_validos,
@@ -71,13 +65,12 @@ def ler_configs_ugclone(pacotes_filhos):
     }
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(json.dumps({"erro": "Nenhum pacote filho foi passado como argumento."}, ensure_ascii=False))
+    if len(sys.argv) < 3 or len(sys.argv) % 2 != 0:
+        print(json.dumps({"erro": "Parâmetros inválidos. Necessário passar: filho pai filho pai..."}, ensure_ascii=False))
         sys.exit(1)
         
-    # Pega todos os argumentos passados após o nome do script
-    filhos_solicitados = sys.argv[1:]
+    args = sys.argv[1:]
+    pares = [(args[i], args[i+1]) for i in range(0, len(args), 2)]
     
-    # Processa e imprime o resultado como um JSON puro para o bot capturar
-    resultado_json = ler_configs_ugclone(filhos_solicitados)
+    resultado_json = ler_configs_ugclone(pares)
     print(json.dumps(resultado_json, indent=4, ensure_ascii=False))

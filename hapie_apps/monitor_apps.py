@@ -66,27 +66,65 @@ def upload_to_nuvem(file_path):
     return None
 
 def update_relationships(app_db):
-    """Mapeia os clones e atualiza o número total de filhos no respectivo App Pai."""
+    """Mapeia os clones via prefixo, conta para o Pai e busca configs no UGClone."""
+    # Zera a contagem dos pais
     for pkg, info in app_db.items():
         if info.get("is_parent", True):
             info["clone_count"] = 0
 
+    child_parent_map = {}
+    
     for pkg, info in app_db.items():
+        # Ignora totalmente clonadores da contagem
+        if "ugcloner" in pkg.lower() or "appcloner" in pkg.lower() or "xfein" in pkg.lower():
+            continue
+
         if not info.get("is_parent", True):
-            # Encontra o Pai removendo os números finais do pacote do clone
-            base_pkg = re.sub(r'\d+$', '', pkg)
+            best_parent = None
+            max_match = 0
+            # Filtra apenas pais que não sejam clonadores
+            parents = [p for p, i in app_db.items() if i.get("is_parent") and "ugcloner" not in p.lower() and "xfein" not in p.lower()]
             
-            if base_pkg in app_db and app_db[base_pkg].get("is_parent"):
-                app_db[base_pkg]["clone_count"] = app_db[base_pkg].get("clone_count", 0) + 1
+            # Encontra o Pai real comparando o prefixo dos pacotes
+            for p in parents:
+                match_len = 0
+                for c1, c2 in zip(pkg, p):
+                    if c1 == c2: match_len += 1
+                    else: break
+                
+                if match_len > max_match and match_len >= 5:
+                    max_match = match_len
+                    best_parent = p
+            
+            if best_parent:
+                app_db[best_parent]["clone_count"] = app_db[best_parent].get("clone_count", 0) + 1
+                child_parent_map[pkg] = best_parent
             else:
-                # Tenta localizar o Pai pelo prefixo mais longo caso o padrão seja diferente
-                pais_candidatos = [p for p, i in app_db.items() if i.get("is_parent") and pkg.startswith(p)]
-                if pais_candidatos:
-                    pai_real = max(pais_candidatos, key=len)
-                    app_db[pai_real]["clone_count"] = app_db[pai_real].get("clone_count", 0) + 1
+                child_parent_map[pkg] = pkg
+
+    # Chama o UGClone Monitor com (Filho + Pai) para cruzar a Tag da Configuração
+    if child_parent_map:
+        monitor_script = os.path.join(BASE_DIR, "ugclone_monitor.py")
+        if os.path.exists(monitor_script):
+            cmd_args = []
+            for child, parent in child_parent_map.items():
+                cmd_args.append(child)
+                cmd_args.append(parent)
+            
+            cmd_str = f"python {monitor_script} " + " ".join(cmd_args)
+            try:
+                out_ug = subprocess.check_output(cmd_str, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+                if out_ug:
+                    dados_ug = json.loads(out_ug)
+                    if "filhos_setup" in dados_ug:
+                        for child_pkg, setup_data in dados_ug["filhos_setup"].items():
+                            if child_pkg in app_db:
+                                app_db[child_pkg]["filhos_setup"] = setup_data
+            except Exception:
+                pass
 
 def get_app_info(pkg_name):
-    info = {"name": "Desconhecido", "version": "Desconhecida", "icon_local": None, "size_mb": 0.0, "is_parent": True}
+    info = {"name": pkg_name, "version": "Desconhecida", "icon_local": None, "size_mb": 0.0, "is_parent": True}
 
     try:
         apk_path_cmd = f"su -c 'pm path {pkg_name}'"
@@ -109,23 +147,10 @@ def get_app_info(pkg_name):
         except Exception:
             pass
 
-        # 🤖 INTEGRAÇÃO UGCLONE_MONITOR (Somente para Filhos)
-        if not info["is_parent"]:
-            try:
-                monitor_script = os.path.join(BASE_DIR, "ugclone_monitor.py")
-                if os.path.exists(monitor_script):
-                    cmd_ug = f"python {monitor_script} {pkg_name}"
-                    out_ug = subprocess.check_output(cmd_ug, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
-                    if out_ug:
-                        dados_ug = json.loads(out_ug)
-                        if "filhos_setup" in dados_ug and pkg_name in dados_ug["filhos_setup"]:
-                            info["filhos_setup"] = dados_ug["filhos_setup"][pkg_name]
-            except Exception:
-                info["filhos_setup"] = {}
-        else:
-            info["clone_count"] = 0 # Inicializa contagem no Pai
+        # Impede que o UGClone seja lido como Filho por acidente
+        if "ugcloner" in pkg_name.lower() or "xfein" in pkg_name.lower() or "appcloner" in pkg_name.lower():
+            info["is_parent"] = True
 
-        # Metadados padrões (Tamanho, Versão, Nome e Ícone)
         try:
             size_cmd = f"su -c 'stat -c %s \"{apk_path}\"'"
             size_bytes = int(subprocess.check_output(size_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip())
@@ -146,9 +171,13 @@ def get_app_info(pkg_name):
         if version_match:
             info["version"] = version_match.group(1)
 
-        name_match = re.search(r"application-label:'([^']+)'", badging_output)
-        if name_match:
-            info["name"] = name_match.group(1)
+        # 🚫 REGRA DE NOME: O Clone sempre manterá o nome do package. Só usamos label para o Pai.
+        if info["is_parent"]:
+            name_match = re.search(r"application-label:'([^']+)'", badging_output)
+            if name_match:
+                info["name"] = name_match.group(1)
+        else:
+            info["name"] = pkg_name
 
         icon_match = re.search(r"application: label=.*? icon='([^']+)'", badging_output)
         if not icon_match:
@@ -394,7 +423,7 @@ def start_monitor():
             needs_update = True
         elif "size_mb" not in app_db[app]:
             needs_update = True
-        elif "is_parent" not in app_db[app] or ("is_parent" in app_db[app] and app_db[app]["is_parent"] is False and "filhos_setup" not in app_db[app]):
+        elif "is_parent" not in app_db[app]:
             needs_update = True
 
         if needs_update:
@@ -402,17 +431,15 @@ def start_monitor():
             info = get_app_info(app)
             app_db[app] = info
             new_or_updated += 1
-            print_app_panel(app, info, is_new=True)
 
     apps_to_remove = [app for app in app_db if app not in current_apps]
     for app in apps_to_remove:
         del app_db[app]
         new_or_updated += 1
 
-    # Atualiza hierarquia e contagem de clones antes de salvar o estado inicial
-    update_relationships(app_db)
-
+    # Atualiza as contagens (Pais e Filhos) sempre DEPOIS de coletar as infos cruas
     if new_or_updated > 0:
+        update_relationships(app_db)
         save_data(app_db)
         console.print(f"[bold green]✅ apps_install.json atualizado! ({len(app_db)} apps no total)[/bold green]")
     else:
@@ -437,19 +464,20 @@ def start_monitor():
                         console.print(f"\n[bold yellow]⚙️ Nova instalação: {app}...[/bold yellow]")
                         info = get_app_info(app)
                         app_db[app] = info
-                        
-                        update_relationships(app_db)
-                        save_data(app_db)
-                        print_app_panel(app, info, is_new=True)
 
                 if removed:
                     for app in removed:
                         if app in app_db:
                             del app_db[app]
-                            
-                            update_relationships(app_db)
-                            save_data(app_db)
                         console.print(Panel(f"[bold red]🗑️ Aplicativo Removido:[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
+
+                # Atualiza mapeamento de clonagem geral após qualquer modificação e depois printa o log bonito
+                if added or removed:
+                    update_relationships(app_db)
+                    save_data(app_db)
+                    if added:
+                        for app in added:
+                            print_app_panel(app, app_db[app], is_new=True)
 
                 current_apps = new_apps
         except KeyboardInterrupt:
