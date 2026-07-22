@@ -63,7 +63,6 @@ def upload_to_nuvem(file_path):
     try:
         upload_cmd = f'curl -s -F "key=6d207e02198a847aa98d0a2a901485a5" -F "action=upload" -F "source=@{file_path}" -F "format=json" https://freeimage.host/api/1/upload'
         out = subprocess.check_output(upload_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
-
         data = json.loads(out)
         if "image" in data and "url" in data["image"]:
             return data["image"]["url"]
@@ -78,7 +77,7 @@ def update_relationships(app_db):
             del info["clone_count"]
 
     child_parent_map = {}
-    
+
     for pkg, info in app_db.items():
         if "ugcloner" in pkg.lower() or "appcloner" in pkg.lower() or "xfein" in pkg.lower():
             continue
@@ -97,16 +96,15 @@ def update_relationships(app_db):
                 if match_len > max_match and match_len >= 5:
                     max_match = match_len
                     best_parent = p
-            
+
             if best_parent:
-                # SÓ ADICIONA O CLONE_COUNT SE ELE REALMENTE TIVER FILHOS
                 if "clone_count" not in app_db[best_parent]:
                     app_db[best_parent]["clone_count"] = 0
                 app_db[best_parent]["clone_count"] += 1
                 child_parent_map[pkg] = best_parent
-            else:
-                child_parent_map[pkg] = pkg
-
+        else:
+            child_parent_map[pkg] = pkg                    
+            
     if child_parent_map:
         monitor_script = os.path.join(BASE_DIR, "ugclone_monitor.py")
         if os.path.exists(monitor_script):
@@ -128,28 +126,26 @@ def update_relationships(app_db):
                 pass
 
 def get_app_info(pkg_name):
-    info = {"name": "Desconhecido", "version": "Desconhecida", "icon_local": None, "size_mb": 0.0, "is_parent": True}
-
+    info = {"name": pkg_name, "version": "Desconhecida", "icon_local": None, "size_mb": 0.0, "is_parent": True}         
     try:
         apk_path_cmd = f"su -c 'pm path {pkg_name}'"
         apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
-
-        if not apk_path_raw:
-            return info
+        
+        if not apk_path_raw: return info
 
         lines = [line.replace("package:", "").strip() for line in apk_path_raw.split("\n") if line.strip()]
-        if not lines:
-            return info
+        if not lines: return info
+        
         apk_path = lines[0]
-
+        
         try:
             check_cmd = f"su -c 'dumpsys package {pkg_name} | grep -i applisto.appcloner'"
             check_proc = subprocess.run(check_cmd, shell=True, capture_output=True, text=True)
             if "applisto.appcloner" in check_proc.stdout.lower():
-                info["is_parent"] = False 
+                info["is_parent"] = False
         except Exception:
-            pass
-
+            pass                                               
+            
         if "ugcloner" in pkg_name.lower() or "xfein" in pkg_name.lower() or "appcloner" in pkg_name.lower():
             info["is_parent"] = True
 
@@ -164,31 +160,32 @@ def get_app_info(pkg_name):
                 size_bytes = int(ls_out.split()[4])
                 info["size_mb"] = round(size_bytes / (1024 * 1024), 2)
             except:
-                info["size_mb"] = 0.0
-
+                info["size_mb"] = 0.0                          
+                
         badging_cmd = f"aapt dump badging \"{apk_path}\""
         badging_output = subprocess.check_output(badging_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
 
+        # 🎯 CAPTURA A VERSÃO EXATA E O NOME REAL (Mesmo se for Clone)
         version_match = re.search(r"versionName='([^']+)'", badging_output)
         if version_match:
             info["version"] = version_match.group(1)
-
-        if info["is_parent"]:
-            name_match = re.search(r"application-label:'([^']+)'", badging_output)
-            if name_match:
-                info["name"] = name_match.group(1)
-        else:
-            info["name"] = pkg_name
+            
+        version_code_match = re.search(r"versionCode='([^']+)'", badging_output)
+        if version_code_match:
+            info["version_code"] = int(version_code_match.group(1))
+            
+        name_match = re.search(r"application-label:'([^']+)'", badging_output)
+        if name_match:
+            info["name"] = name_match.group(1)
 
         icon_match = re.search(r"application: label=.*? icon='([^']+)'", badging_output)
         if not icon_match:
             icon_match = re.search(r"icon='([^']+)'", badging_output)
-
+            
         unzip_list_cmd = f"unzip -l \"{apk_path}\""
         files_list = subprocess.check_output(unzip_list_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
 
-        icon_internal_path = None
-
+        icon_internal_path = None                              
         if icon_match:
             full_icon_path = icon_match.group(1)
             icon_name_base = os.path.splitext(os.path.basename(full_icon_path))[0]
@@ -203,7 +200,7 @@ def get_app_info(pkg_name):
             all_imgs = re.findall(r"\s+([^\s]+\.(?:png|webp|jpg|jpeg))\b", files_list)
             fallback_icons = [f for f in all_imgs if "icon" in f.lower() or "logo" in f.lower() or "launcher" in f.lower()]
             fallback_icons.sort(key=lambda x: ("xxxhdpi" in x, "xxhdpi" in x, "xhdpi" in x, "mipmap" in x), reverse=True)
-
+            
             if fallback_icons:
                 icon_internal_path = fallback_icons[0]
             elif all_imgs:
@@ -211,8 +208,7 @@ def get_app_info(pkg_name):
 
         if icon_internal_path:
             icon_ext = icon_internal_path.split('.')[-1]
-            icon_dest = os.path.join(ICONS_DIR, f"{pkg_name}.{icon_ext}")
-
+            icon_dest = os.path.join(ICONS_DIR, f"{pkg_name}.{icon_ext}")                                                     
             unzip_p_cmd = f"unzip -p \"{apk_path}\" \"{icon_internal_path}\" > \"{icon_dest}\""
             os.system(unzip_p_cmd)
 
@@ -233,7 +229,7 @@ def get_app_info(pkg_name):
 def print_app_panel(app_package, info, is_new=False):
     status_title = "📥 Novo App Detectado!" if is_new else "🔄 App Sincronizado no JSON"
     border_color = "green" if is_new else "blue"
-
+    
     if info.get("is_parent", True):
         tipo_app = "👑 [bold yellow]PAI (Base Original)[/bold yellow]"
         extra_info = f"👥 [bold]Clones Ativos:[/bold] {info.get('clone_count', 0)}" if "clone_count" in info else "👥 [bold]Sem clones[/bold]"
@@ -247,7 +243,7 @@ def print_app_panel(app_package, info, is_new=False):
     detalhes += f"🏷️ [bold]Nome:[/bold] {info['name']}\n"
     detalhes += f"🧬 [bold]DNA:[/bold] {tipo_app}\n"
     detalhes += f"{extra_info}\n"
-    detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
+    detalhes += f"🔢 [bold]Versão:[/bold] {info.get('version', 'N/A')}\n"
     detalhes += f"⚖️ [bold]Tamanho:[/bold] {info.get('size_mb', 0.0)} MB\n"
 
     if info.get("icon_local"):
@@ -307,10 +303,10 @@ def process_pending_uploads():
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 config = json.load(f)
-                owner_id = config.get("owner_id", "unknown")
-
+                owner_id = config.get("owner_id", "unknown")   
+                
         UPLOAD_URL = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/upload_apk"
-
+        
         for pkg in tasks:
             if isinstance(pkg, dict):
                 if pkg.get("action") == "update_ugclone":
@@ -323,36 +319,31 @@ def process_pending_uploads():
                 lines = [line.replace("package:", "").strip() for line in apk_path_raw.split("\n") if line.strip()]
 
                 if not lines: continue
-                apk_path = lines[0]
-
+                apk_path = lines[0]                            
                 temp_apk = os.path.join(DATA_DIR, f"{pkg}_temp.apk")
-                temp_zip = os.path.join(DATA_DIR, f"{pkg}_temp.zip")
-
+                temp_zip = os.path.join(DATA_DIR, f"{pkg}_temp.zip")                                                          
                 os.system(f"su -c 'cp \"{apk_path}\" \"{temp_apk}\" && chmod 777 \"{temp_apk}\"'")
                 subprocess.run(f"zip -j -P 123 \"{temp_zip}\" \"{temp_apk}\"", shell=True, capture_output=True, text=True)
-                
+
                 upload_cmd = f'curl -s -m 600 -w "\\nHTTP_STATUS:%{{http_code}}" -X POST -F "file=@{temp_zip}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
                 subprocess.run(upload_cmd, shell=True, capture_output=True, text=True)
 
                 os.system(f"rm -f \"{temp_apk}\" \"{temp_zip}\"")
-
             except Exception:
                 pass
 
         os.remove(PENDING_TASKS_FILE)
     except:
-        pass
+        pass                                                   
 
 def start_monitor():
     os.system("clear" if os.name == "posix" else "cls")
-    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Estruturado[/bold cyan]\n[dim]Pasta: hapie_apps | Banco: Data/apps_install.json[/dim]", border_style="cyan"))
-
+    console.print(Panel.fit("[bold cyan]Hapiephone Monitor Estruturado[/bold cyan]\n[dim]Pasta: hapie_apps | Banco: Data/apps_install.json[/dim]", border_style="cyan"))                     
     console.print("[yellow]📂 Carregando memória...[/yellow]")
     app_db = load_data()
     current_apps = get_user_apps()
     new_or_updated = 0
 
-    # Limpeza forçada de lixo antigo no banco de dados (remover com.android que já estava salvo)
     lixo_para_remover = [pkg for pkg in app_db if pkg.startswith("com.android.") or pkg.startswith("android.") or pkg.startswith("com.google.android.")]
     for lixo in lixo_para_remover:
         del app_db[lixo]
@@ -371,12 +362,10 @@ def start_monitor():
 
         if needs_update:
             info = get_app_info(app)
-            
             if info.get("name") == "Desconhecido":
                 if app in app_db:
                     del app_db[app]
                 continue
-
             app_db[app] = info
             new_or_updated += 1
 
@@ -385,23 +374,26 @@ def start_monitor():
         del app_db[app]
         new_or_updated += 1
 
+    # 🚀 AQUI ESTÁ A MÁGICA: Independente de ter app novo ou não, 
+    # ele SEMPRE vai buscar as configurações mais recentes do UGClone
+    # Isso destrava as configurações que estavam presas no "erro"
+    update_relationships(app_db)
+    save_data(app_db)
+    
     if new_or_updated > 0:
-        update_relationships(app_db)
-        save_data(app_db)
         console.print(f"[bold green]✅ apps_install.json atualizado! ({len(app_db)} apps no total)[/bold green]")
     else:
-        console.print(f"[bold green]✅ Todos os {len(app_db)} apps já estão upados e validados no DNA.[/bold green]")
+        console.print(f"[bold green]✅ Árvore de DNA e XML sincronizados perfeitamente. ({len(app_db)} apps)[/bold green]")
 
     print("\n🌟 Monitor ativo... (Pressione CTRL+C para sair)\n")
-
+    
     while True:
         try:
             process_pending_apps()
             process_pending_uploads()
 
             time.sleep(2)
-            new_apps = get_user_apps()
-
+            new_apps = get_user_apps()                         
             if new_apps != current_apps:
                 added = new_apps - current_apps
                 removed = current_apps - new_apps
@@ -410,8 +402,7 @@ def start_monitor():
                     for app in added:
                         info = get_app_info(app)
                         if info.get("name") == "Desconhecido":
-                            continue
-                        
+                            continue                           
                         console.print(f"\n[bold yellow]⚙️ Nova instalação: {app}...[/bold yellow]")
                         app_db[app] = info
 
