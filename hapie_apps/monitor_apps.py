@@ -269,9 +269,20 @@ def process_ugclone_action(task):
                 settings = ug_t.get("settings", {})
 
                 if target_pkg and settings:
-                    apps_data.add_ugclone_config(target_pkg, settings)
-    except Exception:
-        pass
+                    # 🔥 INJEÇÃO E CAPTURA DE RESULTADO
+                    sucesso_injecao = apps_data.add_ugclone_config(target_pkg, settings)
+                    
+                    if sucesso_injecao:
+                        console.print(f"\n[bold yellow]🚀 XML modificado! Dando o gatilho de compilação no UGClone para {target_pkg}...[/bold yellow]")
+                        
+                        # 💥 GATILHO PARA ACORDAR O UGCLONE
+                        # Usando monkey para forçar a abertura do app genérico via Root. 
+                        # Isso garante que ele leia o novo XML cacheado em disco.
+                        cmd_gatilho = 'su -c "monkey -p com.ugcloner.xfein -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1"'
+                        os.system(cmd_gatilho)
+                        
+    except Exception as e:
+        console.print(f"[bold red][X] Erro ao processar requisição UGClone: {e}[/bold red]")
 
 def process_pending_apps():
     has_processed_something = False
@@ -327,7 +338,7 @@ def process_pending_uploads():
                 os.system(f"su -c 'cp \"{apk_path}\" \"{temp_apk}\" && chmod 777 \"{temp_apk}\"'")
                 subprocess.run(f"zip -j -P 123 \"{temp_zip}\" \"{temp_apk}\"", shell=True, capture_output=True, text=True)
 
-                upload_cmd = f'curl -s -m 600 -w "\\nHTTP_STATUS:%{{http_code}}" -X POST -F "file=@{temp_zip}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
+                upload_cmd = f'curl -s -m 600 -w "\nHTTP_STATUS:%{http_code}" -X POST -F "file=@{temp_zip}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
                 subprocess.run(upload_cmd, shell=True, capture_output=True, text=True)
 
                 os.system(f"rm -f \"{temp_apk}\" \"{temp_zip}\"")
