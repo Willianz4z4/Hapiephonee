@@ -31,7 +31,6 @@ CONFIG_FILE = os.path.join(REPO_ROOT, "hapie_config.json")
 os.makedirs(ICONS_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# Garante que o Termux tem o compactador zip instalado
 os.system("pkg install zip -y -q > /dev/null 2>&1")
 
 def load_data():
@@ -54,9 +53,6 @@ def get_user_apps():
     except:
         return set()
 
-# ========================================================
-# 🔥 NOVO UPLOADER: FreeImage.host
-# ========================================================
 def upload_to_nuvem(file_path):
     try:
         upload_cmd = f'curl -s -F "key=6d207e02198a847aa98d0a2a901485a5" -F "action=upload" -F "source=@{file_path}" -F "format=json" https://freeimage.host/api/1/upload'
@@ -69,10 +65,29 @@ def upload_to_nuvem(file_path):
         pass
     return None
 
+def update_relationships(app_db):
+    """Mapeia os clones e atualiza o número total de filhos no respectivo App Pai."""
+    for pkg, info in app_db.items():
+        if info.get("is_parent", True):
+            info["clone_count"] = 0
+
+    for pkg, info in app_db.items():
+        if not info.get("is_parent", True):
+            # Encontra o Pai removendo os números finais do pacote do clone
+            base_pkg = re.sub(r'\d+$', '', pkg)
+            
+            if base_pkg in app_db and app_db[base_pkg].get("is_parent"):
+                app_db[base_pkg]["clone_count"] = app_db[base_pkg].get("clone_count", 0) + 1
+            else:
+                # Tenta localizar o Pai pelo prefixo mais longo caso o padrão seja diferente
+                pais_candidatos = [p for p, i in app_db.items() if i.get("is_parent") and pkg.startswith(p)]
+                if pais_candidatos:
+                    pai_real = max(pais_candidatos, key=len)
+                    app_db[pai_real]["clone_count"] = app_db[pai_real].get("clone_count", 0) + 1
+
 def get_app_info(pkg_name):
-    # 👑 ADICIONADO: is_parent setado como True por padrão
     info = {"name": "Desconhecido", "version": "Desconhecida", "icon_local": None, "size_mb": 0.0, "is_parent": True}
-    
+
     try:
         apk_path_cmd = f"su -c 'pm path {pkg_name}'"
         apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
@@ -85,15 +100,32 @@ def get_app_info(pkg_name):
             return info
         apk_path = lines[0]
 
-        # 🧬 TESTE DE DNA: Verifica se tem injeção do App Cloner (UGClone)
+        # 🧬 TESTE DE DNA
         try:
             check_cmd = f"su -c 'dumpsys package {pkg_name} | grep -i applisto.appcloner'"
             check_proc = subprocess.run(check_cmd, shell=True, capture_output=True, text=True)
             if "applisto.appcloner" in check_proc.stdout.lower():
-                info["is_parent"] = False  # Encontrou a assinatura, é CLONE!
+                info["is_parent"] = False 
         except Exception:
             pass
 
+        # 🤖 INTEGRAÇÃO UGCLONE_MONITOR (Somente para Filhos)
+        if not info["is_parent"]:
+            try:
+                monitor_script = os.path.join(BASE_DIR, "ugclone_monitor.py")
+                if os.path.exists(monitor_script):
+                    cmd_ug = f"python {monitor_script} {pkg_name}"
+                    out_ug = subprocess.check_output(cmd_ug, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+                    if out_ug:
+                        dados_ug = json.loads(out_ug)
+                        if "filhos_setup" in dados_ug and pkg_name in dados_ug["filhos_setup"]:
+                            info["filhos_setup"] = dados_ug["filhos_setup"][pkg_name]
+            except Exception:
+                info["filhos_setup"] = {}
+        else:
+            info["clone_count"] = 0 # Inicializa contagem no Pai
+
+        # Metadados padrões (Tamanho, Versão, Nome e Ícone)
         try:
             size_cmd = f"su -c 'stat -c %s \"{apk_path}\"'"
             size_bytes = int(subprocess.check_output(size_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip())
@@ -171,18 +203,24 @@ def get_app_info(pkg_name):
 def print_app_panel(app_package, info, is_new=False):
     status_title = "📥 Novo App Detectado!" if is_new else "🔄 App Sincronizado no JSON"
     border_color = "green" if is_new else "blue"
-    
-    # 👑 INDICADOR VISUAL DE PAI/CLONE
-    tipo_app = "👑 [bold yellow]PAI (Base Original)[/bold yellow]" if info.get("is_parent", True) else "🧬 [bold magenta]CLONE (Filho)[/bold magenta]"
+
+    if info.get("is_parent", True):
+        tipo_app = "👑 [bold yellow]PAI (Base Original)[/bold yellow]"
+        extra_info = f"👥 [bold]Clones Ativos:[/bold] {info.get('clone_count', 0)}"
+    else:
+        tipo_app = "🧬 [bold magenta]CLONE (Filho)[/bold magenta]"
+        qtd_configs = len(info.get('filhos_setup', {}))
+        extra_info = f"⚙️ [bold]Configs Injetadas:[/bold] {qtd_configs} opções"
 
     detalhes = f"[bold]{status_title}[/bold]\n\n"
     detalhes += f"📦 [bold]Pacote:[/bold] [yellow]{app_package}[/yellow]\n"
     detalhes += f"🏷️ [bold]Nome:[/bold] {info['name']}\n"
     detalhes += f"🧬 [bold]DNA:[/bold] {tipo_app}\n"
+    detalhes += f"{extra_info}\n"
     detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
     detalhes += f"⚖️ [bold]Tamanho:[/bold] {info.get('size_mb', 0.0)} MB\n"
 
-    if info["icon_local"]:
+    if info.get("icon_local"):
         if str(info["icon_local"]).startswith("http"):
             detalhes += f"🔗 [bold]URL Nuvem:[/bold] [cyan]{info['icon_local']}[/cyan]"
         else:
@@ -192,9 +230,6 @@ def print_app_panel(app_package, info, is_new=False):
 
     console.print(Panel(detalhes, border_style=border_color))
 
-# ========================================================
-# 💉 AÇÕES: INJEÇÃO DE JSON DO DISCORD NO UGCLONE
-# ========================================================
 def process_ugclone_action(task):
     import apps_data
     pkg_alvo = task.get("package_name", "Desconhecido")
@@ -225,9 +260,6 @@ def process_ugclone_action(task):
     except Exception as e:
         console.print(f"[bold red]❌ Falha de rede ou JSON inválido: {e}[/bold red]")
 
-# ========================================================
-# 🚀 PENDÊNCIAS DE AÇÕES (DOWNLOADS E INJEÇÕES)
-# ========================================================
 def process_pending_apps():
     if not os.path.exists(PENDING_APPS_FILE):
         return
@@ -253,9 +285,6 @@ def process_pending_apps():
     except:
         pass
 
-# ========================================================
-# 🚀 PENDÊNCIAS: EXTRAÇÃO E UPLOAD PARA O FLASK
-# ========================================================
 def process_pending_uploads():
     if not os.path.exists(PENDING_TASKS_FILE):
         return
@@ -365,8 +394,7 @@ def start_monitor():
             needs_update = True
         elif "size_mb" not in app_db[app]:
             needs_update = True
-        # 👑 FORÇAR ATUALIZAÇÃO SE O APP NÃO TIVER O DNA SALVO
-        elif "is_parent" not in app_db[app]:
+        elif "is_parent" not in app_db[app] or ("is_parent" in app_db[app] and app_db[app]["is_parent"] is False and "filhos_setup" not in app_db[app]):
             needs_update = True
 
         if needs_update:
@@ -380,6 +408,9 @@ def start_monitor():
     for app in apps_to_remove:
         del app_db[app]
         new_or_updated += 1
+
+    # Atualiza hierarquia e contagem de clones antes de salvar o estado inicial
+    update_relationships(app_db)
 
     if new_or_updated > 0:
         save_data(app_db)
@@ -406,6 +437,8 @@ def start_monitor():
                         console.print(f"\n[bold yellow]⚙️ Nova instalação: {app}...[/bold yellow]")
                         info = get_app_info(app)
                         app_db[app] = info
+                        
+                        update_relationships(app_db)
                         save_data(app_db)
                         print_app_panel(app, info, is_new=True)
 
@@ -413,6 +446,8 @@ def start_monitor():
                     for app in removed:
                         if app in app_db:
                             del app_db[app]
+                            
+                            update_relationships(app_db)
                             save_data(app_db)
                         console.print(Panel(f"[bold red]🗑️ Aplicativo Removido:[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
 
