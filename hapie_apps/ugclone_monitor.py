@@ -2,17 +2,32 @@ import sys
 import subprocess
 import json
 import re
+import html 
 
-def executar_root_leitura(comando):
-    resultado = subprocess.run(['su', '-c', comando], capture_output=True, text=True)
-    return resultado.stdout.strip()
+def executar_root_comando(comando):
+    """Função genérica para rodar comandos via su sem esperar leitura de textos gigantes"""
+    subprocess.run(['su', '-c', comando], capture_output=True)
 
 def ler_configs_ugclone(child_parent_pairs):
     master_xml = "/data/data/com.ugcloner.xfein/shared_prefs/com.ugcloner.xfein_preferences.xml"
-    xml_content = executar_root_leitura(f"cat {master_xml} 2>/dev/null")
+    temp_xml = "/data/local/tmp/ugclone_leitura_temp.xml"
+
+    # 1. ESTRATÉGIA DE FUGA: Copia o arquivo gigante para uma pasta temporária 
+    # e dá permissão. Assim o Python lê nativamente e não engasga o subprocess!
+    executar_root_comando(f"cat {master_xml} > {temp_xml} && chmod 666 {temp_xml}")
     
-    if not xml_content or "No such file" in xml_content:
-        return {"erro": "XML não encontrado."}
+    # 2. Leitura nativa e robusta do arquivo
+    try:
+        with open(temp_xml, 'r', encoding='utf-8') as f:
+            xml_content = f.read()
+    except Exception as e:
+        return {"erro": f"Falha ao ler o arquivo: {str(e)}"}
+    finally:
+        # Apaga o arquivo temporário para não deixar lixo no sistema
+        executar_root_comando(f"rm {temp_xml}")
+    
+    if not xml_content:
+        return {"erro": "XML não encontrado ou vazio."}
 
     filhos_setup = {}
     clones_validos = 0
@@ -24,8 +39,10 @@ def ler_configs_ugclone(child_parent_pairs):
         match_child = re.search(regex_child, xml_content, re.DOTALL)
         
         if match_child:
-            # Tem chave própria (Pode ser o Pai Mestre ou um Filho com config customizada)
-            config_str = match_child.group(1).replace('&quot;', '"').replace('&amp;', '&')
+            # Tem chave própria
+            # 3. MÁGICA: Limpa o JSON com html.unescape (converte &quot; e &amp; perfeitamente)
+            config_str = html.unescape(match_child.group(1))
+            
             try:
                 configs_completas = json.loads(config_str)
                 
@@ -61,7 +78,7 @@ def ler_configs_ugclone(child_parent_pairs):
 if __name__ == "__main__":
     args = sys.argv[1:]
     if len(args) < 2 or len(args) % 2 != 0:
-        print(json.dumps({"erro": "Parâmetros inválidos."}, ensure_ascii=False))
+        print(json.dumps({"erro": "Parâmetros inválidos. Passe sempre Filho Pai Filho Pai."}, ensure_ascii=False))
         sys.exit(1)
         
     pares = [(args[i], args[i+1]) for i in range(0, len(args), 2)]
