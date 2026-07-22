@@ -16,31 +16,39 @@ def ler_configs_ugclone(child_parent_pairs):
     xml_content = executar_root_leitura(f"cat {master_xml} 2>/dev/null")
     
     if not xml_content or "No such file" in xml_content:
-        return {"erro": "Arquivo de preferências do motor UGClone não encontrado no sistema."}
+        return {"erro": "XML de preferências não encontrado."}
 
     try:
         root = ET.fromstring(xml_content)
     except Exception as e:
-        return {"erro": f"Falha ao processar a estrutura XML: {e}"}
+        return {"erro": f"Falha ao processar XML: {e}"}
 
     filhos_setup = {}
     clones_validos = 0
 
     for child_pkg, parent_pkg in child_parent_pairs:
-        # 👑 O SEGREDO: O motor sempre salva a config com o nome do App Pai Original!
-        tag_name = f"clone_settings_{parent_pkg}"
+        # 👑 A MÁGICA AQUI: Busca pelo filho primeiro, se falhar, busca pelo pai.
+        tag_name_child = f"clone_settings_{child_pkg}"
+        tag_name_parent = f"clone_settings_{parent_pkg}"
+        
         config_str = None
         
         for string_tag in root.findall('string'):
-            if string_tag.get('name') == tag_name:
+            nome_tag = string_tag.get('name')
+            # Prioridade 1: Nome exato do clone (com.roblox.cliena)
+            if nome_tag == tag_name_child:
                 config_str = string_tag.text
-                break
+                break 
+            # Prioridade 2: Nome do pai como backup (com.roblox.client)
+            elif nome_tag == tag_name_parent and not config_str:
+                config_str = string_tag.text
         
         if config_str:
             try:
                 configs_completas = json.loads(config_str)
                 configs_ativas = {}
                 
+                # Filtragem para pegar só o que o usuário alterou/ativou
                 for chave, valor in configs_completas.items():
                     if valor is True:
                         configs_ativas[chave] = valor
@@ -66,7 +74,7 @@ def ler_configs_ugclone(child_parent_pairs):
 
 if __name__ == "__main__":
     if len(sys.argv) < 3 or len(sys.argv) % 2 != 0:
-        print(json.dumps({"erro": "Parâmetros inválidos. Necessário passar: filho pai filho pai..."}, ensure_ascii=False))
+        print(json.dumps({"erro": "Parâmetros inválidos."}, ensure_ascii=False))
         sys.exit(1)
         
     args = sys.argv[1:]

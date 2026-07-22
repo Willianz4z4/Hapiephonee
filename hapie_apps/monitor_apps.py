@@ -66,8 +66,7 @@ def upload_to_nuvem(file_path):
     return None
 
 def update_relationships(app_db):
-    """Mapeia os clones via prefixo, conta para o Pai e busca configs no UGClone."""
-    # Zera a contagem dos pais
+    # Reseta a contagem
     for pkg, info in app_db.items():
         if info.get("is_parent", True):
             info["clone_count"] = 0
@@ -75,17 +74,14 @@ def update_relationships(app_db):
     child_parent_map = {}
     
     for pkg, info in app_db.items():
-        # Ignora totalmente clonadores da contagem
         if "ugcloner" in pkg.lower() or "appcloner" in pkg.lower() or "xfein" in pkg.lower():
             continue
 
         if not info.get("is_parent", True):
             best_parent = None
             max_match = 0
-            # Filtra apenas pais que não sejam clonadores
             parents = [p for p, i in app_db.items() if i.get("is_parent") and "ugcloner" not in p.lower() and "xfein" not in p.lower()]
             
-            # Encontra o Pai real comparando o prefixo dos pacotes
             for p in parents:
                 match_len = 0
                 for c1, c2 in zip(pkg, p):
@@ -102,7 +98,11 @@ def update_relationships(app_db):
             else:
                 child_parent_map[pkg] = pkg
 
-    # Chama o UGClone Monitor com (Filho + Pai) para cruzar a Tag da Configuração
+    # 🚫 DELETA O CLONE_COUNT SE FOR ZERO (NÃO MANDA PRO BANCO)
+    for pkg, info in app_db.items():
+        if "clone_count" in info and info["clone_count"] == 0:
+            del info["clone_count"]
+
     if child_parent_map:
         monitor_script = os.path.join(BASE_DIR, "ugclone_monitor.py")
         if os.path.exists(monitor_script):
@@ -124,7 +124,7 @@ def update_relationships(app_db):
                 pass
 
 def get_app_info(pkg_name):
-    info = {"name": pkg_name, "version": "Desconhecida", "icon_local": None, "size_mb": 0.0, "is_parent": True}
+    info = {"name": "Desconhecido", "version": "Desconhecida", "icon_local": None, "size_mb": 0.0, "is_parent": True}
 
     try:
         apk_path_cmd = f"su -c 'pm path {pkg_name}'"
@@ -138,7 +138,6 @@ def get_app_info(pkg_name):
             return info
         apk_path = lines[0]
 
-        # 🧬 TESTE DE DNA
         try:
             check_cmd = f"su -c 'dumpsys package {pkg_name} | grep -i applisto.appcloner'"
             check_proc = subprocess.run(check_cmd, shell=True, capture_output=True, text=True)
@@ -147,7 +146,6 @@ def get_app_info(pkg_name):
         except Exception:
             pass
 
-        # Impede que o UGClone seja lido como Filho por acidente
         if "ugcloner" in pkg_name.lower() or "xfein" in pkg_name.lower() or "appcloner" in pkg_name.lower():
             info["is_parent"] = True
 
@@ -171,7 +169,6 @@ def get_app_info(pkg_name):
         if version_match:
             info["version"] = version_match.group(1)
 
-        # 🚫 REGRA DE NOME: O Clone sempre manterá o nome do package. Só usamos label para o Pai.
         if info["is_parent"]:
             name_match = re.search(r"application-label:'([^']+)'", badging_output)
             if name_match:
@@ -264,12 +261,9 @@ def process_ugclone_action(task):
     pkg_alvo = task.get("package_name", "Desconhecido")
     link = task.get("link")
 
-    console.print(f"\n[bold magenta]🚀 [FILA] Injeção de configuração (UGClone): {pkg_alvo}[/bold magenta]")
     if not link:
-        console.print("[bold red]❌ Nenhum link de JSON fornecido.[/bold red]")
         return
 
-    console.print(f"[cyan]📥 Baixando payload JSON do bot (Discord)...[/cyan]")
     try:
         r = requests.get(link, timeout=15)
         if r.status_code in [200, 201]:
@@ -282,126 +276,66 @@ def process_ugclone_action(task):
 
                 if target_pkg and settings:
                     apps_data.add_ugclone_config(target_pkg, settings)
-
-            console.print(f"[bold green]✅ UGClone atualizado com sucesso para {pkg_alvo}![/bold green]")
-        else:
-            console.print(f"[bold red]❌ Erro ao baixar JSON (HTTP {r.status_code})[/bold red]")
-    except Exception as e:
-        console.print(f"[bold red]❌ Falha de rede ou JSON inválido: {e}[/bold red]")
+    except Exception:
+        pass
 
 def process_pending_apps():
-    if not os.path.exists(PENDING_APPS_FILE):
-        return
-
+    if not os.path.exists(PENDING_APPS_FILE): return
     try:
         with open(PENDING_APPS_FILE, "r", encoding="utf-8") as f:
             tasks = json.load(f)
-    except Exception:
-        return
-
-    if not tasks:
-        return
-
-    for task in tasks:
-        if isinstance(task, dict):
-            action = task.get("action")
-            if action == "update_ugclone":
-                process_ugclone_action(task)
-
-    try:
-        os.remove(PENDING_APPS_FILE)
-        console.print("[dim]🗑️ Fila de ações (pending_apps) processada e resetada.[/dim]\n")
+        if tasks:
+            for task in tasks:
+                if isinstance(task, dict) and task.get("action") == "update_ugclone":
+                    process_ugclone_action(task)
+            os.remove(PENDING_APPS_FILE)
     except:
         pass
 
 def process_pending_uploads():
-    if not os.path.exists(PENDING_TASKS_FILE):
-        return
-
+    if not os.path.exists(PENDING_TASKS_FILE): return
     try:
         with open(PENDING_TASKS_FILE, "r", encoding="utf-8") as f:
             tasks = json.load(f)
-    except Exception:
-        return
+        if not tasks: return
 
-    if not tasks:
-        return
-
-    owner_id = "unknown"
-    try:
+        owner_id = "unknown"
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 config = json.load(f)
                 owner_id = config.get("owner_id", "unknown")
-    except:
-        pass
 
-    UPLOAD_URL = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/upload_apk"
+        UPLOAD_URL = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/upload_apk"
 
-    for pkg in tasks:
-        if isinstance(pkg, dict):
-            if pkg.get("action") == "update_ugclone":
-                process_ugclone_action(pkg)
-            continue
-
-        console.print(f"\n[bold magenta]🚀 [FILA] Iniciando extração e camuflagem do APK: {pkg}[/bold magenta]")
-        try:
-            apk_path_cmd = f"su -c 'pm path {pkg}'"
-            apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True).decode('utf-8').strip()
-            lines = [line.replace("package:", "").strip() for line in apk_path_raw.split("\n") if line.strip()]
-
-            if not lines:
-                console.print(f"[red]❌ APK não encontrado no sistema para: {pkg}[/red]")
+        for pkg in tasks:
+            if isinstance(pkg, dict):
+                if pkg.get("action") == "update_ugclone":
+                    process_ugclone_action(pkg)
                 continue
 
-            apk_path = lines[0]
+            try:
+                apk_path_cmd = f"su -c 'pm path {pkg}'"
+                apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True).decode('utf-8').strip()
+                lines = [line.replace("package:", "").strip() for line in apk_path_raw.split("\n") if line.strip()]
 
-            temp_apk = os.path.join(DATA_DIR, f"{pkg}_temp.apk")
-            temp_zip = os.path.join(DATA_DIR, f"{pkg}_temp.zip")
+                if not lines: continue
+                apk_path = lines[0]
 
-            os.system(f"su -c 'cp \"{apk_path}\" \"{temp_apk}\" && chmod 777 \"{temp_apk}\"'")
+                temp_apk = os.path.join(DATA_DIR, f"{pkg}_temp.apk")
+                temp_zip = os.path.join(DATA_DIR, f"{pkg}_temp.zip")
 
-            console.print(f"[cyan]📦 Zipando arquivo com senha '123' para burlar o Drive...[/cyan]")
+                os.system(f"su -c 'cp \"{apk_path}\" \"{temp_apk}\" && chmod 777 \"{temp_apk}\"'")
+                subprocess.run(f"zip -j -P 123 \"{temp_zip}\" \"{temp_apk}\"", shell=True, capture_output=True, text=True)
+                
+                upload_cmd = f'curl -s -m 600 -w "\\nHTTP_STATUS:%{{http_code}}" -X POST -F "file=@{temp_zip}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
+                subprocess.run(upload_cmd, shell=True, capture_output=True, text=True)
 
-            zip_cmd = f"zip -j -P 123 \"{temp_zip}\" \"{temp_apk}\""
-            zip_process = subprocess.run(zip_cmd, shell=True, capture_output=True, text=True)
-
-            if zip_process.returncode != 0:
-                console.print(f"[bold red]❌ Erro ao zipar o APK:[/bold red]\n{zip_process.stderr}")
                 os.system(f"rm -f \"{temp_apk}\" \"{temp_zip}\"")
-                continue
 
-            size_check = subprocess.run(f"stat -c %s \"{temp_zip}\"", shell=True, capture_output=True, text=True)
-            if size_check.returncode == 0:
-                tamanho_mb = int(size_check.stdout.strip()) / (1024 * 1024)
-                console.print(f"[dim]Tamanho do ZIP gerado: {tamanho_mb:.2f} MB[/dim]")
-            else:
-                console.print(f"[bold red]❌ Arquivo ZIP falhou em ser criado![/bold red]")
-                os.system(f"rm -f \"{temp_apk}\"")
-                continue
+            except Exception:
+                pass
 
-            console.print(f"[dim]Enviando arquivo ZIP seguro para a VPS (Isso pode levAlguns minutos)...[/dim]")
-
-            upload_cmd = f'curl -s -m 600 -w "\\nHTTP_STATUS:%{{http_code}}" -X POST -F "file=@{temp_zip}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
-            upload_process = subprocess.run(upload_cmd, shell=True, capture_output=True, text=True)
-
-            os.system(f"rm -f \"{temp_apk}\" \"{temp_zip}\"")
-
-            if upload_process.returncode != 0:
-                console.print(f"[bold red]❌ Falha de Conexão com o Flask (cURL exit {upload_process.returncode}):[/bold red]\n{upload_process.stderr}")
-            else:
-                saida_curl = upload_process.stdout.strip()
-                if "HTTP_STATUS:200" in saida_curl:
-                    console.print(f"[bold green]✅ Upload ZIP concluído com sucesso![/bold green]\n[dim]{saida_curl}[/dim]")
-                else:
-                    console.print(f"[bold red]⚠️ A VPS negou o arquivo (Ngrok ou Flask retornou erro):[/bold red]\n{saida_curl}")
-
-        except Exception as e:
-            console.print(f"[bold red]❌ Erro crítico inesperado no upload de {pkg}: {e}[/bold red]")
-
-    try:
         os.remove(PENDING_TASKS_FILE)
-        console.print("[dim]🗑️ Fila de pendências de upload concluída e resetada.[/dim]\n")
     except:
         pass
 
@@ -411,7 +345,6 @@ def start_monitor():
 
     console.print("[yellow]📂 Carregando memória...[/yellow]")
     app_db = load_data()
-
     current_apps = get_user_apps()
     new_or_updated = 0
 
@@ -427,8 +360,14 @@ def start_monitor():
             needs_update = True
 
         if needs_update:
-            console.print(f"[dim]⚡ Analisando/Atualizando: {app}...[/dim]")
             info = get_app_info(app)
+            
+            # 🚫 FILTRO DE DESCONHECIDO APLICADO AQUI!
+            if info.get("name") == "Desconhecido":
+                if app in app_db:
+                    del app_db[app]
+                continue
+
             app_db[app] = info
             new_or_updated += 1
 
@@ -437,7 +376,6 @@ def start_monitor():
         del app_db[app]
         new_or_updated += 1
 
-    # Atualiza as contagens (Pais e Filhos) sempre DEPOIS de coletar as infos cruas
     if new_or_updated > 0:
         update_relationships(app_db)
         save_data(app_db)
@@ -461,8 +399,12 @@ def start_monitor():
 
                 if added:
                     for app in added:
-                        console.print(f"\n[bold yellow]⚙️ Nova instalação: {app}...[/bold yellow]")
                         info = get_app_info(app)
+                        # 🚫 IGNORA DESCONHECIDOS NA DETECÇÃO DINÂMICA
+                        if info.get("name") == "Desconhecido":
+                            continue
+                        
+                        console.print(f"\n[bold yellow]⚙️ Nova instalação: {app}...[/bold yellow]")
                         app_db[app] = info
 
                 if removed:
@@ -471,13 +413,13 @@ def start_monitor():
                             del app_db[app]
                         console.print(Panel(f"[bold red]🗑️ Aplicativo Removido:[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
 
-                # Atualiza mapeamento de clonagem geral após qualquer modificação e depois printa o log bonito
                 if added or removed:
                     update_relationships(app_db)
                     save_data(app_db)
                     if added:
                         for app in added:
-                            print_app_panel(app, app_db[app], is_new=True)
+                            if app in app_db:
+                                print_app_panel(app, app_db[app], is_new=True)
 
                 current_apps = new_apps
         except KeyboardInterrupt:
