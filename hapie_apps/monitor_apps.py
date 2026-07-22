@@ -25,7 +25,7 @@ ICONS_DIR = os.path.join(REPO_ROOT, "icons")
 DATA_DIR = os.path.join(REPO_ROOT, "Data")
 JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
 PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
-PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")  # 📥 NOVA FILA PARA DOWNLOADS/AÇÕES
+PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")
 CONFIG_FILE = os.path.join(REPO_ROOT, "hapie_config.json")
 
 os.makedirs(ICONS_DIR, exist_ok=True)
@@ -55,7 +55,7 @@ def get_user_apps():
         return set()
 
 # ========================================================
-# 🔥 NOVO UPLOADER: FreeImage.host (Estável e compatível com Discord)
+# 🔥 NOVO UPLOADER: FreeImage.host
 # ========================================================
 def upload_to_nuvem(file_path):
     try:
@@ -70,7 +70,9 @@ def upload_to_nuvem(file_path):
     return None
 
 def get_app_info(pkg_name):
-    info = {"name": "Desconhecido", "version": "Desconhecida", "icon_local": None, "size_mb": 0.0}
+    # 👑 ADICIONADO: is_parent setado como True por padrão
+    info = {"name": "Desconhecido", "version": "Desconhecida", "icon_local": None, "size_mb": 0.0, "is_parent": True}
+    
     try:
         apk_path_cmd = f"su -c 'pm path {pkg_name}'"
         apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
@@ -82,6 +84,15 @@ def get_app_info(pkg_name):
         if not lines:
             return info
         apk_path = lines[0]
+
+        # 🧬 TESTE DE DNA: Verifica se tem injeção do App Cloner (UGClone)
+        try:
+            check_cmd = f"su -c 'dumpsys package {pkg_name} | grep -i applisto.appcloner'"
+            check_proc = subprocess.run(check_cmd, shell=True, capture_output=True, text=True)
+            if "applisto.appcloner" in check_proc.stdout.lower():
+                info["is_parent"] = False  # Encontrou a assinatura, é CLONE!
+        except Exception:
+            pass
 
         try:
             size_cmd = f"su -c 'stat -c %s \"{apk_path}\"'"
@@ -160,10 +171,14 @@ def get_app_info(pkg_name):
 def print_app_panel(app_package, info, is_new=False):
     status_title = "📥 Novo App Detectado!" if is_new else "🔄 App Sincronizado no JSON"
     border_color = "green" if is_new else "blue"
+    
+    # 👑 INDICADOR VISUAL DE PAI/CLONE
+    tipo_app = "👑 [bold yellow]PAI (Base Original)[/bold yellow]" if info.get("is_parent", True) else "🧬 [bold magenta]CLONE (Filho)[/bold magenta]"
 
     detalhes = f"[bold]{status_title}[/bold]\n\n"
     detalhes += f"📦 [bold]Pacote:[/bold] [yellow]{app_package}[/yellow]\n"
     detalhes += f"🏷️ [bold]Nome:[/bold] {info['name']}\n"
+    detalhes += f"🧬 [bold]DNA:[/bold] {tipo_app}\n"
     detalhes += f"🔢 [bold]Versão:[/bold] {info['version']}\n"
     detalhes += f"⚖️ [bold]Tamanho:[/bold] {info.get('size_mb', 0.0)} MB\n"
 
@@ -184,26 +199,26 @@ def process_ugclone_action(task):
     import apps_data
     pkg_alvo = task.get("package_name", "Desconhecido")
     link = task.get("link")
-    
+
     console.print(f"\n[bold magenta]🚀 [FILA] Injeção de configuração (UGClone): {pkg_alvo}[/bold magenta]")
     if not link:
         console.print("[bold red]❌ Nenhum link de JSON fornecido.[/bold red]")
         return
-    
+
     console.print(f"[cyan]📥 Baixando payload JSON do bot (Discord)...[/cyan]")
     try:
         r = requests.get(link, timeout=15)
         if r.status_code in [200, 201]:
             payload_data = r.json()
             ug_tasks = payload_data.get("tasks", [])
-            
+
             for ug_t in ug_tasks:
                 target_pkg = ug_t.get("target_pkg")
                 settings = ug_t.get("settings", {})
-                
+
                 if target_pkg and settings:
                     apps_data.add_ugclone_config(target_pkg, settings)
-                    
+
             console.print(f"[bold green]✅ UGClone atualizado com sucesso para {pkg_alvo}![/bold green]")
         else:
             console.print(f"[bold red]❌ Erro ao baixar JSON (HTTP {r.status_code})[/bold red]")
@@ -231,7 +246,6 @@ def process_pending_apps():
             action = task.get("action")
             if action == "update_ugclone":
                 process_ugclone_action(task)
-            # Pode adicionar outras actions aqui no futuro!
 
     try:
         os.remove(PENDING_APPS_FILE)
@@ -267,7 +281,6 @@ def process_pending_uploads():
     UPLOAD_URL = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/upload_apk"
 
     for pkg in tasks:
-        # 🛡️ PROTEÇÃO: Se um dicionário vazar para o tasks de upload, tratamos como action
         if isinstance(pkg, dict):
             if pkg.get("action") == "update_ugclone":
                 process_ugclone_action(pkg)
@@ -285,16 +298,13 @@ def process_pending_uploads():
 
             apk_path = lines[0]
 
-            # TRUQUE DE MESTRE: Trazendo o APK para a própria pasta do Termux (Data)
             temp_apk = os.path.join(DATA_DIR, f"{pkg}_temp.apk")
             temp_zip = os.path.join(DATA_DIR, f"{pkg}_temp.zip")
 
-            # 1. Root copia o APK e dá permissão total (777) para o Termux manipular
             os.system(f"su -c 'cp \"{apk_path}\" \"{temp_apk}\" && chmod 777 \"{temp_apk}\"'")
 
             console.print(f"[cyan]📦 Zipando arquivo com senha '123' para burlar o Drive...[/cyan]")
 
-            # 2. Transforma em ZIP NATIVAMENTE no Termux (sem su -c)
             zip_cmd = f"zip -j -P 123 \"{temp_zip}\" \"{temp_apk}\""
             zip_process = subprocess.run(zip_cmd, shell=True, capture_output=True, text=True)
 
@@ -303,7 +313,6 @@ def process_pending_uploads():
                 os.system(f"rm -f \"{temp_apk}\" \"{temp_zip}\"")
                 continue
 
-            # 2.5 Verifica se o arquivo zip realmente existe
             size_check = subprocess.run(f"stat -c %s \"{temp_zip}\"", shell=True, capture_output=True, text=True)
             if size_check.returncode == 0:
                 tamanho_mb = int(size_check.stdout.strip()) / (1024 * 1024)
@@ -315,14 +324,11 @@ def process_pending_uploads():
 
             console.print(f"[dim]Enviando arquivo ZIP seguro para a VPS (Isso pode levAlguns minutos)...[/dim]")
 
-            # 3. Faz o envio NATIVO via cURL
             upload_cmd = f'curl -s -m 600 -w "\\nHTTP_STATUS:%{{http_code}}" -X POST -F "file=@{temp_zip}" -F "pkg_name={pkg}" -F "owner_id={owner_id}" {UPLOAD_URL}'
             upload_process = subprocess.run(upload_cmd, shell=True, capture_output=True, text=True)
 
-            # 4. Limpa ambos os arquivos temporários da memória
             os.system(f"rm -f \"{temp_apk}\" \"{temp_zip}\"")
 
-            # 5. Análise do retorno do servidor VPS
             if upload_process.returncode != 0:
                 console.print(f"[bold red]❌ Falha de Conexão com o Flask (cURL exit {upload_process.returncode}):[/bold red]\n{upload_process.stderr}")
             else:
@@ -335,7 +341,6 @@ def process_pending_uploads():
         except Exception as e:
             console.print(f"[bold red]❌ Erro crítico inesperado no upload de {pkg}: {e}[/bold red]")
 
-    # Apaga o arquivo de pendências após processar
     try:
         os.remove(PENDING_TASKS_FILE)
         console.print("[dim]🗑️ Fila de pendências de upload concluída e resetada.[/dim]\n")
@@ -360,9 +365,12 @@ def start_monitor():
             needs_update = True
         elif "size_mb" not in app_db[app]:
             needs_update = True
+        # 👑 FORÇAR ATUALIZAÇÃO SE O APP NÃO TIVER O DNA SALVO
+        elif "is_parent" not in app_db[app]:
+            needs_update = True
 
         if needs_update:
-            console.print(f"[dim]⚡ Analisando/Upando: {app}...[/dim]")
+            console.print(f"[dim]⚡ Analisando/Atualizando: {app}...[/dim]")
             info = get_app_info(app)
             app_db[app] = info
             new_or_updated += 1
@@ -377,16 +385,13 @@ def start_monitor():
         save_data(app_db)
         console.print(f"[bold green]✅ apps_install.json atualizado! ({len(app_db)} apps no total)[/bold green]")
     else:
-        console.print(f"[bold green]✅ Todos os {len(app_db)} apps já estão upados e em dia.[/bold green]")
+        console.print(f"[bold green]✅ Todos os {len(app_db)} apps já estão upados e validados no DNA.[/bold green]")
 
     print("\n🌟 Monitor ativo... (Pressione CTRL+C para sair)\n")
 
     while True:
         try:
-            # 1. LÊ FILA DE AÇÕES / DOWNLOADS (Injeção UGClone)
             process_pending_apps()
-            
-            # 2. LÊ FILA DE UPLOADS (Backup de Data/APKs)
             process_pending_uploads()
 
             time.sleep(2)
