@@ -49,7 +49,13 @@ def save_data(data):
 def get_user_apps():
     try:
         out = subprocess.check_output("su -c 'pm list packages -3'", shell=True, stderr=subprocess.DEVNULL).decode('utf-8')
-        return set([line.replace("package:", "").strip() for line in out.split("\n") if line.strip()])
+        apps = set()
+        for line in out.split("\n"):
+            pkg = line.replace("package:", "").strip()
+            # 🚫 FILTRO ANTI-LIXO DE SISTEMA
+            if pkg and not pkg.startswith("com.android.") and not pkg.startswith("android.") and not pkg.startswith("com.google.android."):
+                apps.add(pkg)
+        return apps
     except:
         return set()
 
@@ -66,10 +72,10 @@ def upload_to_nuvem(file_path):
     return None
 
 def update_relationships(app_db):
-    # Reseta a contagem
+    # 🚫 GARANTE QUE NINGUÉM TEM CLONE_COUNT ANTES DA CONTAGEM
     for pkg, info in app_db.items():
-        if info.get("is_parent", True):
-            info["clone_count"] = 0
+        if "clone_count" in info:
+            del info["clone_count"]
 
     child_parent_map = {}
     
@@ -93,15 +99,13 @@ def update_relationships(app_db):
                     best_parent = p
             
             if best_parent:
-                app_db[best_parent]["clone_count"] = app_db[best_parent].get("clone_count", 0) + 1
+                # SÓ ADICIONA O CLONE_COUNT SE ELE REALMENTE TIVER FILHOS
+                if "clone_count" not in app_db[best_parent]:
+                    app_db[best_parent]["clone_count"] = 0
+                app_db[best_parent]["clone_count"] += 1
                 child_parent_map[pkg] = best_parent
             else:
                 child_parent_map[pkg] = pkg
-
-    # 🚫 DELETA O CLONE_COUNT SE FOR ZERO (NÃO MANDA PRO BANCO)
-    for pkg, info in app_db.items():
-        if "clone_count" in info and info["clone_count"] == 0:
-            del info["clone_count"]
 
     if child_parent_map:
         monitor_script = os.path.join(BASE_DIR, "ugclone_monitor.py")
@@ -232,7 +236,7 @@ def print_app_panel(app_package, info, is_new=False):
 
     if info.get("is_parent", True):
         tipo_app = "👑 [bold yellow]PAI (Base Original)[/bold yellow]"
-        extra_info = f"👥 [bold]Clones Ativos:[/bold] {info.get('clone_count', 0)}"
+        extra_info = f"👥 [bold]Clones Ativos:[/bold] {info.get('clone_count', 0)}" if "clone_count" in info else "👥 [bold]Sem clones[/bold]"
     else:
         tipo_app = "🧬 [bold magenta]CLONE (Filho)[/bold magenta]"
         qtd_configs = len(info.get('filhos_setup', {}))
@@ -348,6 +352,12 @@ def start_monitor():
     current_apps = get_user_apps()
     new_or_updated = 0
 
+    # Limpeza forçada de lixo antigo no banco de dados (remover com.android que já estava salvo)
+    lixo_para_remover = [pkg for pkg in app_db if pkg.startswith("com.android.") or pkg.startswith("android.") or pkg.startswith("com.google.android.")]
+    for lixo in lixo_para_remover:
+        del app_db[lixo]
+        new_or_updated += 1
+
     for app in current_apps:
         needs_update = False
         if app not in app_db:
@@ -362,7 +372,6 @@ def start_monitor():
         if needs_update:
             info = get_app_info(app)
             
-            # 🚫 FILTRO DE DESCONHECIDO APLICADO AQUI!
             if info.get("name") == "Desconhecido":
                 if app in app_db:
                     del app_db[app]
@@ -400,7 +409,6 @@ def start_monitor():
                 if added:
                     for app in added:
                         info = get_app_info(app)
-                        # 🚫 IGNORA DESCONHECIDOS NA DETECÇÃO DINÂMICA
                         if info.get("name") == "Desconhecido":
                             continue
                         
