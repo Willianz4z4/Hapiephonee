@@ -273,13 +273,7 @@ def process_ugclone_action(task):
                     sucesso_injecao = apps_data.add_ugclone_config(target_pkg, settings)
                     
                     if sucesso_injecao:
-                        console.print(f"\n[bold yellow]🚀 XML modificado! Dando o gatilho de compilação no UGClone para {target_pkg}...[/bold yellow]")
-                        
-                        # 💥 GATILHO PARA ACORDAR O UGCLONE
-                        # Usando monkey para forçar a abertura do app genérico via Root. 
-                        # Isso garante que ele leia o novo XML cacheado em disco.
-                        cmd_gatilho = 'su -c "monkey -p com.ugcloner.xfein -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1"'
-                        os.system(cmd_gatilho)
+                        console.print(f"\n[bold green]✅ XML modificado de forma 100% silenciosa para {target_pkg}![/bold green]")
                         
     except Exception as e:
         console.print(f"[bold red][X] Erro ao processar requisição UGClone: {e}[/bold red]")
@@ -295,7 +289,8 @@ def process_pending_apps():
         if tasks:
             for task in tasks:
                 if isinstance(task, dict):
-                    if task.get("action") in ["update_ugclone", "inject_data"]:
+                    # 🚀 ROTEAMENTO CORRIGIDO: Exclusivo para update_ugclone
+                    if task.get("action") == "update_ugclone":
                         process_ugclone_action(task)
                         has_processed_something = True
                         
