@@ -22,7 +22,7 @@ def ler_configs_ugclone(child_parent_pairs):
     except Exception as e:
         return {"erro": f"Falha ao ler o arquivo: {str(e)}"}
     finally:
-        executar_root_comando(f"rm {temp_xml}")
+        executar_root_comando(f"rm -f {temp_xml}")
     
     if not xml_content:
         return {"erro": "XML não encontrado ou vazio."}
@@ -54,20 +54,18 @@ def ler_configs_ugclone(child_parent_pairs):
                         continue
                     
                     if chave in padroes_de_fabrica:
-                        # Se o usuário alterou algo (Deep ou Básico), ele ficará diferente do padrão!
-                        # Ou se for uma chave vital (como as permissões e números), salvamos de qualquer jeito.
                         if valor != padroes_de_fabrica[chave] or chave in CHAVES_VITAIS:
-                            
                             # Filtro extra: Não salvar listas vazias para economizar espaço no MongoDB
                             if isinstance(valor, list) and len(valor) == 0:
                                 continue
-                                
                             configs_ativas[chave] = valor
                 
-                filhos_setup[child_pkg] = configs_ativas
-                clones_validos += 1
+                # 🔥 A MÁGICA AQUI: Só passa pra frente se TIVER DADO REAL! 
+                if configs_ativas:
+                    filhos_setup[child_pkg] = configs_ativas
+                    clones_validos += 1
             except json.JSONDecodeError:
-                filhos_setup[child_pkg] = {"erro": "JSON corrompido."}
+                pass # JSON quebrado não envia mais erro falso, ele é simplesmente ignorado.
         else:
             match_parent = re.search(regex_parent, xml_content, re.DOTALL)
             if match_parent:
@@ -76,8 +74,8 @@ def ler_configs_ugclone(child_parent_pairs):
                     "parent_reference": parent_pkg
                 }
                 clones_validos += 1
-            else:
-                filhos_setup[child_pkg] = {"status": "Sem configurações registradas."}
+            # 🔥 CORREÇÃO PRINCIPAL: Removido o bloco `else` que colocava "Sem configurações registradas".
+            # Se não tem nada, a variável nem nasce e o JSON volta limpo para o monitor!
 
     return {
         "status": "sucesso",
