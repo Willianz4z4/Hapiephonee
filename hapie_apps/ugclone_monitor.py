@@ -27,55 +27,44 @@ def ler_configs_ugclone(child_parent_pairs):
     if not xml_content:
         return {"erro": "XML não encontrado ou vazio."}
 
-    # Carrega o padrão de fábrica
     padroes_de_fabrica = json.loads(TEMPLATE_JSON_STR)
-    
-    # Chaves que SEMPRE queremos salvar para manter a sincronia e as permissões
     CHAVES_VITAIS = ["toCloneNumber", "fromCloneNumber", "batchAppendCloneNumber", "addPermissions", "removePermissions"]
 
     filhos_setup = {}
     clones_validos = 0
 
+    # 🔥 A MÁGICA DA CORREÇÃO: Cria uma lista única contendo Pais E Filhos para extrair do XML!
+    pacotes_para_checar = set()
     for child_pkg, parent_pkg in child_parent_pairs:
-        regex_child = r'<string name="clone_settings_' + re.escape(child_pkg) + r'">\s*({.*?})\s*</string>'
-        regex_parent = r'<string name="clone_settings_' + re.escape(parent_pkg) + r'">\s*({.*?})\s*</string>'
+        pacotes_para_checar.add(child_pkg)
+        pacotes_para_checar.add(parent_pkg)
+
+    for pkg in pacotes_para_checar:
+        regex = r'<string name="clone_settings_' + re.escape(pkg) + r'">\s*({.*?})\s*</string>'
+        match = re.search(regex, xml_content, re.DOTALL)
         
-        match_child = re.search(regex_child, xml_content, re.DOTALL)
-        
-        if match_child:
-            config_str = html.unescape(match_child.group(1))
+        if match:
+            config_str = html.unescape(match.group(1))
             try:
                 configs_completas = json.loads(config_str)
                 configs_ativas = {}
                 
                 for chave, valor in configs_completas.items():
-                    # Ignorar o identificador único para focar na configuração global da rede
                     if chave == "cloneNumber":
                         continue
                     
                     if chave in padroes_de_fabrica:
                         if valor != padroes_de_fabrica[chave] or chave in CHAVES_VITAIS:
-                            # Filtro extra: Não salvar listas vazias para economizar espaço no MongoDB
                             if isinstance(valor, list) and len(valor) == 0:
                                 continue
                             configs_ativas[chave] = valor
                 
-                # 🔥 A MÁGICA AQUI: Só passa pra frente se TIVER DADO REAL! 
                 if configs_ativas:
-                    filhos_setup[child_pkg] = configs_ativas
+                    # Agora, se o pacote pai tiver configuração, ela será salva no pacote pai corretamente!
+                    filhos_setup[pkg] = configs_ativas
                     clones_validos += 1
             except json.JSONDecodeError:
-                pass # JSON quebrado não envia mais erro falso, ele é simplesmente ignorado.
-        else:
-            match_parent = re.search(regex_parent, xml_content, re.DOTALL)
-            if match_parent:
-                filhos_setup[child_pkg] = {
-                    "is_inherited": True,
-                    "parent_reference": parent_pkg
-                }
-                clones_validos += 1
-            # 🔥 CORREÇÃO PRINCIPAL: Removido o bloco `else` que colocava "Sem configurações registradas".
-            # Se não tem nada, a variável nem nasce e o JSON volta limpo para o monitor!
+                pass
 
     return {
         "status": "sucesso",
