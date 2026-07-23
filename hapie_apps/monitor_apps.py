@@ -269,6 +269,12 @@ def process_ugclone_action(task):
                 settings = ug_t.get("settings", {})
 
                 if target_pkg and settings:
+                    # 🔍 DEBUG: Imprime o JSON de configurações antes da injeção
+                    console.print(f"\n[bold magenta]🔍 Inspecionando JSON recebido do servidor para '{target_pkg}':[/bold magenta]")
+                    # json.dumps cria uma string formatada do dicionário com identação de 4 espaços
+                    json_formatado = json.dumps(settings, indent=4, ensure_ascii=False)
+                    console.print(f"[cyan]{json_formatado}[/cyan]")
+                    
                     # 🔥 INJEÇÃO E CAPTURA DE RESULTADO
                     sucesso_injecao = apps_data.add_ugclone_config(target_pkg, settings)
                     
