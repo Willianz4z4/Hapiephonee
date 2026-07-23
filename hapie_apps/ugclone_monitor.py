@@ -33,38 +33,41 @@ def ler_configs_ugclone(child_parent_pairs):
     filhos_setup = {}
     clones_validos = 0
 
-    # 🔥 A MÁGICA DA CORREÇÃO: Cria uma lista única contendo Pais E Filhos para extrair do XML!
-    pacotes_para_checar = set()
-    for child_pkg, parent_pkg in child_parent_pairs:
-        pacotes_para_checar.add(child_pkg)
-        pacotes_para_checar.add(parent_pkg)
+    # 🔥 A VERDADEIRA MÁGICA: Varre o XML inteiro! 
+    # Ele pega TODOS os arrays que estão no motor, ignorando se o pai tem clone ou não!
+    regex_all = r'<string name="clone_settings_([^"]+)">\s*({.*?})\s*</string>'
+    matches = re.finditer(regex_all, xml_content, re.DOTALL)
+    
+    for match in matches:
+        pkg = match.group(1)
+        config_str = html.unescape(match.group(2))
+        try:
+            configs_completas = json.loads(config_str)
+            configs_ativas = {}
+            
+            for chave, valor in configs_completas.items():
+                if chave == "cloneNumber":
+                    continue
+                
+                if chave in padroes_de_fabrica:
+                    if valor != padroes_de_fabrica[chave] or chave in CHAVES_VITAIS:
+                        if isinstance(valor, list) and len(valor) == 0:
+                            continue
+                        configs_ativas[chave] = valor
+            
+            if configs_ativas:
+                filhos_setup[pkg] = configs_ativas
+                clones_validos += 1
+        except json.JSONDecodeError:
+            pass
 
-    for pkg in pacotes_para_checar:
-        regex = r'<string name="clone_settings_' + re.escape(pkg) + r'">\s*({.*?})\s*</string>'
-        match = re.search(regex, xml_content, re.DOTALL)
-        
-        if match:
-            config_str = html.unescape(match.group(1))
-            try:
-                configs_completas = json.loads(config_str)
-                configs_ativas = {}
-                
-                for chave, valor in configs_completas.items():
-                    if chave == "cloneNumber":
-                        continue
-                    
-                    if chave in padroes_de_fabrica:
-                        if valor != padroes_de_fabrica[chave] or chave in CHAVES_VITAIS:
-                            if isinstance(valor, list) and len(valor) == 0:
-                                continue
-                            configs_ativas[chave] = valor
-                
-                if configs_ativas:
-                    # Agora, se o pacote pai tiver configuração, ela será salva no pacote pai corretamente!
-                    filhos_setup[pkg] = configs_ativas
-                    clones_validos += 1
-            except json.JSONDecodeError:
-                pass
+    # Garante a herança para filhos que existem na lista mas não tem data própria
+    for child_pkg, parent_pkg in child_parent_pairs:
+        if child_pkg not in filhos_setup and parent_pkg in filhos_setup:
+            filhos_setup[child_pkg] = {
+                "is_inherited": True,
+                "parent_reference": parent_pkg
+            }
 
     return {
         "status": "sucesso",
@@ -74,9 +77,6 @@ def ler_configs_ugclone(child_parent_pairs):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    if len(args) < 2 or len(args) % 2 != 0:
-        print(json.dumps({"erro": "Parâmetros inválidos. Passe sempre Filho Pai Filho Pai."}, ensure_ascii=False))
-        sys.exit(1)
-        
-    pares = [(args[i], args[i+1]) for i in range(0, len(args), 2)]
+    # Pode receber vazio que ele roda de qualquer jeito!
+    pares = [(args[i], args[i+1]) for i in range(0, len(args)-1, 2)]
     print(json.dumps(ler_configs_ugclone(pares), indent=4, ensure_ascii=False))

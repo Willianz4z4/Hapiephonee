@@ -52,7 +52,6 @@ def get_user_apps():
         apps = set()
         for line in out.split("\n"):
             pkg = line.replace("package:", "").strip()
-            # 🚫 FILTRO ANTI-LIXO DE SISTEMA
             if pkg and not pkg.startswith("com.android.") and not pkg.startswith("android.") and not pkg.startswith("com.google.android."):
                 apps.add(pkg)
         return apps
@@ -71,10 +70,9 @@ def upload_to_nuvem(file_path):
     return None
 
 def update_relationships(app_db):
-    # 🚫 FAXINA GERAL: Remove variáveis inúteis antes de recalcular
     for pkg, info in app_db.items():
         info.pop("clone_count", None)
-        info.pop("filhos_setup", None) # Se não tem filho, a variável desaparece!
+        info.pop("filhos_setup", None) 
 
     child_parent_map = {}
 
@@ -102,28 +100,31 @@ def update_relationships(app_db):
                     app_db[best_parent]["clone_count"] = 0
                 app_db[best_parent]["clone_count"] += 1
                 child_parent_map[pkg] = best_parent
-        # O else que criava apps falsos sem filhos foi completamente deletado!
+            else:
+                deduced_parent = re.sub(r'(\.clone\d+|\-\d+)$', '', pkg, flags=re.IGNORECASE)
+                child_parent_map[pkg] = deduced_parent
 
-    # 🚀 SÓ MANDA PARA O MONITOR OS APPS QUE REALMENTE TÊM FILHOS
-    if child_parent_map:
-        monitor_script = os.path.join(BASE_DIR, "ugclone_monitor.py")
-        if os.path.exists(monitor_script):
-            cmd_args = []
-            for child, parent in child_parent_map.items():
-                cmd_args.append(child)
-                cmd_args.append(parent)
+    # 🔥 A CORREÇÃO: Ele roda o script do motor SEMPRE! Não importa se o mapa de clones está vazio.
+    monitor_script = os.path.join(BASE_DIR, "ugclone_monitor.py")
+    if os.path.exists(monitor_script):
+        cmd_args = []
+        for child, parent in child_parent_map.items():
+            cmd_args.append(child)
+            cmd_args.append(parent)
 
-            cmd_str = f"python {monitor_script} " + " ".join(cmd_args)
-            try:
-                out_ug = subprocess.check_output(cmd_str, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
-                if out_ug:
-                    dados_ug = json.loads(out_ug)
-                    if "filhos_setup" in dados_ug:
-                        for child_pkg, setup_data in dados_ug["filhos_setup"].items():
-                            if child_pkg in app_db:
-                                app_db[child_pkg]["filhos_setup"] = setup_data
-            except Exception:
-                pass
+        cmd_str = f"python {monitor_script} " + " ".join(cmd_args)
+        try:
+            out_ug = subprocess.check_output(cmd_str, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+            if out_ug:
+                dados_ug = json.loads(out_ug)
+                if "filhos_setup" in dados_ug:
+                    # Injeta o DATA em QUALQUER pacote instalado (Pai ou Clone)
+                    for pkg_key, setup_data in dados_ug["filhos_setup"].items():
+                        if pkg_key in app_db:
+                            if isinstance(setup_data, dict) and len(setup_data) > 0:
+                                app_db[pkg_key]["filhos_setup"] = setup_data
+        except Exception:
+            pass
 
 def get_app_info(pkg_name):
     info = {"name": pkg_name, "version": "Desconhecida", "icon_local": None, "size_mb": 0.0, "is_parent": True}
@@ -164,7 +165,6 @@ def get_app_info(pkg_name):
         badging_cmd = f"aapt dump badging \"{apk_path}\""
         badging_output = subprocess.check_output(badging_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
 
-        # 🎯 CAPTURA A VERSÃO EXATA E O NOME REAL
         version_match = re.search(r"versionName='([^']+)'", badging_output)
         if version_match:
             info["version"] = version_match.group(1)
@@ -269,13 +269,10 @@ def process_ugclone_action(task):
                 settings = ug_t.get("settings", {})
 
                 if target_pkg and settings:
-                    # 🔍 DEBUG: Imprime o JSON de configurações antes da injeção
                     console.print(f"\n[bold magenta]🔍 Inspecionando JSON recebido do servidor para '{target_pkg}':[/bold magenta]")
-                    # json.dumps cria uma string formatada do dicionário com identação de 4 espaços
                     json_formatado = json.dumps(settings, indent=4, ensure_ascii=False)
                     console.print(f"[cyan]{json_formatado}[/cyan]")
                     
-                    # 🔥 INJEÇÃO E CAPTURA DE RESULTADO
                     sucesso_injecao = apps_data.add_ugclone_config(target_pkg, settings)
                     
                     if sucesso_injecao:
@@ -295,7 +292,6 @@ def process_pending_apps():
         if tasks:
             for task in tasks:
                 if isinstance(task, dict):
-                    # 🚀 ROTEAMENTO CORRIGIDO: Exclusivo para update_ugclone
                     if task.get("action") == "update_ugclone":
                         process_ugclone_action(task)
                         has_processed_something = True
@@ -424,7 +420,6 @@ def start_monitor():
                             del app_db[app]
                         console.print(Panel(f"[bold red]🗑️ Aplicativo Removido:[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
                 
-                # 🔥 AQUI ESTÁ A TRAVA TEMPORAL DE 20 SEGUNDOS!
                 if force_relationship_update:
                     console.print("\n[bold yellow]⏳ Ordem de injeção detectada! Aguardando 20 segundos para o motor concluir o trabalho no sistema...[/bold yellow]")
                     time.sleep(20)
