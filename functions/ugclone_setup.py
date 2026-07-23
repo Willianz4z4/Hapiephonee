@@ -4,6 +4,7 @@ import re
 import xml.etree.ElementTree as ET
 import sys
 import os
+import json
 
 # ==========================================
 # FUNÇÕES DE SISTEMA E UTILIDADES
@@ -48,6 +49,23 @@ def conceder_permissoes_iniciais(pacote):
     executar_root(f"pm grant {pacote} android.permission.READ_EXTERNAL_STORAGE")
     executar_root(f"pm grant {pacote} android.permission.WRITE_EXTERNAL_STORAGE")
     time.sleep(1)
+
+def obter_nome_real(pacote):
+    """Lê o banco de dados local para descobrir o nome legível do aplicativo."""
+    caminho_json = os.path.join(os.path.dirname(__file__), "../Data/apps_install.json")
+    try:
+        if os.path.exists(caminho_json):
+            with open(caminho_json, 'r', encoding='utf-8') as f:
+                dados = json.load(f)
+                if pacote in dados and "name" in dados[pacote]:
+                    return dados[pacote]["name"]
+    except Exception as e:
+        print(f"⚠️ Erro ao ler apps_install.json: {e}")
+        
+    # Plano B (Fallback): Tenta deduzir o nome se o arquivo não existir
+    fallback = pacote.split('.')[-1].capitalize()
+    print(f"⚠️ Nome real não encontrado no BD. Usando fallback: {fallback}")
+    return fallback
 
 # ==========================================
 # FUNÇÕES DE INTERAÇÃO COM A TELA
@@ -217,21 +235,25 @@ def executar_ordem(modo, pacote_alvo):
         time.sleep(4)
 
         tela_inicial = ler_tela()
+        
+        # Converte "com.nome" para o nome humano legível
+        nome_real = obter_nome_real(pacote_alvo)
 
-        print(f"🔍 Procurando pela lupa de pesquisa para injetar: '{pacote_alvo}'")
+        print(f"🔍 Procurando pela lupa de pesquisa para injetar: '{nome_real}'")
         if achar_e_clicar(tela_inicial, 'content-desc', 'Search apps'):
             time.sleep(1.5)
             
-            # Digita exatamente o pacote que veio do banco de dados/Discord
-            executar_root(f"input text {pacote_alvo}")
+            # Digita exatamente o NOME REAL do app
+            nome_formatado = nome_real.replace(" ", "%s")
+            executar_root(f"input text {nome_formatado}")
             time.sleep(1)
             executar_root("input keyevent 66") # ENTER
             time.sleep(2)
 
             tela_pesquisa = ler_tela()
             
-            # Clica no primeiro item da lista abaixo do cabeçalho
-            if achar_e_clicar(tela_pesquisa, 'text', pacote_alvo, min_y=100) or clicar_no_centro("20 200 1000 350"):
+            # Clica no resultado da busca baseado no NOME REAL
+            if achar_e_clicar(tela_pesquisa, 'text', nome_real, min_y=100) or clicar_no_centro("20 200 1000 350"):
                 time.sleep(3)
                 clicou_laranja = False
                 
@@ -250,7 +272,7 @@ def executar_ordem(modo, pacote_alvo):
                 else:
                     print("❌ Não achei o botão laranja após tentativas.")
             else:
-                print(f"❌ Não foi possível clicar no resultado da busca para '{pacote_alvo}'.")
+                print(f"❌ Não foi possível clicar no resultado da busca para '{nome_real}'.")
         else:
             print("❌ Lupa de pesquisa não encontrada na interface.")
 
