@@ -106,8 +106,9 @@ APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
 PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
 PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
 
-# 🔥 A PONTE QUE FALTAVA: Declarando o arquivo pending_apps.json
+# 🔥 ARQUIVOS DE FILAS: Declarando pending_apps.json e report_orders.json
 PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")
+REPORT_ORDERS_FILE = os.path.join(DATA_DIR, "report_orders.json")
 
 saved_config = {}
 console.print(Panel.fit(f"[bold cyan]Hapiephone Cloud Node[/bold cyan]\n[dim]Version {HAPIEPHONE_VERSION} | Powered by Evollogic[/dim]", border_style="cyan"))
@@ -350,6 +351,8 @@ try:
             try:
                 install_success = []
                 install_failed = []
+                order_success = []
+                order_failed = []
                 apps_installed_data = {}
                 telemetry_data = {}
 
@@ -360,6 +363,17 @@ try:
                         install_success = relatorio.get("install_success", [])
                         install_failed = relatorio.get("install_failed", [])
                         os.remove(REPORT_FILE)
+                    except Exception:
+                        pass
+                
+                # 📦 Coletando relatórios de ORDENS para enviar ao servidor
+                if os.path.exists(REPORT_ORDERS_FILE):
+                    try:
+                        with open(REPORT_ORDERS_FILE, "r", encoding="utf-8") as f:
+                            relatorio_ordens = json.load(f)
+                        order_success = relatorio_ordens.get("success", [])
+                        order_failed = relatorio_ordens.get("failed", [])
+                        os.remove(REPORT_ORDERS_FILE)
                     except Exception:
                         pass
 
@@ -394,6 +408,8 @@ try:
                     "version": HAPIEPHONE_VERSION,
                     "install_success": install_success,
                     "install_failed": install_failed,
+                    "order_success": order_success,     # 👈 INJETADO NO PAYLOAD
+                    "order_failed": order_failed,       # 👈 INJETADO NO PAYLOAD
                     "apps_installed": apps_installed_data,
                     "telemetry": telemetry_data
                 }
@@ -470,13 +486,18 @@ try:
                                 json.dump(lista_pendentes, pf, indent=4)
                             console.print(f"\n[bold yellow] 📦 [FILA] Recebidas {len(lista_pendentes)} tarefas de extração de APK.[/bold yellow]")
 
-                    # 🔥 A PONTE: Baixando as automações (UGClone JSON) para o monitor_apps.py
                     if "pending_apps" in response_json:
                         lista_pending_apps = response_json["pending_apps"]
                         if isinstance(lista_pending_apps, list) and len(lista_pending_apps) > 0:
                             with open(PENDING_APPS_FILE, "w", encoding="utf-8") as pf:
                                 json.dump(lista_pending_apps, pf, indent=4)
                             console.print(f"\n[bold yellow] 📥 [FILA] Recebidas {len(lista_pending_apps)} tarefas do UGClone/Automações.[/bold yellow]")
+
+                    # 🚀 LÓGICA DAS ORDENS 
+                    if "ordens" in response_json:
+                        lista_ordens = response_json["ordens"]
+                        if isinstance(lista_ordens, list) and len(lista_ordens) > 0:
+                            console.print(f"\n[bold yellow]🚀 [ORDENS] Recebidas {len(lista_ordens)} novas ordens do servidor![/bold yellow]")
 
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
@@ -511,7 +532,9 @@ try:
 
                     last_check = time.time()
 
-                    has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos"])
+                    # 🛠️ GATILHO: Agora ele aciona o motor de instalação se vier "ordens"
+                    has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos", "ordens"])
+                    
                     if has_tasks:
                         install_script_path = os.path.join(HAPIE_APPS_DIR, "install.py")
                         with Halo(text='Updating Install Engine...', spinner='dots'):
