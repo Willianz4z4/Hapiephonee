@@ -71,10 +71,10 @@ def upload_to_nuvem(file_path):
     return None
 
 def update_relationships(app_db):
-    # 🚫 GARANTE QUE NINGUÉM TEM CLONE_COUNT ANTES DA CONTAGEM
+    # 🚫 FAXINA GERAL: Remove variáveis inúteis antes de recalcular
     for pkg, info in app_db.items():
-        if "clone_count" in info:
-            del info["clone_count"]
+        info.pop("clone_count", None)
+        info.pop("filhos_setup", None) # Se não tem filho, a variável desaparece!
 
     child_parent_map = {}
 
@@ -102,9 +102,9 @@ def update_relationships(app_db):
                     app_db[best_parent]["clone_count"] = 0
                 app_db[best_parent]["clone_count"] += 1
                 child_parent_map[pkg] = best_parent
-        else:
-            child_parent_map[pkg] = pkg
+        # O else que criava apps falsos sem filhos foi completamente deletado!
 
+    # 🚀 SÓ MANDA PARA O MONITOR OS APPS QUE REALMENTE TÊM FILHOS
     if child_parent_map:
         monitor_script = os.path.join(BASE_DIR, "ugclone_monitor.py")
         if os.path.exists(monitor_script):
