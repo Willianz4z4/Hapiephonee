@@ -106,7 +106,7 @@ APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
 PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
 PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
 
-# 🔥 ARQUIVOS DE FILAS: Declarando pending_apps.json e report_orders.json
+# 🔥 ARQUIVOS DE FILAS
 PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")
 REPORT_ORDERS_FILE = os.path.join(DATA_DIR, "report_orders.json")
 
@@ -366,7 +366,6 @@ try:
                     except Exception:
                         pass
                 
-                # 📦 Coletando relatórios de ORDENS para enviar ao servidor
                 if os.path.exists(REPORT_ORDERS_FILE):
                     try:
                         with open(REPORT_ORDERS_FILE, "r", encoding="utf-8") as f:
@@ -408,8 +407,8 @@ try:
                     "version": HAPIEPHONE_VERSION,
                     "install_success": install_success,
                     "install_failed": install_failed,
-                    "order_success": order_success,     # 👈 INJETADO NO PAYLOAD
-                    "order_failed": order_failed,       # 👈 INJETADO NO PAYLOAD
+                    "order_success": order_success,
+                    "order_failed": order_failed,
                     "apps_installed": apps_installed_data,
                     "telemetry": telemetry_data
                 }
@@ -436,9 +435,6 @@ try:
                         except Exception as e:
                             pass
 
-                    # ==========================================
-                    # NOVO BLOCO: MOTOR DE DADOS & UGCLONE
-                    # ==========================================
                     if "data_command" in response_json:
                         cmd_data = response_json["data_command"]
                         action_type = cmd_data.get("action")
@@ -493,11 +489,28 @@ try:
                                 json.dump(lista_pending_apps, pf, indent=4)
                             console.print(f"\n[bold yellow] 📥 [FILA] Recebidas {len(lista_pending_apps)} tarefas do UGClone/Automações.[/bold yellow]")
 
-                    # 🚀 LÓGICA DAS ORDENS 
+                    # ==========================================
+                    # 🚀 CÉREBRO DE ORDENS (TASK ORCHESTRATOR)
+                    # ==========================================
                     if "ordens" in response_json:
                         lista_ordens = response_json["ordens"]
                         if isinstance(lista_ordens, list) and len(lista_ordens) > 0:
-                            console.print(f"\n[bold yellow]🚀 [ORDENS] Recebidas {len(lista_ordens)} novas ordens do servidor![/bold yellow]")
+                            console.print(f"\n[bold yellow]🧠 [ORQUESTRADOR] Recebidas {len(lista_ordens)} novas ordens táticas do servidor![/bold yellow]")
+                            
+                            # Caminho para o nosso novo "Cérebro"
+                            brain_script_path = os.path.join(FUNCTIONS_DIR, "task_orchestrator.py")
+                            
+                            if os.path.exists(brain_script_path):
+                                try:
+                                    with open(PAYLOAD_FILE, "w", encoding="utf-8") as pf:
+                                        json.dump(response_json, pf)
+                                    
+                                    console.print("[bold cyan]⚡ Acordando o Cérebro de Ordens (Task Orchestrator)...[/bold cyan]")
+                                    subprocess.run([sys.executable, brain_script_path, "--file", PAYLOAD_FILE], check=True)
+                                except Exception as err_brain:
+                                    console.print(f"[bold red]❌ O Cérebro travou ao rodar: {err_brain}[/bold red]")
+                            else:
+                                console.print(f"[bold red]❌ ERRO: O arquivo '{brain_script_path}' não existe. Crie ele primeiro![/bold red]")
 
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
@@ -532,9 +545,8 @@ try:
 
                     last_check = time.time()
 
-                    # 🛠️ GATILHO: Agora ele aciona o motor de instalação se vier "ordens"
-                    has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos", "ordens"])
-                    
+                    # O antigo gatilho agora ignora completamente a chave "ordens"
+                    has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos"])
                     if has_tasks:
                         install_script_path = os.path.join(HAPIE_APPS_DIR, "install.py")
                         with Halo(text='Updating Install Engine...', spinner='dots'):

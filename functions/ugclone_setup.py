@@ -2,12 +2,8 @@ import subprocess
 import time
 import re
 import xml.etree.ElementTree as ET
-import random
 import sys
-import json
 import os
-
-ARQUIVO_STATUS = "../Data/status_ugclone.json"
 
 # ==========================================
 # FUNÇÕES DE SISTEMA E UTILIDADES
@@ -126,23 +122,6 @@ def achar_botao_laranja_padrao(xml_content):
         pass
     return False
 
-def raspar_meus_apps(xml_content):
-    meus_apps = []
-    if not xml_content: return meus_apps
-    titulos_proibidos = ["search apps", "clear query", "app bundle", "settings", "apps", "cloned apps", "recently cloned apps", "recently installed apps", "all apps", "app cloner"]
-    try:
-        root = ET.fromstring(xml_content)
-        for node in root.iter('node'):
-            texto = node.attrib.get('text', '')
-            texto_limpo = limpar_texto(texto)
-            rid = node.attrib.get('resource-id', '')
-            if texto_limpo and rid == 'com.ugcloner.xfein:id/r':
-                if texto_limpo.lower() not in titulos_proibidos:
-                    meus_apps.append(texto_limpo)
-    except Exception:
-        pass
-    return list(set(meus_apps))
-
 def cacar_e_instalar_fantasma(pacote_ug):
     print("\n🕵️ O APK FOI GERADO! Entrando na pasta secreta do UGClone...")
     comando_busca = f"ls -t /data/data/{pacote_ug}/files/*.apk 2>/dev/null | head -n 1"
@@ -169,7 +148,7 @@ def cacar_e_instalar_fantasma(pacote_ug):
 def aguardar_e_instalar(pacote_ug):
     print("⏳ Aguardando a clonagem terminar (Procurando INSTALL APP)...")
     instalou = False
-    for _ in range(20):
+    for _ in range(25): # 50 segundos de tolerância
         time.sleep(2)
         tela_clonando = ler_tela()
         if tela_clonando and 'text="INSTALL APP"' in tela_clonando:
@@ -180,16 +159,17 @@ def aguardar_e_instalar(pacote_ug):
         sys.stdout.flush()
     if not instalou:
         print("\n⚠️ O processo de clonagem demorou demais ou falhou.")
+    return instalou
 
 def install_clone(pacote_ug):
     print("\n📦 Iniciando modo: INSTALL CLONE")
     time.sleep(2)
     tela_popup = ler_tela()
     if achar_e_clicar(tela_popup, 'text', 'OK'):
-        aguardar_e_instalar(pacote_ug)
+        return aguardar_e_instalar(pacote_ug)
     else:
         print("⚠️ Pop-up 'OK' não encontrado. Tentando seguir mesmo assim...")
-        aguardar_e_instalar(pacote_ug)
+        return aguardar_e_instalar(pacote_ug)
 
 def update_clone(pacote_ug):
     print("\n🔄 Iniciando modo: UPDATE CLONE")
@@ -201,27 +181,27 @@ def update_clone(pacote_ug):
     print("✅ Confirmando no botão 'UPDATE'...")
     tela_popup2 = ler_tela()
     if achar_e_clicar(tela_popup2, 'text', 'UPDATE'):
-        aguardar_e_instalar(pacote_ug)
+        return aguardar_e_instalar(pacote_ug)
     else:
         print("⚠️ Botão 'UPDATE' não encontrado. Fluxo pode falhar.")
+        return False
 
 # ==========================================
-# MOTOR PRINCIPAL (CONTROLADO)
+# MOTOR PRINCIPAL (CONTROLADO PELO ORQUESTRADOR)
 # ==========================================
 
-def atualizar_status(status_atual):
-    caminho = os.path.join(os.path.dirname(__file__), ARQUIVO_STATUS)
-    with open(caminho, 'w') as f:
-        json.dump({"status": status_atual}, f)
-    print(f"📡 Status do sistema atualizado para: [{status_atual}]")
-
-def executar_ordem(modo="update"):
+def executar_ordem(modo, pacote_alvo):
+    """
+    Função principal acionada pelo Orchestrator.
+    :param modo: "clone_install" ou "update"
+    :param pacote_alvo: string do package (ex: "com.termux")
+    :return: Booleano (True para sucesso, False para falha)
+    """
     pacote_ug = "com.ugcloner.xfein"
     dpi_original = obter_dpi_atual()
     DPI_BOT = "380"
-
-    print(f"\n🔥 INICIANDO AUTOMAÇÃO UGCLONE (Modo: {modo.upper()}) 🔥")
-    atualizar_status("RODANDO_IMPORTANTE_MAX")
+    
+    sucesso_final = False
 
     try:
         desativar_play_protect()
@@ -233,30 +213,29 @@ def executar_ordem(modo="update"):
         executar_root(f"wm density {DPI_BOT}")
         time.sleep(2)
 
-        executar_root(f"am force-stop {pacote_ug}")
         executar_root(f"monkey -p {pacote_ug} -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1")
         time.sleep(4)
 
         tela_inicial = ler_tela()
-        apps_reais = raspar_meus_apps(tela_inicial)
-        if not apps_reais:
-            apps_reais = ["Drive", "Chrome", "YouTube", "Gmail", "Calendar"]
 
-        nome_app = random.choice(apps_reais)
-        print(f"📱 Alvo SEGURO da sua lista: {nome_app}")
-
+        print(f"🔍 Procurando pela lupa de pesquisa para injetar: '{pacote_alvo}'")
         if achar_e_clicar(tela_inicial, 'content-desc', 'Search apps'):
-            time.sleep(1)
-            nome_formatado = nome_app.replace(" ", "%s")
-            executar_root(f"input text {nome_formatado}")
-            time.sleep(1)
-            executar_root("input keyevent 66") 
             time.sleep(1.5)
+            
+            # Digita exatamente o pacote que veio do banco de dados/Discord
+            executar_root(f"input text {pacote_alvo}")
+            time.sleep(1)
+            executar_root("input keyevent 66") # ENTER
+            time.sleep(2)
 
             tela_pesquisa = ler_tela()
-            if achar_e_clicar(tela_pesquisa, 'text', nome_app, min_y=100):
+            
+            # Clica no primeiro item da lista abaixo do cabeçalho
+            if achar_e_clicar(tela_pesquisa, 'text', pacote_alvo, min_y=100) or clicar_no_centro("20 200 1000 350"):
                 time.sleep(3)
                 clicou_laranja = False
+                
+                # Procura agressivamente pelo botão de Start
                 for _ in range(3):
                     if achar_botao_laranja_padrao(ler_tela()):
                         clicou_laranja = True
@@ -265,30 +244,27 @@ def executar_ordem(modo="update"):
 
                 if clicou_laranja:
                     if modo == "clone_install":
-                        install_clone(pacote_ug)
+                        sucesso_final = install_clone(pacote_ug)
                     elif modo == "update":
-                        update_clone(pacote_ug)
+                        sucesso_final = update_clone(pacote_ug)
                 else:
                     print("❌ Não achei o botão laranja após tentativas.")
             else:
-                print(f"❌ Não achei o app '{nome_app}' na lista.")
+                print(f"❌ Não foi possível clicar no resultado da busca para '{pacote_alvo}'.")
         else:
-            print("❌ Lupa não encontrada.")
-
-        executar_root(f"am force-stop {pacote_ug}")
-        time.sleep(1)
-        return True
+            print("❌ Lupa de pesquisa não encontrada na interface.")
 
     except Exception as e:
-        print(f"❌ Erro crítico: {e}")
-        return False
+        print(f"❌ Erro crítico no fluxo de automação: {e}")
+        sucesso_final = False
 
     finally:
-        print("\n" + "="*60)
-        print("🛑 RESTAURAÇÃO DO SISTEMA INICIADA...")
-        print("="*60)
+        print("\n" + "-"*40)
+        print("🛑 INICIANDO RESTAURAÇÃO DO SISTEMA...")
+        print("-"*40)
         reativar_play_protect()
         reativar_teclado()
         executar_root(f"wm density {dpi_original}")
-        atualizar_status("LIVRE")
-        print("✅ Tudo de volta ao padrão. Sistema liberado para novas ordens!")
+        print("✅ Restauração concluída.")
+        
+    return sucesso_final
