@@ -62,9 +62,7 @@ def obter_nome_real(pacote):
     except Exception as e:
         print(f"⚠️ Erro ao ler apps_install.json: {e}")
         
-    # Plano B (Fallback): Tenta deduzir o nome se o arquivo não existir
     fallback = pacote.split('.')[-1].capitalize()
-    print(f"⚠️ Nome real não encontrado no BD. Usando fallback: {fallback}")
     return fallback
 
 # ==========================================
@@ -140,53 +138,100 @@ def achar_botao_laranja_padrao(xml_content):
         pass
     return False
 
+# ==========================================
+# FLUXOS DE CLONAGEM MÚLTIPLA E INTELIGENTE
+# ==========================================
+
+def limpar_apks_antigos(pacote_ug):
+    """Garante que a pasta cache esteja vazia antes da nova compilação."""
+    print("🧹 Limpando resíduos e APKs antigos do cache...")
+    executar_root(f"rm -f /data/data/{pacote_ug}/files/*.apk")
+
 def cacar_e_instalar_fantasma(pacote_ug):
-    print("\n🕵️ O APK FOI GERADO! Entrando na pasta secreta do UGClone...")
-    comando_busca = f"ls -t /data/data/{pacote_ug}/files/*.apk 2>/dev/null | head -n 1"
-    apk_alvo = executar_root(comando_busca)
+    print("\n🕵️ Procurando todos os APKs gerados na pasta secreta...")
+    time.sleep(2) # Respiro pro celular salvar tudo no disco
     
-    if apk_alvo and apk_alvo.endswith('.apk'):
-        print(f"🎯 ÚLTIMO APK GERADO ENCONTRADO: {apk_alvo}")
-        print("👻 Executando instalação invisível via Root...")
-        resultado = executar_root(f"pm install -r '{apk_alvo}'")
-        if "Success" in resultado:
-            print("✅ SUCESSO! O aplicativo foi instalado direto no sistema.")
-            return True
-        else:
-            print(f"⚠️ Falha na instalação silenciosa: {resultado}")
-            return False
-    else:
+    comando_busca = f"ls /data/data/{pacote_ug}/files/*.apk 2>/dev/null"
+    saida = executar_root(comando_busca)
+    
+    # Separa por linha e pega apenas arquivos válidos
+    apks_encontrados = [linha.strip() for linha in saida.split('\n') if linha.strip().endswith('.apk')]
+    
+    if not apks_encontrados:
         print("❌ Nenhum APK encontrado na pasta /files/.")
         return False
-
-# ==========================================
-# FLUXOS DE CLONAGEM (INSTALL & UPDATE)
-# ==========================================
+        
+    print(f"📦 Encontrados {len(apks_encontrados)} APK(s) prontos para injeção!")
+    sucesso_total = True
+    
+    # Motor de instalação em cadeia
+    for apk in apks_encontrados:
+        nome_arquivo = apk.split('/')[-1]
+        print(f"👻 Injetando no sistema: {nome_arquivo}...")
+        resultado = executar_root(f"pm install -r '{apk}'")
+        if "Success" in resultado:
+            print(f"✅ SUCESSO: Instalação fantasma concluída.")
+        else:
+            print(f"⚠️ FALHA ao instalar {nome_arquivo}: {resultado}")
+            sucesso_total = False
+            
+    return sucesso_total
 
 def aguardar_e_instalar(pacote_ug):
-    print("⏳ Aguardando a clonagem terminar (Procurando INSTALL APP)...")
+    print("⏳ Monitorando a compilação do UGClone...")
     instalou = False
-    for _ in range(25): # 50 segundos de tolerância
-        time.sleep(2)
+    
+    # 60 tentativas de 3 segundos = 3 minutos de timeout (ideal para clones pesados/múltiplos)
+    for _ in range(60): 
+        time.sleep(3)
         tela_clonando = ler_tela()
-        if tela_clonando and 'text="INSTALL APP"' in tela_clonando:
-            cacar_e_instalar_fantasma(pacote_ug)
-            instalou = True
-            break
-        sys.stdout.write(".")
+        if not tela_clonando: continue
+            
+        # ==========================================
+        # 🧠 EXTRAÇÃO INTELIGENTE DE PROGRESSO (REGEX)
+        # ==========================================
+        status_str = "Clonando aplicativo..."
+        
+        # Procura por padrões como: "Creating clone 1 of 2", "Criando clone 1 de 2"
+        match_etapa = re.search(r'text="[^"]*?(\d+)\s*(of|de)\s*(\d+)[^"]*"', tela_clonando, re.IGNORECASE)
+        # Procura por "66%"
+        match_pct = re.search(r'text="(\d+)%"', tela_clonando)
+        
+        if match_etapa:
+            atual, _, total = match_etapa.groups()
+            status_str = f"Gerando clone {atual} de {total}"
+        
+        if match_pct:
+            status_str += f" [{match_pct.group(1)}%]"
+            
+        sys.stdout.write(f"\r\033[K🔄 {status_str}")
         sys.stdout.flush()
+
+        # ==========================================
+        # 🎯 GATILHO DE TÉRMINO DINÂMICO
+        # Aceita: "INSTALL APP", "INSTALL APPS", "INSTALL ALL", "INSTALAR TUDO", etc.
+        # ==========================================
+        if re.search(r'text=".*?(INSTALL|INSTALAR).*?(APP|ALL|TUDO).*?"', tela_clonando, re.IGNORECASE):
+            print("\n✨ O motor de clonagem indicou término do processo!")
+            instalou = cacar_e_instalar_fantasma(pacote_ug)
+            break
+
     if not instalou:
-        print("\n⚠️ O processo de clonagem demorou demais ou falhou.")
+        print("\n⚠️ O processo atingiu o limite de tempo (Timeout) ou não gerou botão de instalação.")
     return instalou
 
 def install_clone(pacote_ug):
     print("\n📦 Iniciando modo: INSTALL CLONE")
     time.sleep(2)
     tela_popup = ler_tela()
+    
+    # Antes de apertar OK e começar o show, ele limpa a pasta de saída!
     if achar_e_clicar(tela_popup, 'text', 'OK'):
+        limpar_apks_antigos(pacote_ug)
         return aguardar_e_instalar(pacote_ug)
     else:
-        print("⚠️ Pop-up 'OK' não encontrado. Tentando seguir mesmo assim...")
+        print("⚠️ Pop-up 'OK' não encontrado. Limpando cache e seguindo...")
+        limpar_apks_antigos(pacote_ug)
         return aguardar_e_instalar(pacote_ug)
 
 def update_clone(pacote_ug):
@@ -196,9 +241,11 @@ def update_clone(pacote_ug):
     print("✅ Marcando 'Safe update'...")
     achar_e_clicar(tela_popup, 'text', 'Safe update')
     time.sleep(1)
+    
     print("✅ Confirmando no botão 'UPDATE'...")
     tela_popup2 = ler_tela()
     if achar_e_clicar(tela_popup2, 'text', 'UPDATE'):
+        limpar_apks_antigos(pacote_ug)
         return aguardar_e_instalar(pacote_ug)
     else:
         print("⚠️ Botão 'UPDATE' não encontrado. Fluxo pode falhar.")
@@ -235,29 +282,24 @@ def executar_ordem(modo, pacote_alvo):
         time.sleep(4)
 
         tela_inicial = ler_tela()
-        
-        # Converte "com.nome" para o nome humano legível
         nome_real = obter_nome_real(pacote_alvo)
 
         print(f"🔍 Procurando pela lupa de pesquisa para injetar: '{nome_real}'")
         if achar_e_clicar(tela_inicial, 'content-desc', 'Search apps'):
             time.sleep(1.5)
             
-            # Digita exatamente o NOME REAL do app
             nome_formatado = nome_real.replace(" ", "%s")
             executar_root(f"input text {nome_formatado}")
             time.sleep(1)
-            executar_root("input keyevent 66") # ENTER
+            executar_root("input keyevent 66") 
             time.sleep(2)
 
             tela_pesquisa = ler_tela()
             
-            # Clica no resultado da busca baseado no NOME REAL
             if achar_e_clicar(tela_pesquisa, 'text', nome_real, min_y=100) or clicar_no_centro("20 200 1000 350"):
                 time.sleep(3)
                 clicou_laranja = False
                 
-                # Procura agressivamente pelo botão de Start
                 for _ in range(3):
                     if achar_botao_laranja_padrao(ler_tela()):
                         clicou_laranja = True
