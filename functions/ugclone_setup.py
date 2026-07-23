@@ -92,7 +92,11 @@ def limpar_texto(texto):
         return ""
     return re.sub(r'\s+', ' ', texto).strip()
 
-def achar_e_clicar(xml_content, atributo, valor_procurado, min_y=0):
+def achar_e_clicar(xml_content, atributo, valor_procurado, min_y=0, exato=False):
+    """
+    Se 'exato=True', só clica se a palavra for exatamente igual ao botão.
+    Isso impede que ele clique na palavra "TikT[ok]" quando procura o botão "[OK]".
+    """
     if not xml_content: return False
     valor_procurado_limpo = limpar_texto(valor_procurado).lower()
     try:
@@ -100,7 +104,15 @@ def achar_e_clicar(xml_content, atributo, valor_procurado, min_y=0):
         for node in root.iter('node'):
             valor_node = node.attrib.get(atributo, '')
             valor_node_limpo = limpar_texto(valor_node).lower()
-            if valor_procurado_limpo == valor_node_limpo or valor_procurado_limpo in valor_node_limpo:
+            
+            # Lógica de Busca Exata ou Parcial
+            condicao_match = False
+            if exato:
+                condicao_match = (valor_procurado_limpo == valor_node_limpo)
+            else:
+                condicao_match = (valor_procurado_limpo == valor_node_limpo or valor_procurado_limpo in valor_node_limpo)
+            
+            if condicao_match:
                 bounds = node.attrib.get('bounds')
                 if bounds:
                     coords = re.findall(r'\d+', bounds)
@@ -181,20 +193,15 @@ def aguardar_e_instalar(pacote_ug):
     print("⏳ Monitorando a compilação do UGClone...")
     instalou = False
     
-    # 60 tentativas de 3 segundos = 3 minutos de timeout (ideal para clones pesados/múltiplos)
+    # 60 tentativas de 3 segundos = 3 minutos de timeout
     for _ in range(60): 
         time.sleep(3)
         tela_clonando = ler_tela()
         if not tela_clonando: continue
             
-        # ==========================================
-        # 🧠 EXTRAÇÃO INTELIGENTE DE PROGRESSO (REGEX)
-        # ==========================================
         status_str = "Clonando aplicativo..."
         
-        # Procura por padrões como: "Creating clone 1 of 2", "Criando clone 1 de 2"
         match_etapa = re.search(r'text="[^"]*?(\d+)\s*(of|de)\s*(\d+)[^"]*"', tela_clonando, re.IGNORECASE)
-        # Procura por "66%"
         match_pct = re.search(r'text="(\d+)%"', tela_clonando)
         
         if match_etapa:
@@ -207,10 +214,7 @@ def aguardar_e_instalar(pacote_ug):
         sys.stdout.write(f"\r\033[K🔄 {status_str}")
         sys.stdout.flush()
 
-        # ==========================================
-        # 🎯 GATILHO DE TÉRMINO DINÂMICO
-        # Aceita: "INSTALL APP", "INSTALL APPS", "INSTALL ALL", "INSTALAR TUDO", etc.
-        # ==========================================
+        # GATILHO DE TÉRMINO DINÂMICO
         if re.search(r'text=".*?(INSTALL|INSTALAR).*?(APP|ALL|TUDO).*?"', tela_clonando, re.IGNORECASE):
             print("\n✨ O motor de clonagem indicou término do processo!")
             instalou = cacar_e_instalar_fantasma(pacote_ug)
@@ -225,13 +229,14 @@ def install_clone(pacote_ug):
     time.sleep(2)
     tela_popup = ler_tela()
     
-    # Antes de apertar OK e começar o show, ele limpa a pasta de saída!
-    if achar_e_clicar(tela_popup, 'text', 'OK'):
-        limpar_apks_antigos(pacote_ug)
+    # Limpa antes para não sobrar lixo de instalações velhas
+    limpar_apks_antigos(pacote_ug)
+    
+    # Usando exato=True para procurar SOMENTE a palavra "OK" isolada
+    if achar_e_clicar(tela_popup, 'text', 'OK', exato=True):
         return aguardar_e_instalar(pacote_ug)
     else:
-        print("⚠️ Pop-up 'OK' não encontrado. Limpando cache e seguindo...")
-        limpar_apks_antigos(pacote_ug)
+        print("⚠️ Pop-up 'OK' não encontrado. Tentando seguir...")
         return aguardar_e_instalar(pacote_ug)
 
 def update_clone(pacote_ug):
@@ -239,12 +244,15 @@ def update_clone(pacote_ug):
     time.sleep(2)
     tela_popup = ler_tela()
     print("✅ Marcando 'Safe update'...")
-    achar_e_clicar(tela_popup, 'text', 'Safe update')
+    # Safe update pode ter acompanhamentos tipo "(recomendado)", então exato=False
+    achar_e_clicar(tela_popup, 'text', 'Safe update', exato=False)
     time.sleep(1)
     
     print("✅ Confirmando no botão 'UPDATE'...")
     tela_popup2 = ler_tela()
-    if achar_e_clicar(tela_popup2, 'text', 'UPDATE'):
+    
+    # Usando exato=True para não confundir "UPDATE" com "Safe Update"
+    if achar_e_clicar(tela_popup2, 'text', 'UPDATE', exato=True):
         limpar_apks_antigos(pacote_ug)
         return aguardar_e_instalar(pacote_ug)
     else:
@@ -256,12 +264,6 @@ def update_clone(pacote_ug):
 # ==========================================
 
 def executar_ordem(modo, pacote_alvo):
-    """
-    Função principal acionada pelo Orchestrator.
-    :param modo: "clone_install" ou "update"
-    :param pacote_alvo: string do package (ex: "com.termux")
-    :return: Booleano (True para sucesso, False para falha)
-    """
     pacote_ug = "com.ugcloner.xfein"
     dpi_original = obter_dpi_atual()
     DPI_BOT = "380"
