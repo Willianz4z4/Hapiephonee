@@ -41,14 +41,18 @@ def force_android_permissions():
         write_log(f"❌ Permission error: {e}")
 
 def setup_termux_bashrc():
-    write_log("Updating .bashrc startup script with Smart Search...")
+    write_log("Updating .bashrc startup script with Process Scanner...")
     spinner = Halo(text='Configuring Termux Smart Startup...', spinner='dots')
     spinner.start()
     bashrc_path = os.path.expanduser("~/.bashrc")
     
+    # Nova lógica: Verifica processos ativos (pgrep) ao invés de variáveis locais
     startup_code = """
-if [ -z "$EVO_STARTED" ]; then
-    export EVO_STARTED=1
+# Verifica se já existe um processo do bot rodando no sistema
+if pgrep -f "python import.py" > /dev/null; then
+    echo "🤖 Hapiephone Bot já está rodando perfeitamente em outra aba/sessão!"
+    echo "👉 Terminal livre para uso."
+else
     clear
     while true; do
         echo "🔍 Procurando o arquivo import.py pelo Termux..."
@@ -73,8 +77,8 @@ fi
     try:
         with open(bashrc_path, "w") as f:
             f.write(startup_code)
-        spinner.succeed(".bashrc updated with Smart Search!")
-        write_log("✅ .bashrc updated with Smart Search!")
+        spinner.succeed(".bashrc updated with Process Scanner!")
+        write_log("✅ .bashrc updated with Process Scanner!")
     except Exception as e:
         spinner.fail(f"Bashrc error: {e}")
 
@@ -130,11 +134,8 @@ su -c 'am start --user 0 -n com.termux/com.termux.app.TermuxActivity'
             f.write(boot_sh)
         os.system(f"chmod +x {script_path}")
         
-        # Abre o app para garantir que o sistema registre
         os.system("su -c 'am start -n com.termux.boot/com.termux.boot.BootActivity > /dev/null 2>&1'")
         
-        # 🔥 ESTRATÉGIA ANTI-LAG: O "Loop Teimoso"
-        # Tenta esconder o app 4 vezes com intervalo de 3 segundos
         write_log("Iniciando rotina anti-lag para ocultar o icone...")
         for tentativa in range(4):
             time.sleep(3)
