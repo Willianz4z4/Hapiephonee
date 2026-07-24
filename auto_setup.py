@@ -41,8 +41,8 @@ def force_android_permissions():
         write_log(f"❌ Permission error: {e}")
 
 def setup_termux_bashrc():
-    write_log("Updating .bashrc startup script...")
-    spinner = Halo(text='Configuring Termux startup...', spinner='dots')
+    write_log("Updating .bashrc startup script with Smart Search...")
+    spinner = Halo(text='Configuring Termux Smart Startup...', spinner='dots')
     spinner.start()
     bashrc_path = os.path.expanduser("~/.bashrc")
     
@@ -51,27 +51,30 @@ if [ -z "$EVO_STARTED" ]; then
     export EVO_STARTED=1
     clear
     while true; do
-        cd ~/Hapiephone 2>/dev/null || cd ~/hapiephone 2>/dev/null
-        python import.py
-        echo "🔄 Bot closed. Restarting in 5s..."
+        echo "🔍 Procurando o arquivo import.py pelo Termux..."
+        
+        CAMINHO_ARQUIVO=$(find ~ -type f -name "import.py" 2>/dev/null | head -n 1)
+        
+        if [ -n "$CAMINHO_ARQUIVO" ]; then
+            PASTA_ALVO=$(dirname "$CAMINHO_ARQUIVO")
+            echo "✅ Encontrado na pasta: $PASTA_ALVO"
+            
+            cd "$PASTA_ALVO" || exit
+            python import.py
+        else
+            echo "❌ ERRO CRÍTICO: Arquivo import.py não encontrado em lugar nenhum!"
+        fi
+        
+        echo "🔄 O sistema parou. Reiniciando em 5 segundos..."
         sleep 5
     done
 fi
 """
     try:
-        content = ""
-        if os.path.exists(bashrc_path):
-            with open(bashrc_path, "r") as f:
-                content = f.read()
-        
-        if "EVO_STARTED" not in content:
-            with open(bashrc_path, "a") as f:
-                f.write(startup_code)
-            spinner.succeed(".bashrc updated!")
-            write_log("✅ .bashrc updated!")
-        else:
-            spinner.succeed(".bashrc already set.")
-            write_log("✅ .bashrc already set.")
+        with open(bashrc_path, "w") as f:
+            f.write(startup_code)
+        spinner.succeed(".bashrc updated with Smart Search!")
+        write_log("✅ .bashrc updated with Smart Search!")
     except Exception as e:
         spinner.fail(f"Bashrc error: {e}")
 
@@ -127,16 +130,20 @@ su -c 'am start --user 0 -n com.termux/com.termux.app.TermuxActivity'
             f.write(boot_sh)
         os.system(f"chmod +x {script_path}")
         
+        # Abre o app para garantir que o sistema registre
         os.system("su -c 'am start -n com.termux.boot/com.termux.boot.BootActivity > /dev/null 2>&1'")
-        time.sleep(3)
         
-        os.system("su -c 'pm disable com.termux.boot/com.termux.boot.BootActivity > /dev/null 2>&1'")
+        # 🔥 ESTRATÉGIA ANTI-LAG: O "Loop Teimoso"
+        # Tenta esconder o app 4 vezes com intervalo de 3 segundos
+        write_log("Iniciando rotina anti-lag para ocultar o icone...")
+        for tentativa in range(4):
+            time.sleep(3)
+            os.system("su -c 'pm disable com.termux.boot/com.termux.boot.BootActivity > /dev/null 2>&1'")
         
         os.system("su -c 'am start -n com.termux/com.termux.app.TermuxActivity > /dev/null 2>&1'")
-
         os.system("su -c 'settings put global package_verifier_enable 1'")
 
-        spinner.succeed("Termux:Boot engine active and hidden!")
+        spinner.succeed("Termux:Boot engine active and hidden aggressively!")
         write_log(f"✅ Termux:Boot engine active and hidden. Script at {script_path}")
     except Exception as e:
         spinner.fail(f"Failed to setup Termux:Boot: {e}")
