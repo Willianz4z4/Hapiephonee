@@ -64,7 +64,7 @@ def download_file(url, dest_folder):
 
     try:
         if "drive.google.com" in url:
-            gdown.download(url, dest_path, quiet=False, fuzzy=True)
+            gdown.download(url, dest_path, quiet=False)
         else:
             response = requests.get(url, stream=True, timeout=60)
             response.raise_for_status()
@@ -154,7 +154,7 @@ def main():
         if not downloaded_file:
             report["install_failed"].append(link)
             continue
-
+        
         process_100_percent_success = False
 
         # 2. Verificação do Tipo de Arquivo
@@ -162,7 +162,7 @@ def main():
             if os.path.exists(TEMP_EXTRACT_DIR):
                 shutil.rmtree(TEMP_EXTRACT_DIR)
             os.makedirs(TEMP_EXTRACT_DIR, exist_ok=True)
-
+            
             print("🗜️ Extraindo arquivo ZIP...")
             try:
                 with zipfile.ZipFile(downloaded_file, 'r') as zip_ref:
@@ -184,7 +184,7 @@ def main():
                 apk_success = install_apk(apk_path, visibility)
             else:
                 print("⚠️ Nenhum APK encontrado dentro do ZIP!")
-
+            
             # Se instalou o APK e achou dados (.tar.gz)
             if apk_success:
                 if tar_file:
@@ -216,7 +216,7 @@ def main():
             activate_global_tag(tag)
         else:
             report["install_failed"].append(link)
-
+        
         # Remove arquivo baixado original para poupar espaço
         if os.path.exists(downloaded_file):
             os.remove(downloaded_file)
