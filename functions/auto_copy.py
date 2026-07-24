@@ -112,7 +112,7 @@ def setup_macrodroid(vision=False):
         subprocess.run('su -c "input keyevent 4"', shell=True)
         time.sleep(1)
 
-    subprocess.run('su -c "am start --activity-brought-to-front com.termux/.TermuxActivity"', shell=True)
+    subprocess.run('su -c "am start --activity-brought-to-front com.termux/com.termux.app.TermuxActivity"', shell=True)
     subprocess.run(f"touch {FLAG_GHOST}", shell=True)
 
     if vision == False:
@@ -168,7 +168,7 @@ def download_and_inject_data(data_url):
 
 def force_focus_and_read():
     try:
-        subprocess.run('su -c "am start --activity-brought-to-front com.termux/.TermuxActivity" 2>/dev/null', shell=True)
+        subprocess.run('su -c "am start --activity-brought-to-front com.termux/com.termux.app.TermuxActivity" 2>/dev/null', shell=True)
         time.sleep(0.4)
         text = subprocess.check_output("termux-clipboard-get", shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
         subprocess.run('su -c "input keyevent 4" 2>/dev/null', shell=True)
