@@ -28,10 +28,6 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # 🛠️ FUNÇÃO CHAVE: ATIVAÇÃO DINÂMICA GLOBAL
 # ==========================================
 def activate_global_tag(tag):
-    """
-    Só é chamada no FINAL de 100% do processo.
-    Transforma qualquer string (autocopy, autopush, etc) em True.
-    """
     if not tag or str(tag).strip().lower() in ["", "none", "null"]:
         return
 
@@ -56,10 +52,13 @@ def activate_global_tag(tag):
 # ==========================================
 # 📥 FUNÇÕES DE DOWNLOAD E EXTRAÇÃO
 # ==========================================
-def download_file(url, dest_folder):
+def download_file(url, dest_folder, extras=None):
+    if extras is None: extras = {}
     os.makedirs(dest_folder, exist_ok=True)
-    parsed = urlparse(url)
-    filename = os.path.basename(parsed.path) or f"payload_{int(time.time())}.zip"
+    
+    # 🚀 CORREÇÃO: Força a extensão correta baseada na ordem do servidor!
+    ext = ".zip" if extras.get("is_zip") else ".apk"
+    filename = f"payload_{int(time.time())}{ext}"
     dest_path = os.path.join(dest_folder, filename)
 
     try:
@@ -82,10 +81,7 @@ def install_apk(apk_path, visibility):
         result = subprocess.run(f"su -c 'pm install -r \"{apk_path}\"'", shell=True, capture_output=True, text=True)
         if "Success" in result.stdout:
             print("✅ APK Instalado com sucesso!")
-            # Opcional: Lógica do pm hide caso a visibilidade seja "system"
             if str(visibility).lower() == "system":
-                # Como não temos o nome do pacote exato aqui, uma versão avançada usaria aapt.
-                # Aqui consideramos o comando básico.
                 print("👻 Comando para ocultar o app registrado (Modo System).")
             return True
         else:
@@ -104,8 +100,6 @@ def run_data_injection(tar_file):
         return False
 
     try:
-        # Chama o apps_data.py como um operário separado
-        # Se ele rodar e sair com código 0, deu certo. Se sair com erro (Crash), check=True ativa o Except.
         subprocess.run([sys.executable, apps_data_script, "--file", tar_file], check=True)
         print("✅ Dados injetados com maestria!")
         return True
@@ -149,15 +143,14 @@ def main():
         link, visibility, tag, extras = app_data
         print(f"\n🚀 Iniciando processamento do link: {link[:40]}...")
 
-        # 1. Download do Pacote
-        downloaded_file = download_file(link, DATA_DIR)
+        # 🚀 CORREÇÃO: Passando 'extras' para o download_file saber a extensão
+        downloaded_file = download_file(link, DATA_DIR, extras)
         if not downloaded_file:
             report["install_failed"].append(link)
             continue
         
         process_100_percent_success = False
 
-        # 2. Verificação do Tipo de Arquivo
         if downloaded_file.endswith(".zip"):
             if os.path.exists(TEMP_EXTRACT_DIR):
                 shutil.rmtree(TEMP_EXTRACT_DIR)
@@ -172,12 +165,10 @@ def main():
                 report["install_failed"].append(link)
                 continue
 
-            # Varrendo o que tem dentro do ZIP
             arquivos_extraidos = os.listdir(TEMP_EXTRACT_DIR)
             apk_file = next((f for f in arquivos_extraidos if f.endswith(".apk")), None)
             tar_file = next((f for f in arquivos_extraidos if f.endswith(".tar.gz")), None)
 
-            # Instala o APK primeiro
             apk_success = False
             if apk_file:
                 apk_path = os.path.join(TEMP_EXTRACT_DIR, apk_file)
@@ -185,49 +176,38 @@ def main():
             else:
                 print("⚠️ Nenhum APK encontrado dentro do ZIP!")
             
-            # Se instalou o APK e achou dados (.tar.gz)
             if apk_success:
                 if tar_file:
                     tar_path = os.path.join(TEMP_EXTRACT_DIR, tar_file)
-                    # Delega a injeção ao apps_data.py e pega o resultado (Verdadeiro ou Falso)
                     injection_success = run_data_injection(tar_path)
-
                     if injection_success:
                         process_100_percent_success = True
                     else:
                         print("⚠️ O APK instalou, mas a injeção FALHOU. A tag global não será ativada.")
                 else:
-                    # Tinha APK, mas não tinha dados extra. Então o ZIP acabou com 100% de sucesso.
                     process_100_percent_success = True
 
-            # Limpeza
             shutil.rmtree(TEMP_EXTRACT_DIR, ignore_errors=True)
 
         elif downloaded_file.endswith(".apk"):
-            # É só um APK direto, não tem dados
             if install_apk(downloaded_file, visibility):
                 process_100_percent_success = True
 
-        # 3. VEREDITO FINAL (A TRAVA DE SEGURANÇA DA TAG)
         if process_100_percent_success:
             report["install_success"].append(link)
             print("🌟 Processo finalizado com SUCESSO ABSOLUTO.")
-            # 🔥 AQUI ACONTECE A MÁGICA: Só liga se fechou os 100%!
             activate_global_tag(tag)
         else:
             report["install_failed"].append(link)
         
-        # Remove arquivo baixado original para poupar espaço
         if os.path.exists(downloaded_file):
             os.remove(downloaded_file)
 
-    # 4. Salvar Relatório para o webhook mandar pro Servidor
     try:
         with open(REPORT_FILE, "w") as f:
             json.dump(report, f)
     except: pass
 
-    # Limpa o payload processado
     if os.path.exists(args.file):
         os.remove(args.file)
 
