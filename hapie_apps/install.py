@@ -56,10 +56,9 @@ def download_file(url, dest_folder, extras=None):
     if extras is None: extras = {}
     os.makedirs(dest_folder, exist_ok=True)
     
-    # 🚀 CORREÇÃO: Força a extensão correta baseada na ordem do servidor!
-    ext = ".zip" if extras.get("is_zip") else ".apk"
-    filename = f"payload_{int(time.time())}{ext}"
-    dest_path = os.path.join(dest_folder, filename)
+    # Baixa com nome temporário para não adivinhar errado
+    temp_filename = f"payload_{int(time.time())}_temp"
+    dest_path = os.path.join(dest_folder, temp_filename)
 
     try:
         if "drive.google.com" in url:
@@ -70,7 +69,25 @@ def download_file(url, dest_folder, extras=None):
             with open(dest_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
-        return dest_path
+                    
+        # 🕵️ DETETIVE DE ARQUIVO: Olha o que tem dentro antes de nomear
+        ext = ".apk" # Fallback
+        try:
+            if zipfile.is_zipfile(dest_path):
+                with zipfile.ZipFile(dest_path, 'r') as z:
+                    # Se tiver o manifesto na raiz, é um APK real
+                    if "AndroidManifest.xml" in z.namelist():
+                        ext = ".apk"
+                    else:
+                        ext = ".zip" # Não tem manifesto, então é um pacote ZIP com App + Dados
+        except Exception as e:
+            pass # Se der erro na leitura, mantém como .apk e deixa o sistema tentar
+            
+        final_path = dest_path.replace("_temp", ext)
+        os.rename(dest_path, final_path)
+        print(f"🔍 Detetive de arquivo detectou que isso é um pacote: {ext.upper()}")
+        
+        return final_path
     except Exception as e:
         print(f"❌ Erro ao baixar arquivo: {e}")
         return None
@@ -78,6 +95,7 @@ def download_file(url, dest_folder, extras=None):
 def install_apk(apk_path, visibility):
     print(f"📦 Instalando APK: {os.path.basename(apk_path)}")
     try:
+        # Instalação limpa via Root
         result = subprocess.run(f"su -c 'pm install -r \"{apk_path}\"'", shell=True, capture_output=True, text=True)
         if "Success" in result.stdout:
             print("✅ APK Instalado com sucesso!")
@@ -92,7 +110,7 @@ def install_apk(apk_path, visibility):
         return False
 
 def run_data_injection(tar_file):
-    print(f"💉 Dados encontrados ({os.path.basename(tar_file)}). Iniciando injeção profunda...")
+    print(f"💉 Dados encontrados ({os.path.basename(tar_file)}). Enviando para o apps_data.py injetar no data user...")
     apps_data_script = os.path.join(HAPIE_APPS_DIR, "apps_data.py")
 
     if not os.path.exists(apps_data_script):
@@ -100,8 +118,9 @@ def run_data_injection(tar_file):
         return False
 
     try:
+        # Aciona o script que cuida da injeção na partição data
         subprocess.run([sys.executable, apps_data_script, "--file", tar_file], check=True)
-        print("✅ Dados injetados com maestria!")
+        print("✅ Dados injetados com maestria no data user!")
         return True
     except subprocess.CalledProcessError:
         print("❌ apps_data.py falhou ao injetar os dados.")
@@ -143,7 +162,7 @@ def main():
         link, visibility, tag, extras = app_data
         print(f"\n🚀 Iniciando processamento do link: {link[:40]}...")
 
-        # 🚀 CORREÇÃO: Passando 'extras' para o download_file saber a extensão
+        # 1. Download
         downloaded_file = download_file(link, DATA_DIR, extras)
         if not downloaded_file:
             report["install_failed"].append(link)
@@ -151,12 +170,13 @@ def main():
         
         process_100_percent_success = False
 
+        # 2. Roteamento (Pacote ZIP com Dados vs APK Simples)
         if downloaded_file.endswith(".zip"):
             if os.path.exists(TEMP_EXTRACT_DIR):
                 shutil.rmtree(TEMP_EXTRACT_DIR)
             os.makedirs(TEMP_EXTRACT_DIR, exist_ok=True)
             
-            print("🗜️ Extraindo arquivo ZIP...")
+            print("🗜️ Extraindo arquivo ZIP (Separando APK e Dados)...")
             try:
                 with zipfile.ZipFile(downloaded_file, 'r') as zip_ref:
                     zip_ref.extractall(TEMP_EXTRACT_DIR)
@@ -170,16 +190,20 @@ def main():
             tar_file = next((f for f in arquivos_extraidos if f.endswith(".tar.gz")), None)
 
             apk_success = False
+            
+            # Passo 2A: Instala o App
             if apk_file:
                 apk_path = os.path.join(TEMP_EXTRACT_DIR, apk_file)
                 apk_success = install_apk(apk_path, visibility)
             else:
                 print("⚠️ Nenhum APK encontrado dentro do ZIP!")
             
+            # Passo 2B: Se instalou com sucesso, injeta os dados
             if apk_success:
                 if tar_file:
                     tar_path = os.path.join(TEMP_EXTRACT_DIR, tar_file)
                     injection_success = run_data_injection(tar_path)
+                    
                     if injection_success:
                         process_100_percent_success = True
                     else:
@@ -193,6 +217,7 @@ def main():
             if install_apk(downloaded_file, visibility):
                 process_100_percent_success = True
 
+        # 3. Finalização
         if process_100_percent_success:
             report["install_success"].append(link)
             print("🌟 Processo finalizado com SUCESSO ABSOLUTO.")
