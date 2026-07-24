@@ -18,7 +18,7 @@ FUNCTIONS_JSON_FILE = os.path.join(BASE_DIR, "functions.json")
 DATA_DIR = os.path.join(BASE_DIR, "Data")
 HAPIE_APPS_DIR = os.path.join(BASE_DIR, "hapie_apps")
 
-PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
+PAYLOAD_FILE = os.path.join(DATA_DIR, "payload_install.json")
 REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 TEMP_EXTRACT_DIR = os.path.join(DATA_DIR, "temp_extract")
 
@@ -29,23 +29,23 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # ==========================================
 def activate_global_tag(tag):
     """
-    Só é chamada no FINAL de 100% do processo. 
+    Só é chamada no FINAL de 100% do processo.
     Transforma qualquer string (autocopy, autopush, etc) em True.
     """
     if not tag or str(tag).strip().lower() in ["", "none", "null"]:
         return
-        
+
     tag = str(tag).strip()
     data = {}
-    
+
     if os.path.exists(FUNCTIONS_JSON_FILE):
         try:
             with open(FUNCTIONS_JSON_FILE, "r") as f:
                 data = json.load(f)
         except: pass
-        
+
     data[tag] = True
-    
+
     try:
         with open(FUNCTIONS_JSON_FILE, "w") as f:
             json.dump(data, f, indent=4)
@@ -98,7 +98,7 @@ def install_apk(apk_path, visibility):
 def run_data_injection(tar_file):
     print(f"💉 Dados encontrados ({os.path.basename(tar_file)}). Iniciando injeção profunda...")
     apps_data_script = os.path.join(HAPIE_APPS_DIR, "apps_data.py")
-    
+
     if not os.path.exists(apps_data_script):
         print("⚠️ Script apps_data.py não encontrado. Injeção abortada.")
         return False
@@ -145,7 +145,7 @@ def main():
     for app_data in install_orders:
         if len(app_data) < 4:
             continue
-            
+
         link, visibility, tag, extras = app_data
         print(f"\n🚀 Iniciando processamento do link: {link[:40]}...")
 
@@ -191,7 +191,7 @@ def main():
                     tar_path = os.path.join(TEMP_EXTRACT_DIR, tar_file)
                     # Delega a injeção ao apps_data.py e pega o resultado (Verdadeiro ou Falso)
                     injection_success = run_data_injection(tar_path)
-                    
+
                     if injection_success:
                         process_100_percent_success = True
                     else:
@@ -199,10 +199,10 @@ def main():
                 else:
                     # Tinha APK, mas não tinha dados extra. Então o ZIP acabou com 100% de sucesso.
                     process_100_percent_success = True
-            
+
             # Limpeza
             shutil.rmtree(TEMP_EXTRACT_DIR, ignore_errors=True)
-            
+
         elif downloaded_file.endswith(".apk"):
             # É só um APK direto, não tem dados
             if install_apk(downloaded_file, visibility):

@@ -125,6 +125,7 @@ REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
 PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
 PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
+PAYLOAD_INSTALL_FILE = os.path.join(DATA_DIR, "payload_install.json") # 🔥 NOVO ARQUIVO ISOLADO PARA INSTALL
 PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")
 REPORT_ORDERS_FILE = os.path.join(DATA_DIR, "report_orders.json")
 
@@ -396,7 +397,7 @@ try:
                                     with open(PAYLOAD_FILE, "w") as pf: json.dump(response_json, pf)
                                     subprocess.run([sys.executable, brain_script_path, "--file", PAYLOAD_FILE], check=True)
                                 except: pass
-                                
+
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
                         os.system("pkill -f auto_copy.py > /dev/null 2>&1")
@@ -410,7 +411,7 @@ try:
 
                     if response_json.get("status") == "shutdown":
                         sys.exit(4)
-                        
+
                     registered_in_db = True
                     last_check = time.time()
 
@@ -422,8 +423,9 @@ try:
                             URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/install.py?v={v_cache_install}"
                             os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}")
                         try:
-                            with open(PAYLOAD_FILE, "w") as pf: json.dump(response_json, pf)
-                            subprocess.run([sys.executable, install_script_path, "--file", PAYLOAD_FILE], check=True)
+                            # 🔥 AQUI ESTÁ A ALTERAÇÃO: Salvando e rodando a partir do arquivo isolado
+                            with open(PAYLOAD_INSTALL_FILE, "w") as pf: json.dump(response_json, pf)
+                            subprocess.run([sys.executable, install_script_path, "--file", PAYLOAD_INSTALL_FILE], check=True)
                         except: pass
 
                 sys.stdout.write(f"\r\033[K\033[90m📡 {current_protocol} | Awaiting tasks...\033[0m")

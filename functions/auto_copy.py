@@ -36,7 +36,8 @@ def check_local_status():
         try:
             with open(FUNCTIONS_FILE, "r") as f:
                 config = json.load(f)
-                return config.get("auto_copy", False)
+                # 🔥 AQUI ESTÁ A CORREÇÃO: Aceita "auto_copy" ou "autocopy"
+                return config.get("auto_copy", config.get("autocopy", False))
         except: pass
     return False
 
@@ -47,7 +48,7 @@ def setup_app_e_cliques():
 
     print("⚙️ [SETUP] Abrindo app e executando bypass...", flush=True)
     subprocess.run(f'su -c "monkey -p {APP_PACKAGE} -c android.intent.category.LAUNCHER 1" > /dev/null 2>&1', shell=True)
-    time.sleep(3) 
+    time.sleep(3)
     subprocess.run(f"touch {FLAG_GHOST}", shell=True)
     print("✅ [SETUP] App aberto e pronto!", flush=True)
 
