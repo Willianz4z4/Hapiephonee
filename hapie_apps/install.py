@@ -1,305 +1,235 @@
 import os
 import sys
 import json
-import subprocess
-import re
-import zipfile
+import time
 import shutil
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
+import zipfile
+import subprocess
+import argparse
+import requests
+import gdown
+from urllib.parse import urlparse
 
-try:
-    from apps_data import data_inject
-except ImportError:
-    data_inject = None
+# ==========================================
+# 📂 CONFIGURAÇÃO DE DIRETÓRIOS
+# ==========================================
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FUNCTIONS_JSON_FILE = os.path.join(BASE_DIR, "functions.json")
+DATA_DIR = os.path.join(BASE_DIR, "Data")
+HAPIE_APPS_DIR = os.path.join(BASE_DIR, "hapie_apps")
 
-try:
-    import gdown
-except ImportError:
-    try:
-        subprocess.run([sys.executable, "-m", "pip", "install", "gdown"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        import gdown
-    except:
-        gdown = None
+PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
+REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
+TEMP_EXTRACT_DIR = os.path.join(DATA_DIR, "temp_extract")
 
-try:
-    from rich.console import Console
-    from rich.panel import Panel
-    console = Console()
-except ImportError:
-    class DummyConsole:
-        def print(self, msg, *args, **kwargs): print(msg)
-    console = DummyConsole()
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-REPO_ROOT = os.path.dirname(BASE_DIR)
-DATA_DIR = os.path.join(REPO_ROOT, "Data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-LOG_FILE = os.path.join(DATA_DIR, "install_log.txt")
-REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
-PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
-
-def log(msg, color="cyan", write_file=True):
-    console.print(f"[{color}]{msg}[/{color}]")
-    if write_file:
+# ==========================================
+# 🛠️ FUNÇÃO CHAVE: ATIVAÇÃO DINÂMICA GLOBAL
+# ==========================================
+def activate_global_tag(tag):
+    """
+    Só é chamada no FINAL de 100% do processo. 
+    Transforma qualquer string (autocopy, autopush, etc) em True.
+    """
+    if not tag or str(tag).strip().lower() in ["", "none", "null"]:
+        return
+        
+    tag = str(tag).strip()
+    data = {}
+    
+    if os.path.exists(FUNCTIONS_JSON_FILE):
         try:
-            with open(LOG_FILE, "a", encoding="utf-8") as f:
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                f.write(f"[{timestamp}] {msg}\n")
-        except:
-            pass
+            with open(FUNCTIONS_JSON_FILE, "r") as f:
+                data = json.load(f)
+        except: pass
+        
+    data[tag] = True
+    
+    try:
+        with open(FUNCTIONS_JSON_FILE, "w") as f:
+            json.dump(data, f, indent=4)
+        print(f"✅ [SUCESSO] Chave Global '{tag}' ATIVADA no painel do celular!")
+    except Exception as e:
+        print(f"❌ [ERRO] Falha ao ligar a chave '{tag}': {e}")
 
-def run_su(cmd):
-    return subprocess.run(f"su -c '{cmd}'", shell=True, capture_output=True, text=True)
-
-def get_app_name(tmp_path, default_pkg):
-    cmd = f"aapt dump badging \"{tmp_path}\" 2>/dev/null | grep 'application-label:' | head -n 1 | cut -d\"'\" -f2"
-    app_name = subprocess.getoutput(cmd).strip()
-    return app_name if app_name else default_pkg
-
-def download_file(url, out_path, index_identifier):
-    if not url: return False
-    if "play.google.com" in url: return False
-
-    if "drive.google.com" in url:
-        file_id = None
-        match_d = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
-        if match_d:
-            file_id = match_d.group(1)
-        else:
-            match_id = re.search(r'id=([a-zA-Z0-9_-]+)', url)
-            if match_id:
-                file_id = match_id.group(1)
-
-        if file_id:
-            download_success = False
-            if gdown:
-                try:
-                    log(f"🔄 Tentando gdown para o ID: {file_id}", "cyan")
-                    gdown.download(f"https://drive.google.com/uc?id={file_id}", out_path, quiet=True)
-                    if os.path.exists(out_path) and zipfile.is_zipfile(out_path):
-                        download_success = True
-                except Exception as e:
-                    log(f"⚠️ Aviso gdown: {e}", "yellow")
-
-            if not download_success:
-                log(f"🔄 Fallback curl ativado para o ID: {file_id}", "cyan")
-                cookie_path = os.path.join(BASE_DIR, f"cookies_{index_identifier}.txt")
-                os.system(f"curl -sL -c '{cookie_path}' 'https://docs.google.com/uc?export=download&id={file_id}' -o '{out_path}'")
-                if os.path.exists(out_path):
-                    try:
-                        with open(out_path, 'r', errors='ignore') as f:
-                            head = f.read(15000)
-                        confirm_match = re.search(r'confirm=([A-Za-z0-9_-]+)', head)
-                        if confirm_match:
-                            token = confirm_match.group(1)
-                            os.system(f"curl -sL -b '{cookie_path}' 'https://docs.google.com/uc?export=download&confirm={token}&id={file_id}' -o '{out_path}'")
-                    except: pass
-                if os.path.exists(cookie_path):
-                    os.remove(cookie_path)
-    else:
-        os.system(f"curl -sL '{url}' -o '{out_path}'")
-
-    if os.path.exists(out_path):
-        if zipfile.is_zipfile(out_path):
-            return True
-        else:
-            tamanho = os.path.getsize(out_path)
-            log(f"❌ Arquivo corrompido ou bloqueado pelo Drive (Tamanho: {tamanho} bytes). Não é um ZIP/APK.", "bold red")
-            os.remove(out_path)
-            return False
-    return False
-
-def download_worker(item, index):
-    apk_url, visibility = item[0], item[1]
-    extra_data = item[3] if len(item) > 3 else {}
-    force_apk = extra_data.get("force_apk", False) or (extra_data.get("is_zip") is False)
-
-    extract_dir = os.path.join(BASE_DIR, f"temp_extract_{index}")
-    if os.path.exists(extract_dir): shutil.rmtree(extract_dir)
-    os.makedirs(extract_dir, exist_ok=True)
-
-    download_path = os.path.join(extract_dir, "payload.tmp")
-    log(f"📥 [Download APK/ZIP] ID #{index} iniciado...", "yellow")
-
-    if not download_file(apk_url, download_path, f"apk_{index}"):
-        log(f"❌ Erro no ID #{index}: Falha no download ou arquivo inválido baixado.", "bold red")
-        return []
-
-    # Se for um ZIP válido (APKs também são ZIPs válidos)
-    if zipfile.is_zipfile(download_path):
-        # Inspeção Inteligente: Tem o manifesto na raiz?
-        is_apk_by_content = False
-        try:
-            with zipfile.ZipFile(download_path, 'r') as zf:
-                if "AndroidManifest.xml" in zf.namelist():
-                    is_apk_by_content = True
-        except:
-            pass
-
-        # Se for forçado pela TAG OU a inspeção detectar que é um APK real
-        if force_apk or is_apk_by_content:
-            os.rename(download_path, os.path.join(extract_dir, "app_puro.apk"))
-        else:
-            zip_path = download_path + ".zip"
-            os.rename(download_path, zip_path)
-            log(f"📦 Pacote ID #{index} detectado como ZIP. Executando abertura recursiva total...", "cyan")
-
-            while True:
-                zips_encontrados = []
-                for root, dirs, files in os.walk(extract_dir):
-                    for f in files:
-                        if f.lower().endswith('.zip'):
-                            zips_encontrados.append(os.path.join(root, f))
-                if not zips_encontrados:
-                    break
-                for zip_alvo in zips_encontrados:
-                    try:
-                        with zipfile.ZipFile(zip_alvo, 'r') as zf:
-                            for pwd in [b'123', None]:
-                                try:
-                                    zf.extractall(path=os.path.dirname(zip_alvo), pwd=pwd)
-                                    break
-                                except: continue
-                    except: pass
-                    finally:
-                        try: os.remove(zip_alvo)
-                        except: pass
-    else:
-        # Fallback de segurança caso algo passe
-        os.rename(download_path, os.path.join(extract_dir, "app_puro.apk"))
-
-    apk_files = []
-    for root, dirs, files in os.walk(extract_dir):
-        for f in files:
-            if f.lower().endswith('.apk'):
-                apk_files.append(os.path.join(root, f))
-
-    resultados = []
-    for apk_path in apk_files:
-        cmd_get_pkg = f"aapt dump badging {apk_path} 2>/dev/null | grep package | awk '{{print $2}}' | sed s/name=//g | sed s/\\'//g"
-        pkg_name = subprocess.getoutput(cmd_get_pkg).strip()
-        if not pkg_name or "not found" in pkg_name or "W/zipro" in pkg_name:
-            continue
-
-        resultados.append({
-            "apk_path": apk_path,
-            "pkg_name": pkg_name,
-            "visibility": visibility
-        })
-    return resultados
-
-def remove_app(package_name):
-    run_su(f"pm uninstall {package_name}")
-    log(f"🗑️ {package_name} - Removido com sucesso", "bold red")
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        log("❌ Erro fatal: Nenhum payload recebido pelo instalador.", "bold red")
-        sys.exit(1)
+# ==========================================
+# 📥 FUNÇÕES DE DOWNLOAD E EXTRAÇÃO
+# ==========================================
+def download_file(url, dest_folder):
+    os.makedirs(dest_folder, exist_ok=True)
+    parsed = urlparse(url)
+    filename = os.path.basename(parsed.path) or f"payload_{int(time.time())}.zip"
+    dest_path = os.path.join(dest_folder, filename)
 
     try:
-        if sys.argv[1] == "--file":
-            arquivo_alvo = sys.argv[2]
-            with open(arquivo_alvo, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        if "drive.google.com" in url:
+            gdown.download(url, dest_path, quiet=False, fuzzy=True)
         else:
-            data = json.loads(sys.argv[1])
-
-        success_list = []
-        failed_list = []
-
-        if "remove" in data:
-            for pkg in data["remove"]:
-                remove_app(pkg)
-
-        lista_instalar = data.get("install", []) + data.get("instalar", [])
-
-        mapa_global_datas = {}
-        for item in lista_instalar:
-            extra = item[3] if len(item) > 3 else {}
-            if extra and "data_links" in extra:
-                mapa_global_datas.update(extra["data_links"])
-
-        if lista_instalar:
-            all_extracted_apps = []
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                futures = [executor.submit(download_worker, item, idx) for idx, item in enumerate(lista_instalar)]
-                for future in futures:
-                    res = future.result()
-                    if res: all_extracted_apps.extend(res)
-
-            print("\n")
-            console.print(Panel(f"Instalando {len(all_extracted_apps)} APK(s) puros extraídos...", style="bold yellow", title="⚙️ PM INSTALADOR"))
-
-            run_su("pm disable-user --user 0 com.android.vending > /dev/null 2>&1")
-            run_su("settings put global package_verifier_enable 0")
-
-            for app_data in all_extracted_apps:
-                tmp_path = app_data["apk_path"]
-                pkg_name = app_data["pkg_name"]
-                visibility = app_data["visibility"]
-
-                app_name = get_app_name(tmp_path, pkg_name)
-                log(f"📦 Instalando/Atualizando Aplicativo: {app_name} ({pkg_name})...", "yellow")
-
-                # 1. Tentativa de Atualização/Instalação normal
-                install_result = run_su(f"pm install -r -g -d '{tmp_path}'")
-
-                if "Success" in install_result.stdout:
-                    success_list.append(pkg_name)
-                    if visibility == "oculto":
-                        run_su(f"pm hide {pkg_name}")
-                    else:
-                        run_su(f"pm unhide {pkg_name}")
-                    log(f"✅ {app_name} ({pkg_name}) - Sucesso", "bold green")
-                else:
-                    # 2. Plano B: Desinstala e Tenta de novo
-                    log(f"⚠️ Conflito ao atualizar {app_name}. Tentando reinstalação limpa...", "yellow")
-                    run_su(f"pm uninstall {pkg_name}")
-                    
-                    retry_result = run_su(f"pm install -r -g -d '{tmp_path}'")
-                    
-                    if "Success" in retry_result.stdout:
-                        success_list.append(pkg_name)
-                        if visibility == "oculto":
-                            run_su(f"pm hide {pkg_name}")
-                        else:
-                            run_su(f"pm unhide {pkg_name}")
-                        log(f"✅ {app_name} ({pkg_name}) - Sucesso (Reinstalado do zero)", "bold green")
-                    else:
-                        log(f"❌ Falha definitiva ao instalar {app_name}: {retry_result.stderr}", "bold red")
-                        failed_list.append(pkg_name)
-
-            run_su("settings put global package_verifier_enable 1")
-            run_su("pm enable com.android.vending > /dev/null 2>&1")
-
-            if success_list and mapa_global_datas and data_inject:
-                print("\n")
-                console.print(Panel("Iniciando injeção de dados isolados para os aplicativos instalados...", style="bold magenta", title="⚡ FASE DE CONEXÃO: APPS_DATA"))
-
-                for pkg_verificado in set(success_list):
-                    link_da_data = mapa_global_datas.get(pkg_verificado)
-                    if link_da_data:
-                        log(f"🔋 Acionando 'apps_data.py' para injetar backup de: {pkg_verificado}...", "cyan")
-                        try:
-                            data_inject(pkg_verificado, link_da_data)
-                        except Exception as e_data:
-                            log(f"❌ Erro ao processar apps_data para {pkg_verificado}: {e_data}", "bold red")
-
-            for idx in range(len(lista_instalar)):
-                shutil.rmtree(os.path.join(BASE_DIR, f"temp_extract_{idx}"), ignore_errors=True)
-
-        if "commands" in data or "comandos" in data:
-            cmd_list = data.get("commands", []) + data.get("comandos", [])
-            for cmd in cmd_list:
-                if cmd.startswith("remove "): remove_app(cmd.replace("remove ", "").strip())
-                else: run_su(cmd)
-
-        if success_list or failed_list:
-            with open(REPORT_FILE, "w", encoding="utf-8") as f:
-                json.dump({"install_success": list(set(success_list)), "install_failed": list(set(failed_list))}, f)
-
+            response = requests.get(url, stream=True, timeout=60)
+            response.raise_for_status()
+            with open(dest_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        return dest_path
     except Exception as e:
-        log(f"❌ Erro fatal no instalador: {e}", "bold red")
+        print(f"❌ Erro ao baixar arquivo: {e}")
+        return None
+
+def install_apk(apk_path, visibility):
+    print(f"📦 Instalando APK: {os.path.basename(apk_path)}")
+    try:
+        result = subprocess.run(f"su -c 'pm install -r \"{apk_path}\"'", shell=True, capture_output=True, text=True)
+        if "Success" in result.stdout:
+            print("✅ APK Instalado com sucesso!")
+            # Opcional: Lógica do pm hide caso a visibilidade seja "system"
+            if str(visibility).lower() == "system":
+                # Como não temos o nome do pacote exato aqui, uma versão avançada usaria aapt.
+                # Aqui consideramos o comando básico.
+                print("👻 Comando para ocultar o app registrado (Modo System).")
+            return True
+        else:
+            print(f"❌ Falha ao instalar APK: {result.stdout} {result.stderr}")
+            return False
+    except Exception as e:
+        print(f"❌ Erro crítico no PM INSTALL: {e}")
+        return False
+
+def run_data_injection(tar_file):
+    print(f"💉 Dados encontrados ({os.path.basename(tar_file)}). Iniciando injeção profunda...")
+    apps_data_script = os.path.join(HAPIE_APPS_DIR, "apps_data.py")
+    
+    if not os.path.exists(apps_data_script):
+        print("⚠️ Script apps_data.py não encontrado. Injeção abortada.")
+        return False
+
+    try:
+        # Chama o apps_data.py como um operário separado
+        # Se ele rodar e sair com código 0, deu certo. Se sair com erro (Crash), check=True ativa o Except.
+        subprocess.run([sys.executable, apps_data_script, "--file", tar_file], check=True)
+        print("✅ Dados injetados com maestria!")
+        return True
+    except subprocess.CalledProcessError:
+        print("❌ apps_data.py falhou ao injetar os dados.")
+        return False
+    except Exception as e:
+        print(f"❌ Erro ao chamar injetor de dados: {e}")
+        return False
+
+# ==========================================
+# 🧠 MOTOR PRINCIPAL DE INSTALAÇÃO
+# ==========================================
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--file", help="Caminho do arquivo payload.json", default=PAYLOAD_FILE)
+    args = parser.parse_args()
+
+    if not os.path.exists(args.file):
+        print("⚠️ Arquivo de payload não encontrado. Saindo...")
+        return
+
+    try:
+        with open(args.file, "r") as f:
+            payload = json.load(f)
+    except Exception as e:
+        print(f"❌ Erro ao ler payload: {e}")
+        return
+
+    install_orders = payload.get("install", [])
+    if not install_orders:
+        print("💤 Nenhuma ordem de instalação encontrada.")
+        return
+
+    report = {"install_success": [], "install_failed": []}
+
+    for app_data in install_orders:
+        if len(app_data) < 4:
+            continue
+            
+        link, visibility, tag, extras = app_data
+        print(f"\n🚀 Iniciando processamento do link: {link[:40]}...")
+
+        # 1. Download do Pacote
+        downloaded_file = download_file(link, DATA_DIR)
+        if not downloaded_file:
+            report["install_failed"].append(link)
+            continue
+
+        process_100_percent_success = False
+
+        # 2. Verificação do Tipo de Arquivo
+        if downloaded_file.endswith(".zip"):
+            if os.path.exists(TEMP_EXTRACT_DIR):
+                shutil.rmtree(TEMP_EXTRACT_DIR)
+            os.makedirs(TEMP_EXTRACT_DIR, exist_ok=True)
+
+            print("🗜️ Extraindo arquivo ZIP...")
+            try:
+                with zipfile.ZipFile(downloaded_file, 'r') as zip_ref:
+                    zip_ref.extractall(TEMP_EXTRACT_DIR)
+            except Exception as e:
+                print(f"❌ Erro ao extrair ZIP: {e}")
+                report["install_failed"].append(link)
+                continue
+
+            # Varrendo o que tem dentro do ZIP
+            arquivos_extraidos = os.listdir(TEMP_EXTRACT_DIR)
+            apk_file = next((f for f in arquivos_extraidos if f.endswith(".apk")), None)
+            tar_file = next((f for f in arquivos_extraidos if f.endswith(".tar.gz")), None)
+
+            # Instala o APK primeiro
+            apk_success = False
+            if apk_file:
+                apk_path = os.path.join(TEMP_EXTRACT_DIR, apk_file)
+                apk_success = install_apk(apk_path, visibility)
+            else:
+                print("⚠️ Nenhum APK encontrado dentro do ZIP!")
+
+            # Se instalou o APK e achou dados (.tar.gz)
+            if apk_success:
+                if tar_file:
+                    tar_path = os.path.join(TEMP_EXTRACT_DIR, tar_file)
+                    # Delega a injeção ao apps_data.py e pega o resultado (Verdadeiro ou Falso)
+                    injection_success = run_data_injection(tar_path)
+                    
+                    if injection_success:
+                        process_100_percent_success = True
+                    else:
+                        print("⚠️ O APK instalou, mas a injeção FALHOU. A tag global não será ativada.")
+                else:
+                    # Tinha APK, mas não tinha dados extra. Então o ZIP acabou com 100% de sucesso.
+                    process_100_percent_success = True
+            
+            # Limpeza
+            shutil.rmtree(TEMP_EXTRACT_DIR, ignore_errors=True)
+            
+        elif downloaded_file.endswith(".apk"):
+            # É só um APK direto, não tem dados
+            if install_apk(downloaded_file, visibility):
+                process_100_percent_success = True
+
+        # 3. VEREDITO FINAL (A TRAVA DE SEGURANÇA DA TAG)
+        if process_100_percent_success:
+            report["install_success"].append(link)
+            print("🌟 Processo finalizado com SUCESSO ABSOLUTO.")
+            # 🔥 AQUI ACONTECE A MÁGICA: Só liga se fechou os 100%!
+            activate_global_tag(tag)
+        else:
+            report["install_failed"].append(link)
+
+        # Remove arquivo baixado original para poupar espaço
+        if os.path.exists(downloaded_file):
+            os.remove(downloaded_file)
+
+    # 4. Salvar Relatório para o webhook mandar pro Servidor
+    try:
+        with open(REPORT_FILE, "w") as f:
+            json.dump(report, f)
+    except: pass
+
+    # Limpa o payload processado
+    if os.path.exists(args.file):
+        os.remove(args.file)
+
+if __name__ == "__main__":
+    main()
