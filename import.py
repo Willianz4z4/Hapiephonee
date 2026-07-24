@@ -82,6 +82,28 @@ console = Console()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 sys.path.insert(0, BASE_DIR)
 
+# ==========================================
+# 🚀 GATILHO DE PRIMEIRA VIAGEM (AUTO SETUP)
+# ==========================================
+arquivo_comprovante = os.path.join(BASE_DIR, "setup_concluido.txt")
+if not os.path.exists(arquivo_comprovante):
+    console.print("\n[bold yellow]🛠️ Primeira execução detectada! Rodando a blindagem do sistema...[/bold yellow]")
+    caminho_setup = os.path.join(BASE_DIR, "auto_setup.py")
+    
+    if os.path.exists(caminho_setup):
+        try:
+            # Chama o setup usando o mesmo interpretador Python
+            subprocess.run([sys.executable, caminho_setup], check=True)
+            # Cria o comprovante
+            with open(arquivo_comprovante, "w") as f:
+                f.write("Setup de persistencia feito com sucesso em: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            console.print("[bold green]✅ Blindagem concluída com sucesso! Iniciando o sistema principal...[/bold green]\n")
+        except Exception as e:
+            console.print(f"[bold red]❌ Erro ao rodar a blindagem inicial: {e}[/bold red]\n")
+    else:
+        console.print("[bold red]⚠️ Arquivo auto_setup.py não encontrado! Pulando blindagem...[/bold red]\n")
+# ==========================================
+
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
 HAPIE_APPS_DIR = os.path.join(BASE_DIR, "hapie_apps")
