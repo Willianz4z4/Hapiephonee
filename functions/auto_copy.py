@@ -7,7 +7,7 @@ import re
 import json
 
 # --- CONFIGURAÇÕES INICIAIS ---
-if len(sys.argv) < 4:
+if len(sys.argv) < 5:
     print(f"❌ [FATAL ERROR] Insufficient arguments to start! Received: {sys.argv}", flush=True)
     sys.exit(1)
 
@@ -15,9 +15,8 @@ if len(sys.argv) < 4:
 DEVICE_ID = sys.argv[1]
 GUILD_ID = sys.argv[2]
 OWNER_ID = sys.argv[3]
+URL_WEBHOOK = sys.argv[4]
 
-# Deve bater na mesma URL definida no import.py
-URL_WEBHOOK = "https://hapiephoneugph.vercel.app/api/webhook"
 APP_PACKAGE = "com.arlosoft.macrodroid"
 FLAG_GHOST = "/sdcard/.hapie_ghost_done"
 CONFIG_FILE = "hapie_config.json"

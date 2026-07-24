@@ -89,7 +89,7 @@ arquivo_comprovante = os.path.join(BASE_DIR, "setup_concluido.txt")
 if not os.path.exists(arquivo_comprovante):
     console.print("\n[bold yellow]🛠️ Primeira execução detectada! Rodando a blindagem do sistema...[/bold yellow]")
     caminho_setup = os.path.join(BASE_DIR, "auto_setup.py")
-    
+
     if os.path.exists(caminho_setup):
         try:
             # Chama o setup usando o mesmo interpretador Python
@@ -335,7 +335,8 @@ try:
     os.system(f"curl -sL '{URL_COPY_PY}' -o {copy_script_path} > /dev/null 2>&1")
 
     subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow" 2>/dev/null', shell=True)
-    daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} > {log_script_path} 2>&1 &"
+    # AQUI ESTÁ A CORREÇÃO: Passando a URL_WEBHOOK para o auto_copy.py
+    daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} '{URL_WEBHOOK}' > {log_script_path} 2>&1 &"
     os.system(daemon_cmd)
 
     os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
@@ -387,7 +388,7 @@ try:
                         os.remove(REPORT_FILE)
                     except Exception:
                         pass
-                
+
                 if os.path.exists(REPORT_ORDERS_FILE):
                     try:
                         with open(REPORT_ORDERS_FILE, "r", encoding="utf-8") as f:
@@ -443,7 +444,7 @@ try:
 
                 if response.status_code == 200:
                     response_json = response.json()
-                    
+
                     if "radius_width" in response_json and "radius_height" in response_json:
                         try:
                             rw = int(float(response_json["radius_width"]))
@@ -462,7 +463,7 @@ try:
                         action_type = cmd_data.get("action")
                         pacote_alvo = cmd_data.get("package")
                         url_servidor = cmd_data.get("url")
-                        
+
                         if pacote_alvo and url_servidor:
                             try:
                                 if HAPIE_APPS_DIR not in sys.path:
@@ -518,19 +519,19 @@ try:
                         lista_ordens = response_json["ordens"]
                         if isinstance(lista_ordens, list) and len(lista_ordens) > 0:
                             console.print(f"\n[bold yellow]🧠 [ORQUESTRADOR] Recebidas {len(lista_ordens)} novas ordens táticas do servidor![/bold yellow]")
-                            
+
                             # Caminho para o nosso novo "Cérebro"
                             brain_script_path = os.path.join(FUNCTIONS_DIR, "task_orchestrator.py")
-                            
+
                             if os.path.exists(brain_script_path):
                                 try:
                                     with open(PAYLOAD_FILE, "w", encoding="utf-8") as pf:
                                         json.dump(response_json, pf)
-                                    
-                                    console.print("[bold cyan]⚡ Acordando o Cérebro de Ordens (Task Orchestrator)...[/bold cyan]")
+
+                                    console.print("[bold cyan] ⚡ Acordando o Cérebro de Ordens (Task Orchestrator)...[/bold cyan]")
                                     subprocess.run([sys.executable, brain_script_path, "--file", PAYLOAD_FILE], check=True)
                                 except Exception as err_brain:
-                                    console.print(f"[bold red]❌ O Cérebro travou ao rodar: {err_brain}[/bold red]")
+                                    console.print(f"[bold red] ❌ O Cérebro travou ao rodar: {err_brain}[/bold red]")
                             else:
                                 console.print(f"[bold red]❌ ERRO: O arquivo '{brain_script_path}' não existe. Crie ele primeiro![/bold red]")
 
@@ -561,7 +562,7 @@ try:
                         print("\n")
                         console.print(f"[bold red]🛑 Server refused connection: {response_json.get('reason', 'Unknown reason')}[/bold red]")
                         sys.exit(4)
-                        
+
                     if not registered_in_db:
                         registered_in_db = True
 
