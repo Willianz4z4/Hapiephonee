@@ -336,7 +336,7 @@ try:
 
     subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow" 2>/dev/null', shell=True)
     # AQUI ESTÁ A CORREÇÃO: Passando a URL_WEBHOOK para o auto_copy.py
-    daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} '{URL_WEBHOOK}' > {log_script_path} 2>&1 &"
+    daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} '{URL_WEBHOOK}' '{URL_WEBHOOK}' > {log_script_path} 2>&1 &"
     os.system(daemon_cmd)
 
     os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
