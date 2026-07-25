@@ -179,6 +179,53 @@ def data_inject(pacote, url_servidor):
                 os.remove(arquivo_local)
             return False
 
+    if not os.path.exists(arquivo_local):
+        print(f"[X] Erro: Arquivo de dados sumiu antes da injeção.")
+        return False
+
+    temp_extract_dir = os.path.join(BASE_DATA_DIR, f"temp_inspect_{safe_pkg}")
+    if os.path.exists(temp_extract_dir):
+        subprocess.run(["rm", "-rf", temp_extract_dir])
+    os.makedirs(temp_extract_dir, exist_ok=True)
+
+    try:
+        subprocess.run(["tar", "-xzf", arquivo_local, "-C", temp_extract_dir], check=True)
+        
+        conteudo_temp = os.listdir(temp_extract_dir)
+        target_data_dir = os.path.join(temp_extract_dir, pacote)
+
+        if pacote in conteudo_temp and os.path.isdir(target_data_dir):
+            print(f"[+] Estrutura validada: Pasta do pacote encontrada no tar.gz.")
+        elif "data" in conteudo_temp and os.path.isdir(os.path.join(temp_extract_dir, "data")):
+            print(f"[!] Detectado formato de pacote com subpasta 'data'. Reorganizando...")
+            subdata_dir = os.path.join(temp_extract_dir, "data")
+            if os.path.exists(target_data_dir):
+                subprocess.run(["rm", "-rf", target_data_dir])
+            os.makedirs(target_data_dir, exist_ok=True)
+            for item in os.listdir(subdata_dir):
+                subprocess.run(["mv", os.path.join(subdata_dir, item), target_data_dir])
+        else:
+            print(f"[!] Arquivos soltos detectados na raiz. Criando estrutura para o pacote '{pacote}'...")
+            if os.path.exists(target_data_dir):
+                subprocess.run(["rm", "-rf", target_data_dir])
+            os.makedirs(target_data_dir, exist_ok=True)
+            for item in conteudo_temp:
+                item_path = os.path.join(temp_extract_dir, item)
+                if item != pacote:
+                    subprocess.run(["mv", item_path, target_data_dir])
+
+        padrao_tar_local = os.path.join(BASE_DATA_DIR, f"fixed_{safe_pkg}.tar.gz")
+        subprocess.run(["tar", "-czf", padrao_tar_local, "-C", temp_extract_dir, pacote], check=True)
+        
+        os.replace(padrao_tar_local, arquivo_local)
+        print(f"[+] Reorganização inteligente concluída com sucesso.")
+
+    except Exception as e:
+        print(f"[!] Aviso na inspeção inteligente (prosseguindo com extração padrão): {e}")
+    finally:
+        if os.path.exists(temp_extract_dir):
+            subprocess.run(["rm", "-rf", temp_extract_dir])
+
     comando = f"""
     if [ ! -f "{arquivo_local}" ]; then
         echo "erro_arquivo_sumiu"
@@ -266,7 +313,6 @@ def add_ugclone_config(pacote_alvo, configs):
         print("[X] ERRO CRÍTICO: Não encontrei a tag <map>!")
         return False
 
-    # A MÁGICA SEGURA: Salvar localmente e depois usar o Root pra copiar
     temp_file = os.path.join(BASE_DATA_DIR, "temp_ug.xml")
     with open(temp_file, "w", encoding="utf-8") as f:
         f.write(xml_content)
