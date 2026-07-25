@@ -26,7 +26,7 @@ def executar_root(comando):
         capture_output=True,
         text=True
     )
-    return True, resultado.stdout.strip() + " " + resultado.stderr.strip()
+    return True, resultado.stdout.strip() + "\n" + resultado.stderr.strip()
 
 def data_save(pacote):
     if not pacote_eh_valido(pacote):
@@ -148,16 +148,21 @@ def baixar_data_com_cookies(url, out_path):
     return False
 
 def data_inject(pacote, url_servidor):
+    print(f"\n==================================================")
+    print(f"[DEBUG] === INICIANDO INJEÇÃO DE DADOS ===")
+    print(f"[DEBUG] Pacote Alvo: {pacote}")
+    
     if not pacote_eh_valido(pacote):
         print(f"[X] Erro: Nome do pacote inválido '{pacote}'")
         return False
 
     inicializar_ambiente()
-    print(f"=== [data_inject] INJETANDO DADOS NO PACOTE '{pacote}' ===")
     safe_pkg = pacote.replace(".", "_")
     arquivo_local = os.path.join(BASE_DATA_DIR, f"data_{safe_pkg}.tar.gz")
+    print(f"[DEBUG] Procurando arquivo de dados exato em:\n[DEBUG] -> {arquivo_local}")
 
     if not os.path.exists(arquivo_local):
+        print(f"[DEBUG] Arquivo não encontrado localmente! Acionando fallback de download...")
         if "drive.google.com" in url_servidor:
             url_download = url_servidor
         else:
@@ -167,9 +172,10 @@ def data_inject(pacote, url_servidor):
         try:
             sucesso_download = baixar_data_com_cookies(url_download, arquivo_local)
             if sucesso_download and os.path.exists(arquivo_local) and os.path.getsize(arquivo_local) > 1000:
-                print(f"[+] Download da nuvem concluído com sucesso.")
+                tam_kb = os.path.getsize(arquivo_local) // 1024
+                print(f"[+] Download concluído. Tamanho salvo: {tam_kb} KB")
             else:
-                print(f"[X] Falha ao baixar os dados da nuvem ou arquivo muito pequeno.")
+                print(f"[X] Falha no download ou arquivo pequeno demais (HTML de erro do Drive?).")
                 if os.path.exists(arquivo_local):
                     os.remove(arquivo_local)
                 return False
@@ -178,83 +184,115 @@ def data_inject(pacote, url_servidor):
             if os.path.exists(arquivo_local):
                 os.remove(arquivo_local)
             return False
-
-    if not os.path.exists(arquivo_local):
-        print(f"[X] Erro: Arquivo de dados sumiu antes da injeção.")
-        return False
+    else:
+        tam_kb = os.path.getsize(arquivo_local) // 1024
+        print(f"[DEBUG] Arquivo encontrado localmente! Tamanho: {tam_kb} KB")
 
     temp_extract_dir = os.path.join(BASE_DATA_DIR, f"temp_inspect_{safe_pkg}")
+    print(f"[DEBUG] Criando pasta para inspecionar estrutura do ZIP/TAR: {temp_extract_dir}")
     if os.path.exists(temp_extract_dir):
         subprocess.run(["rm", "-rf", temp_extract_dir])
     os.makedirs(temp_extract_dir, exist_ok=True)
 
     try:
-        subprocess.run(["tar", "-xzf", arquivo_local, "-C", temp_extract_dir], check=True)
+        print(f"[DEBUG] Testando extração prévia (Python)...")
+        res_tar = subprocess.run(["tar", "-xzf", arquivo_local, "-C", temp_extract_dir], capture_output=True, text=True)
         
-        conteudo_temp = os.listdir(temp_extract_dir)
-        target_data_dir = os.path.join(temp_extract_dir, pacote)
-
-        if pacote in conteudo_temp and os.path.isdir(target_data_dir):
-            print(f"[+] Estrutura validada: Pasta do pacote encontrada no tar.gz.")
-        elif "data" in conteudo_temp and os.path.isdir(os.path.join(temp_extract_dir, "data")):
-            print(f"[!] Detectado formato de pacote com subpasta 'data'. Reorganizando...")
-            subdata_dir = os.path.join(temp_extract_dir, "data")
-            if os.path.exists(target_data_dir):
-                subprocess.run(["rm", "-rf", target_data_dir])
-            os.makedirs(target_data_dir, exist_ok=True)
-            for item in os.listdir(subdata_dir):
-                subprocess.run(["mv", os.path.join(subdata_dir, item), target_data_dir])
+        if res_tar.returncode != 0:
+            print(f"[!] AVISO: O tar falhou na inspeção prévia. Erro:\n{res_tar.stderr}")
         else:
-            print(f"[!] Arquivos soltos detectados na raiz. Criando estrutura para o pacote '{pacote}'...")
-            if os.path.exists(target_data_dir):
-                subprocess.run(["rm", "-rf", target_data_dir])
-            os.makedirs(target_data_dir, exist_ok=True)
-            for item in conteudo_temp:
-                item_path = os.path.join(temp_extract_dir, item)
-                if item != pacote:
-                    subprocess.run(["mv", item_path, target_data_dir])
+            conteudo_temp = os.listdir(temp_extract_dir)
+            print(f"[DEBUG] O que tem dentro do arquivo? -> {conteudo_temp}")
+            target_data_dir = os.path.join(temp_extract_dir, pacote)
 
-        padrao_tar_local = os.path.join(BASE_DATA_DIR, f"fixed_{safe_pkg}.tar.gz")
-        subprocess.run(["tar", "-czf", padrao_tar_local, "-C", temp_extract_dir, pacote], check=True)
-        
-        os.replace(padrao_tar_local, arquivo_local)
-        print(f"[+] Reorganização inteligente concluída com sucesso.")
+            if pacote in conteudo_temp and os.path.isdir(target_data_dir):
+                print(f"[DEBUG] Estrutura Perfeita: Pasta '{pacote}' na raiz.")
+            elif "data" in conteudo_temp and os.path.isdir(os.path.join(temp_extract_dir, "data")):
+                print(f"[DEBUG] Estrutura 'data' detectada. Convertendo para padrão...")
+                subdata_dir = os.path.join(temp_extract_dir, "data")
+                if os.path.exists(target_data_dir):
+                    subprocess.run(["rm", "-rf", target_data_dir])
+                os.makedirs(target_data_dir, exist_ok=True)
+                for item in os.listdir(subdata_dir):
+                    subprocess.run(["mv", os.path.join(subdata_dir, item), target_data_dir])
+            else:
+                print(f"[DEBUG] Arquivos soltos detectados. Empacotando na pasta do pacote '{pacote}'...")
+                if os.path.exists(target_data_dir):
+                    subprocess.run(["rm", "-rf", target_data_dir])
+                os.makedirs(target_data_dir, exist_ok=True)
+                for item in conteudo_temp:
+                    item_path = os.path.join(temp_extract_dir, item)
+                    if item != pacote:
+                        subprocess.run(["mv", item_path, target_data_dir])
+
+            print(f"[DEBUG] Recompactando o arquivo de forma limpa...")
+            padrao_tar_local = os.path.join(BASE_DATA_DIR, f"fixed_{safe_pkg}.tar.gz")
+            subprocess.run(["tar", "-czf", padrao_tar_local, "-C", temp_extract_dir, pacote], check=True)
+            os.replace(padrao_tar_local, arquivo_local)
+            print(f"[DEBUG] Reorganização concluída.")
 
     except Exception as e:
-        print(f"[!] Aviso na inspeção inteligente (prosseguindo com extração padrão): {e}")
+        print(f"[X] Falha na inspeção inteligente (continuando cru): {e}")
     finally:
         if os.path.exists(temp_extract_dir):
             subprocess.run(["rm", "-rf", temp_extract_dir])
 
+    print(f"\n[DEBUG] --- ENVIANDO PARA O ROOT ---")
     comando = f"""
     if [ ! -f "{arquivo_local}" ]; then
-        echo "erro_arquivo_sumiu"
+        echo "erro_arquivo_sumiu_raiz"
         exit 0
     fi
     if [ ! -d "/data/data/{pacote}" ]; then
         echo "erro_pacote_nao_instalado"
         exit 0
     fi
+    echo "[ROOT] Matando o pacote {pacote}..."
     am force-stop "{pacote}"
+    
     APP_OWNER=$(stat -c '%U:%G' /data/data/{pacote})
-    tar -xzf "{arquivo_local}" -C /data/data/ 2>/dev/null || true
+    echo "[ROOT] Dono detectado: $APP_OWNER"
+    
+    echo "[ROOT] Extraindo os dados reais no sistema..."
+    tar -xzf "{arquivo_local}" -C /data/data/ 2>&1
+    TAR_STATUS=$?
+    
+    echo "[ROOT] Extração concluída. Código de saída do tar: $TAR_STATUS"
+    
+    echo "[ROOT] Restaurando chown e contextos SELinux..."
     chown -R $APP_OWNER /data/data/{pacote}
     restorecon -R /data/data/{pacote}
-    echo "sucesso"
+    
+    if [ $TAR_STATUS -eq 0 ]; then
+        echo "sucesso_absoluto"
+    else
+        echo "erro_tar_crash_$TAR_STATUS"
+    fi
     """
+    
     sucesso, saida = executar_root(comando)
+
+    print(f"[DEBUG] --- RESPOSTA CRUA DO ROOT ---")
+    print(saida)
+    print(f"==================================================\n")
 
     if os.path.exists(arquivo_local):
         try:
             os.remove(arquivo_local)
-        except OSError as e:
-            print(f"[!] Aviso: Não foi possível remover o arquivo temporário. Erro: {e}")
+        except OSError:
+            pass
 
     if "erro_pacote_nao_instalado" in saida:
-        print(f"[X] Erro: O pacote alvo '{pacote}' não está instalado neste dispositivo.")
+        print(f"[X] Erro: O pacote '{pacote}' não existe no /data/data/ deste celular.")
         return False
-    elif "sucesso" in saida:
-        print(f"[+] Dados injetados com sucesso no pacote '{pacote}'!")
+    elif "erro_arquivo_sumiu" in saida:
+        print(f"[X] Erro: O arquivo tar.gz sumiu antes do Root processá-lo.")
+        return False
+    elif "erro_tar_crash" in saida:
+        print(f"[X] Erro Crítico: O comando tar quebrou dentro do root! Verifique o log acima.")
+        return False
+    elif "sucesso_absoluto" in saida:
+        print(f"[+] Root confirmou a extração! Dados injetados no pacote '{pacote}'.")
         try:
             report_file = os.path.join(os.path.dirname(SCRIPT_DIR), "Data", "install_report.json")
             os.makedirs(os.path.dirname(report_file), exist_ok=True)
@@ -274,7 +312,7 @@ def data_inject(pacote, url_servidor):
 
         return True
     else:
-        print(f"[X] Falha crítica na injeção dos dados via root: {saida}")
+        print(f"[X] Retorno desconhecido do Root. Injeção possivelmente falhou.")
         return False
 
 def add_ugclone_config(pacote_alvo, configs):
