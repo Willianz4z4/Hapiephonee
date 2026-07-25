@@ -1,8 +1,11 @@
 import os
+import sys
 import subprocess
 import re
 import requests
 import json
+import shutil
+import argparse
 from datetime import datetime
 
 try:
@@ -159,7 +162,6 @@ def baixar_data_com_cookies(url, out_path):
     return False
 
 def data_inject(pacote, url_servidor):
-    # Substituímos todos os prints do data_inject por dprint
     dprint(f"\n==================================================")
     dprint(f"[DEBUG] === INICIANDO INJEÇÃO DE DADOS ===")
     dprint(f"[DEBUG] Pacote Alvo: {pacote}")
@@ -174,7 +176,7 @@ def data_inject(pacote, url_servidor):
     dprint(f"[DEBUG] Procurando arquivo exato no caminho:\n[DEBUG] -> {arquivo_local}")
 
     if not os.path.exists(arquivo_local):
-        dprint(f"[DEBUG] Arquivo não encontrado localmente! (Ele deveria estar aí). Acionando fallback de download da nuvem...")
+        dprint(f"[DEBUG] Arquivo não encontrado localmente! Acionando fallback de download da nuvem...")
         if "drive.google.com" in url_servidor:
             url_download = url_servidor
         else:
@@ -386,3 +388,45 @@ def add_ugclone_config(pacote_alvo, configs):
     else:
         print(f"[X] Falha na gravação via ROOT: {saida}")
         return False
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--file", help="Caminho do arquivo tar.gz vindo do install.py")
+    args = parser.parse_args()
+
+    if args.file:
+        inicializar_ambiente()
+        dprint(f"\n[CLI] ========================================")
+        dprint(f"[CLI] ACORDADO PELO INSTALL.PY!")
+        dprint(f"[CLI] Recebi a ordem real de injetar o arquivo: {args.file}")
+
+        pacote_alvo = None
+        nome_arquivo = os.path.basename(args.file).lower()
+        
+        if "macrodroid" in nome_arquivo:
+            pacote_alvo = "com.arlosoft.macrodroid"
+        else:
+            match = re.search(r'data_([a-z0-9_]+)\.tar\.gz', nome_arquivo)
+            if match:
+                pacote_alvo = match.group(1).replace("_", ".")
+        
+        if pacote_alvo:
+            dprint(f"[CLI] Pacote alvo deduzido com sucesso: {pacote_alvo}")
+            
+            safe_pkg = pacote_alvo.replace(".", "_")
+            destino_esperado = os.path.join(BASE_DATA_DIR, f"data_{safe_pkg}.tar.gz")
+            
+            dprint(f"[CLI] Movendo arquivo para o local de trabalho: {destino_esperado}")
+            shutil.copy2(args.file, destino_esperado)
+            
+            sucesso = data_inject(pacote_alvo, "local")
+            
+            if not sucesso:
+                dprint("[CLI] A injeção FALHOU! Avisando o install.py...")
+                sys.exit(1)
+            else:
+                dprint("[CLI] Injeção 100% concluída. Retornando sucesso para o install.py!")
+                sys.exit(0)
+        else:
+            dprint(f"[X] ERRO: Não consegui adivinhar o pacote alvo a partir do nome '{nome_arquivo}'.")
+            sys.exit(1)
