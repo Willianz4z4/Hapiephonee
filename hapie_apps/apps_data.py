@@ -3,6 +3,7 @@ import subprocess
 import re
 import requests
 import json
+from datetime import datetime
 
 try:
     import gdown
@@ -11,11 +12,21 @@ except ImportError:
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DATA_DIR = os.path.join(SCRIPT_DIR, "data_apps")
+LOG_FILE = os.path.join(SCRIPT_DIR, "log_detetive.txt")
 TIMEOUT_REDE = 15
 
 def inicializar_ambiente():
     if not os.path.exists(BASE_DATA_DIR):
         os.makedirs(BASE_DATA_DIR, exist_ok=True)
+
+def dprint(msg):
+    # Tenta printar na tela, mas se for bloqueado, salva no arquivo de log à força!
+    print(msg)
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
+    except:
+        pass
 
 def pacote_eh_valido(pacote):
     return bool(re.match(r'^[a-zA-Z0-9_.]+$', pacote))
@@ -148,67 +159,68 @@ def baixar_data_com_cookies(url, out_path):
     return False
 
 def data_inject(pacote, url_servidor):
-    print(f"\n==================================================")
-    print(f"[DEBUG] === INICIANDO INJEÇÃO DE DADOS ===")
-    print(f"[DEBUG] Pacote Alvo: {pacote}")
+    # Substituímos todos os prints do data_inject por dprint
+    dprint(f"\n==================================================")
+    dprint(f"[DEBUG] === INICIANDO INJEÇÃO DE DADOS ===")
+    dprint(f"[DEBUG] Pacote Alvo: {pacote}")
     
     if not pacote_eh_valido(pacote):
-        print(f"[X] Erro: Nome do pacote inválido '{pacote}'")
+        dprint(f"[X] Erro: Nome do pacote inválido '{pacote}'")
         return False
 
     inicializar_ambiente()
     safe_pkg = pacote.replace(".", "_")
     arquivo_local = os.path.join(BASE_DATA_DIR, f"data_{safe_pkg}.tar.gz")
-    print(f"[DEBUG] Procurando arquivo de dados exato em:\n[DEBUG] -> {arquivo_local}")
+    dprint(f"[DEBUG] Procurando arquivo exato no caminho:\n[DEBUG] -> {arquivo_local}")
 
     if not os.path.exists(arquivo_local):
-        print(f"[DEBUG] Arquivo não encontrado localmente! Acionando fallback de download...")
+        dprint(f"[DEBUG] Arquivo não encontrado localmente! (Ele deveria estar aí). Acionando fallback de download da nuvem...")
         if "drive.google.com" in url_servidor:
             url_download = url_servidor
         else:
             url_download = f"{url_servidor.rstrip('/')}/download/data_{safe_pkg}.tar.gz"
 
-        print(f"[!] Requisitando dados da nuvem: {url_download}")
+        dprint(f"[!] Requisitando dados da nuvem: {url_download}")
         try:
             sucesso_download = baixar_data_com_cookies(url_download, arquivo_local)
             if sucesso_download and os.path.exists(arquivo_local) and os.path.getsize(arquivo_local) > 1000:
                 tam_kb = os.path.getsize(arquivo_local) // 1024
-                print(f"[+] Download concluído. Tamanho salvo: {tam_kb} KB")
+                dprint(f"[+] Download concluído. Tamanho salvo: {tam_kb} KB")
             else:
-                print(f"[X] Falha no download ou arquivo pequeno demais (HTML de erro do Drive?).")
+                dprint(f"[X] Falha no download ou arquivo pequeno demais.")
                 if os.path.exists(arquivo_local):
                     os.remove(arquivo_local)
                 return False
         except Exception as e:
-            print(f"[X] Falha crítica ao fazer o download: {e}")
+            dprint(f"[X] Falha crítica ao fazer o download: {e}")
             if os.path.exists(arquivo_local):
                 os.remove(arquivo_local)
             return False
     else:
         tam_kb = os.path.getsize(arquivo_local) // 1024
-        print(f"[DEBUG] Arquivo encontrado localmente! Tamanho: {tam_kb} KB")
+        dprint(f"[DEBUG] Arquivo encontrado localmente! Tamanho: {tam_kb} KB")
 
     temp_extract_dir = os.path.join(BASE_DATA_DIR, f"temp_inspect_{safe_pkg}")
-    print(f"[DEBUG] Criando pasta para inspecionar estrutura do ZIP/TAR: {temp_extract_dir}")
+    dprint(f"[DEBUG] Criando pasta para inspecionar estrutura do ZIP/TAR: {temp_extract_dir}")
     if os.path.exists(temp_extract_dir):
         subprocess.run(["rm", "-rf", temp_extract_dir])
     os.makedirs(temp_extract_dir, exist_ok=True)
 
     try:
-        print(f"[DEBUG] Testando extração prévia (Python)...")
+        dprint(f"[DEBUG] Testando extração prévia no Python...")
         res_tar = subprocess.run(["tar", "-xzf", arquivo_local, "-C", temp_extract_dir], capture_output=True, text=True)
         
         if res_tar.returncode != 0:
-            print(f"[!] AVISO: O tar falhou na inspeção prévia. Erro:\n{res_tar.stderr}")
+            dprint(f"[!] AVISO: O tar falhou na inspeção prévia. Erro:\n{res_tar.stderr}")
         else:
             conteudo_temp = os.listdir(temp_extract_dir)
-            print(f"[DEBUG] O que tem dentro do arquivo? -> {conteudo_temp}")
+            dprint(f"[DEBUG] O que tem dentro do arquivo? -> {conteudo_temp}")
             target_data_dir = os.path.join(temp_extract_dir, pacote)
 
             if pacote in conteudo_temp and os.path.isdir(target_data_dir):
-                print(f"[DEBUG] Estrutura Perfeita: Pasta '{pacote}' na raiz.")
+                dprint(f"[DEBUG] Estrutura Perfeita: Pasta '{pacote}' na raiz.")
             elif "data" in conteudo_temp and os.path.isdir(os.path.join(temp_extract_dir, "data")):
-                print(f"[DEBUG] Estrutura 'data' detectada. Convertendo para padrão...")
+                dprint(f"[DEBUG] Estrutura 'data' detectada. Convertendo para padrão root...")
                 subdata_dir = os.path.join(temp_extract_dir, "data")
                 if os.path.exists(target_data_dir):
                     subprocess.run(["rm", "-rf", target_data_dir])
@@ -216,7 +228,7 @@ def data_inject(pacote, url_servidor):
                 for item in os.listdir(subdata_dir):
                     subprocess.run(["mv", os.path.join(subdata_dir, item), target_data_dir])
             else:
-                print(f"[DEBUG] Arquivos soltos detectados. Empacotando na pasta do pacote '{pacote}'...")
+                dprint(f"[DEBUG] Arquivos soltos detectados. Empacotando na pasta raiz do pacote '{pacote}'...")
                 if os.path.exists(target_data_dir):
                     subprocess.run(["rm", "-rf", target_data_dir])
                 os.makedirs(target_data_dir, exist_ok=True)
@@ -225,19 +237,19 @@ def data_inject(pacote, url_servidor):
                     if item != pacote:
                         subprocess.run(["mv", item_path, target_data_dir])
 
-            print(f"[DEBUG] Recompactando o arquivo de forma limpa...")
+            dprint(f"[DEBUG] Recompactando o arquivo estruturado perfeitamente...")
             padrao_tar_local = os.path.join(BASE_DATA_DIR, f"fixed_{safe_pkg}.tar.gz")
             subprocess.run(["tar", "-czf", padrao_tar_local, "-C", temp_extract_dir, pacote], check=True)
             os.replace(padrao_tar_local, arquivo_local)
-            print(f"[DEBUG] Reorganização concluída.")
+            dprint(f"[DEBUG] Reorganização concluída com sucesso.")
 
     except Exception as e:
-        print(f"[X] Falha na inspeção inteligente (continuando cru): {e}")
+        dprint(f"[X] Falha na inspeção inteligente (continuando cru): {e}")
     finally:
         if os.path.exists(temp_extract_dir):
             subprocess.run(["rm", "-rf", temp_extract_dir])
 
-    print(f"\n[DEBUG] --- ENVIANDO PARA O ROOT ---")
+    dprint(f"\n[DEBUG] --- ENVIANDO COMANDO PARA O ROOT ---")
     comando = f"""
     if [ ! -f "{arquivo_local}" ]; then
         echo "erro_arquivo_sumiu_raiz"
@@ -272,9 +284,9 @@ def data_inject(pacote, url_servidor):
     
     sucesso, saida = executar_root(comando)
 
-    print(f"[DEBUG] --- RESPOSTA CRUA DO ROOT ---")
-    print(saida)
-    print(f"==================================================\n")
+    dprint(f"[DEBUG] --- RESPOSTA CRUA DO ROOT ---")
+    dprint(saida)
+    dprint(f"==================================================\n")
 
     if os.path.exists(arquivo_local):
         try:
@@ -283,16 +295,16 @@ def data_inject(pacote, url_servidor):
             pass
 
     if "erro_pacote_nao_instalado" in saida:
-        print(f"[X] Erro: O pacote '{pacote}' não existe no /data/data/ deste celular.")
+        dprint(f"[X] Erro: O pacote '{pacote}' não existe no /data/data/ deste celular.")
         return False
     elif "erro_arquivo_sumiu" in saida:
-        print(f"[X] Erro: O arquivo tar.gz sumiu antes do Root processá-lo.")
+        dprint(f"[X] Erro: O arquivo tar.gz sumiu antes do Root processá-lo.")
         return False
     elif "erro_tar_crash" in saida:
-        print(f"[X] Erro Crítico: O comando tar quebrou dentro do root! Verifique o log acima.")
+        dprint(f"[X] Erro Crítico: O comando tar quebrou dentro do root! Verifique o log acima.")
         return False
     elif "sucesso_absoluto" in saida:
-        print(f"[+] Root confirmou a extração! Dados injetados no pacote '{pacote}'.")
+        dprint(f"[+] Root confirmou a extração! Dados injetados no pacote '{pacote}'.")
         try:
             report_file = os.path.join(os.path.dirname(SCRIPT_DIR), "Data", "install_report.json")
             os.makedirs(os.path.dirname(report_file), exist_ok=True)
@@ -308,11 +320,11 @@ def data_inject(pacote, url_servidor):
             with open(report_file, "w") as f:
                 json.dump(report_data, f, indent=4)
         except Exception as e:
-            print(f"[!] Erro ao atualizar install_report.json: {e}")
+            dprint(f"[!] Erro ao atualizar install_report.json: {e}")
 
         return True
     else:
-        print(f"[X] Retorno desconhecido do Root. Injeção possivelmente falhou.")
+        dprint(f"[X] Retorno desconhecido do Root. Injeção possivelmente falhou.")
         return False
 
 def add_ugclone_config(pacote_alvo, configs):
