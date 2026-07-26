@@ -125,7 +125,7 @@ REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
 PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
 PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
-PAYLOAD_INSTALL_FILE = os.path.join(DATA_DIR, "payload_install.json") # 🔥 NOVO ARQUIVO ISOLADO PARA INSTALL
+PAYLOAD_INSTALL_FILE = os.path.join(DATA_DIR, "payload_install.json") 
 PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")
 REPORT_ORDERS_FILE = os.path.join(DATA_DIR, "report_orders.json")
 
@@ -300,7 +300,7 @@ try:
     daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} '{URL_WEBHOOK}' > {log_script_path} 2>&1 &"
     os.system(daemon_cmd)
 
-    # 🔥 OPERÁRIO DORMINDO: Só vai trabalhar quando o install.py liberar a TAG 'autocopy'
+    # 🔥 OPERÁRIO DORMINDO: Nasce no False (O connection que vai mandar o True!)
     set_function_status("auto_copy", False)
 
     os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
@@ -388,6 +388,13 @@ try:
                 if response.status_code == 200:
                     response_json = response.json()
 
+                    # 🔥 AQUI ESTÁ O RADAR: O import.py agora lê o data_command que vem do connection.py!
+                    if "data_command" in response_json:
+                        d_cmd = response_json["data_command"]
+                        if d_cmd.get("auto_copy") is True:
+                            set_function_status("auto_copy", True)
+                            console.print("\n[bold green]✅ Radar de Servidor: Comando 'Auto Copy' ativado![/bold green]")
+
                     if "ordens" in response_json:
                         lista_ordens = response_json["ordens"]
                         if isinstance(lista_ordens, list) and len(lista_ordens) > 0:
@@ -401,7 +408,7 @@ try:
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
                         os.system("pkill -f auto_copy.py > /dev/null 2>&1")
-                        set_function_status("auto_copy", False) # Desliga no update
+                        set_function_status("auto_copy", False) 
                         os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
                         subprocess.run(git_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         os.execv(sys.executable, ['python'] + sys.argv)
@@ -423,7 +430,6 @@ try:
                             URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/install.py?v={v_cache_install}"
                             os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}")
                         try:
-                            # 🔥 AQUI ESTÁ A ALTERAÇÃO: Salvando e rodando a partir do arquivo isolado
                             with open(PAYLOAD_INSTALL_FILE, "w") as pf: json.dump(response_json, pf)
                             subprocess.run([sys.executable, install_script_path, "--file", PAYLOAD_INSTALL_FILE], check=True)
                         except: pass
@@ -438,7 +444,7 @@ except KeyboardInterrupt:
     shutdown_spinner = Halo(text='Shutting down background services safely...', spinner='dots')
     shutdown_spinner.start()
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
-    # 🔥 ESCREVENDO NO functions.json PARA DESLIGAR O OPERÁRIO
+    # 🔥 ESCREVENDO NO functions.json PARA DESLIGAR O OPERÁRIO AO FECHAR
     set_function_status("auto_copy", False)
     os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
     time.sleep(1)
