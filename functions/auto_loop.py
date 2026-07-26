@@ -2,6 +2,10 @@ import subprocess
 import re
 import time
 
+# A palavra pré-definida no código! 
+# (O %s substitui o espaço. Emojis foram removidos para o Android não dar erro)
+TEXTO_ALVO = "Achei%sum%scampo"
+
 def obter_todos_edittexts():
     subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_dump.xml'], 
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -22,44 +26,43 @@ def obter_todos_edittexts():
     return campos
 
 def cacador_de_campos():
-    print("[*] Iniciando o modo CAÇADOR! (Pressione CTRL + C para parar)")
-    print("[*] O script vai ler a tela a cada 2 segundos procurando alvos...")
+    texto_limpo = TEXTO_ALVO.replace('%s', ' ')
+    print(f"[*] Iniciando o CAÇADOR! Texto na agulha: '{texto_limpo}'")
+    print("[*] Pressione CTRL + C para parar.")
     
-    # Memória para não floodar o mesmo campo repetidas vezes
     campos_ignorados = set() 
     
     while True:
         campos = obter_todos_edittexts()
         
-        # Se você mudou para uma tela sem campos (ex: Tela Inicial), 
-        # nós limpamos a memória. Assim, se você voltar no app de antes, ele cola de novo!
         if not campos:
             campos_ignorados.clear()
             
+        # O script passa por TODOS os campos encontrados na tela
         for bounds in campos:
-            # Só ataca se for um campo novo que ainda não preenchemos nesta tela
             if bounds not in campos_ignorados:
                 x1, y1, x2, y2 = bounds
                 centro_x = (x1 + x2) // 2
                 centro_y = (y1 + y2) // 2
                 
-                print(f"\n[!] NOVO ALVO ENCONTRADO: {bounds}")
-                print(" -> Clicando e colando...")
-                
+                print(f"\n[!] Campo detectado na coordenada: {bounds}")
+                print(" -> Clicando no alvo...")
                 subprocess.run(['su', '-c', f'input tap {centro_x} {centro_y}'])
+                
                 time.sleep(0.5) 
-                subprocess.run(['su', '-c', 'input keyevent 279'])
+                
+                print(" -> Escrevendo a palavra pré-definida...")
+                # Digita o texto definido lá em cima direto no campo
+                subprocess.run(['su', '-c', f'input text "{TEXTO_ALVO}"'])
+                
                 time.sleep(0.5)
                 
-                # Registra na memória que esse já foi
                 campos_ignorados.add(bounds)
         
-        # Pausa de 2 segundos antes de tirar o próximo raio-x
         time.sleep(2)
 
 if __name__ == '__main__':
     try:
         cacador_de_campos()
     except KeyboardInterrupt:
-        # Se você apertar CTRL + C, ele encerra de forma limpa
         print("\n[!] Caçada encerrada pelo usuário. Bom descanso!")
