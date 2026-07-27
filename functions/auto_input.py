@@ -18,48 +18,65 @@ def check_permission():
         except: pass
     return False
 
-def obter_todos_edittexts():
-    subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_dump.xml'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    xml_data = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_dump.xml'], capture_output=True, text=True).stdout
+def obter_todos_edittexts(max_tentativas=5, delay=1.5):
+    for tentativa in range(1, max_tentativas + 1):
+        print(f"[*] Tentativa {tentativa}/{max_tentativas} de varredura (aguardando estabilização)...")
+        
+        processo = subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_dump.xml'], capture_output=True, text=True)
+        xml_data = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_dump.xml'], capture_output=True, text=True).stdout
 
-    campos = []
-    contador = 1
+        if len(xml_data) < 100:
+            print("[-] uiautomator falhou (A tela deve estar em movimento).")
+        else:
+            campos = []
+            contador = 1
 
-    for node in xml_data.split('<node'):
-        if 'class="android.widget.EditText"' in node:
-            if contador > 5:
-                break
+            for node in xml_data.split('<node'):
+                if 'class="android.widget.EditText"' in node:
+                    if contador > 5:
+                        break
 
-            match_bounds = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
-            match_id = re.search(r'resource-id="([^"]*)"', node)
-            match_desc = re.search(r'content-desc="([^"]*)"', node)
-            match_text = re.search(r'text="([^"]*)"', node)
-            match_pwd = re.search(r'password="(true)"', node)
+                    match_bounds = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
+                    match_id = re.search(r'resource-id="([^"]*)"', node)
+                    match_desc = re.search(r'content-desc="([^"]*)"', node)
+                    match_text = re.search(r'text="([^"]*)"', node)
+                    match_pwd = re.search(r'password="(true)"', node)
 
-            if match_bounds:
-                bounds = tuple(map(int, match_bounds.groups()))
-                res_id = match_id.group(1) if match_id else ""
-                desc = match_desc.group(1) if match_desc else ""
-                text_val = match_text.group(1) if match_text else ""
+                    if match_bounds:
+                        bounds = tuple(map(int, match_bounds.groups()))
+                        res_id = match_id.group(1) if match_id else ""
+                        desc = match_desc.group(1) if match_desc else ""
+                        text_val = match_text.group(1) if match_text else ""
 
-                nome_base = desc or (res_id.split('/')[-1] if res_id else (text_val or "Campo Oculto"))
-                nome_lower, texto_lower = nome_base.lower(), text_val.lower()
+                        nome_base = desc or (res_id.split('/')[-1] if res_id else (text_val or "Campo Oculto"))
+                        nome_lower, texto_lower = nome_base.lower(), text_val.lower()
 
-                is_url = any(p in nome_lower for p in ['url','link','site']) or texto_lower.startswith(('http','www.'))
-                is_pwd = match_pwd or 'senha' in nome_lower or 'password' in nome_lower
+                        is_url = any(p in nome_lower for p in ['url','link','site']) or texto_lower.startswith(('http','www.'))
+                        is_pwd = match_pwd or 'senha' in nome_lower or 'password' in nome_lower
 
-                if is_url: nome_final = f"[🔗 URL] {nome_base}"
-                elif is_pwd: nome_final = f"[🔑 SENHA] {nome_base}"
-                else: nome_final = f"[📝 TEXTO] {nome_base}"
+                        if is_url: nome_final = f"[🔗 URL] {nome_base}"
+                        elif is_pwd: nome_final = f"[🔑 SENHA] {nome_base}"
+                        else: nome_final = f"[📝 TEXTO] {nome_base}"
 
-                campos.append({
-                    "id": contador,
-                    "nome_identificador": nome_final,
-                    "bounds": bounds
-                })
-                contador += 1
+                        campos.append({
+                            "id": contador,
+                            "nome_identificador": nome_final,
+                            "bounds": bounds
+                        })
+                        contador += 1
 
-    return campos
+            if campos:
+                print(f"[*] Sucesso na tentativa {tentativa}! {len(campos)} campos encontrados.")
+                return campos
+            else:
+                print("[-] Tela capturada, mas nenhum campo de texto visível ainda.")
+
+        if tentativa < max_tentativas:
+            print(f"[*] Aguardando {delay}s antes de tentar novamente...")
+            time.sleep(delay)
+
+    print("[-] Esgotaram-se as tentativas. Nenhum campo mapeado.")
+    return []
 
 def aplicar_texto_com_seguranca(id_alvo, texto):
     print(f"[*] Verificando segurança para aplicar no ID {id_alvo}...")
@@ -84,11 +101,9 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
     b = alvo["bounds"]
     str_bounds = f'bounds="[{b[0]},{b[1]}][{b[2]},{b[3]}]"'
 
-    # Tira um novo raio-x para garantir a precisão
     subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_check.xml'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     xml_atual = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_check.xml'], capture_output=True, text=True).stdout
 
-    # VALIDAÇÃO CIRÚRGICA: Procura o nó exato com as coordenadas E garante que ainda é um EditText
     node_seguro = False
     for node in xml_atual.split('<node'):
         if str_bounds in node and 'class="android.widget.EditText"' in node:
@@ -109,7 +124,6 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
         print("\n[!] ALERTA CRÍTICO: A tela mudou radicalmente, foi rolada ou o campo desapareceu.")
         print("[!] Abortando injeção de texto por medida de segurança extrema.")
 
-    # LIMPEZA DE RASTRO: Destrói o JSON após o uso (sucesso ou falha)
     try:
         os.remove(CAMPOS_FILE)
         print("[*] Arquivo campos_mapeados.json deletado para evitar reciclar dados antigos.")
@@ -117,7 +131,6 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
         print(f"[-] Erro ao tentar excluir arquivo residual: {e}")
 
 def main():
-    # MODO 1: RECEBEU ORDEM VIA HTTP (Chamado pelo import.py)
     if len(sys.argv) >= 3 and sys.argv[1] == "--file":
         payload_path = sys.argv[2]
         print(f"[*] MODO 1 INICIADO: Lendo payload de {payload_path}")
@@ -137,7 +150,6 @@ def main():
             print(f"[-] Erro ao processar arquivo de payload HTTP: {e}")
         sys.exit(0)
 
-    # MODO 2: OLHEIRO DA TELA (Chamado pelo MacroDroid ao copiar/clicar)
     print("[*] MODO 2 INICIADO: Iniciando Olheiro...")
     if not check_permission():
         print("[-] Permissão 'auto_input' negada no functions.json. Abortando.")
@@ -151,22 +163,17 @@ def main():
             "campos_disponiveis": campos
         }
         
-        # Garante que a pasta Data existe antes de tentar salvar
         os.makedirs(DATA_DIR, exist_ok=True)
         
-        print(f"[*] Tentando salvar mapeamento no caminho exato: {CAMPOS_FILE}")
         with open(CAMPOS_FILE, "w") as f:
             json.dump(payload, f, indent=4)
             
-        # PROVA REAL: Verifica se o arquivo existe fisicamente
         if os.path.exists(CAMPOS_FILE):
             print(f"[✔] CONFIRMADO: O arquivo campos_mapeados.json foi CRIADO fisicamente!")
-        else:
-            print(f"[!] BIZARRO: O arquivo não está no diretório após o salvamento!")
 
         print(f"[+] Tela mapeada e salva de forma cirúrgica. ID's de 1 a {len(campos)} prontos.")
     else:
-        print("[-] Nenhum campo de texto encontrado na tela atual.")
+        print("[-] Falha ao mapear a tela após todas as tentativas.")
 
 if __name__ == '__main__':
     main()
