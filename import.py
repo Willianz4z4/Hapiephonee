@@ -77,7 +77,7 @@ except ImportError:
     from rich.panel import Panel
     from halo import Halo
 
-HAPIEPHONE_VERSION = "10.5 (Motor de Dados Integrado)"
+HAPIEPHONE_VERSION = "10.6 (Auto Input Engine)"
 console = Console()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 sys.path.insert(0, BASE_DIR)
@@ -125,9 +125,10 @@ REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 APPS_JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
 PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
 PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
-PAYLOAD_INSTALL_FILE = os.path.join(DATA_DIR, "payload_install.json") 
+PAYLOAD_INSTALL_FILE = os.path.join(DATA_DIR, "payload_install.json")
 PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")
 REPORT_ORDERS_FILE = os.path.join(DATA_DIR, "report_orders.json")
+CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json")
 
 def set_function_status(func_name, is_active):
     data = {}
@@ -300,9 +301,6 @@ try:
     daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} '{URL_WEBHOOK}' > {log_script_path} 2>&1 &"
     os.system(daemon_cmd)
 
-    # 🔥 OPERÁRIO DORMINDO: Nasce no False (O connection que vai mandar o True!)
-    set_function_status("auto_copy", False)
-
     os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
     monitor_script_path = os.path.join(HAPIE_APPS_DIR, "monitor_apps.py")
     monitor_log_path = os.path.join(DATA_DIR, "monitor_log.txt")
@@ -340,6 +338,7 @@ try:
                 order_failed = []
                 apps_installed_data = {}
                 telemetry_data = {}
+                auto_input_data = {}
 
                 if os.path.exists(REPORT_FILE):
                     try:
@@ -362,6 +361,13 @@ try:
                         with open(APPS_JSON_FILE, "r") as f: apps_installed_data = json.load(f)
                     except: pass
 
+                # 🔥 LÊ O MAPEAMENTO DE TELA E APAGA O ARQUIVO LOGO EM SEGUIDA
+                if os.path.exists(CAMPOS_FILE):
+                    try:
+                        with open(CAMPOS_FILE, "r") as f: auto_input_data = json.load(f)
+                        os.remove(CAMPOS_FILE)
+                    except: pass
+
                 try:
                     if BASE_DIR not in sys.path: sys.path.insert(0, BASE_DIR)
                     import importlib.util
@@ -379,7 +385,8 @@ try:
                     "status": "online", "client_token": client_token, "version": HAPIEPHONE_VERSION,
                     "install_success": install_success, "install_failed": install_failed,
                     "order_success": order_success, "order_failed": order_failed,
-                    "apps_installed": apps_installed_data, "telemetry": telemetry_data
+                    "apps_installed": apps_installed_data, "telemetry": telemetry_data,
+                    "auto_input_data": auto_input_data
                 }
 
                 headers = {"Content-Type": "application/json", "ngrok-skip-browser-warning": "true"}
@@ -388,12 +395,35 @@ try:
                 if response.status_code == 200:
                     response_json = response.json()
 
-                    # 🔥 AQUI ESTÁ O RADAR: O import.py agora lê o data_command que vem do connection.py!
+                    # 🔥 CONTROLE DE PERMISSÕES (LIGA/DESLIGA AUTO_COPY E AUTO_INPUT)
                     if "data_command" in response_json:
                         d_cmd = response_json["data_command"]
-                        if d_cmd.get("auto_copy") is True:
-                            set_function_status("auto_copy", True)
-                            console.print("\n[bold green]✅ Radar de Servidor: Comando 'Auto Copy' ativado![/bold green]")
+                        
+                        if "auto_copy" in d_cmd:
+                            ac_status = bool(d_cmd["auto_copy"])
+                            set_function_status("auto_copy", ac_status)
+                            estado_txt = "ATIVADO" if ac_status else "DESATIVADO"
+                            console.print(f"\n[bold green]✅ Permissão 'Auto Copy' -> {estado_txt}[/bold green]")
+                            
+                        if "auto_input" in d_cmd:
+                            ai_status = bool(d_cmd["auto_input"])
+                            set_function_status("auto_input", ai_status)
+                            estado_txt = "ATIVADO" if ai_status else "DESATIVADO"
+                            console.print(f"\n[bold green]✅ Permissão 'Auto Input' -> {estado_txt}[/bold green]")
+
+                    # 🔥 ORDEM DE INJEÇÃO DE TEXTO NA TELA (ALVO + TEXTO)
+                    if "auto_input_cmd" in response_json:
+                        cmd_data = response_json["auto_input_cmd"]
+                        if "id_alvo" in cmd_data and "texto" in cmd_data:
+                            console.print(f"\n[bold yellow]⚡ Recebida ordem HTTP: Injetar texto no campo ID {cmd_data['id_alvo']}...[/bold yellow]")
+                            ai_script_path = os.path.join(FUNCTIONS_DIR, "auto_input.py")
+                            ai_payload_path = os.path.join(DATA_DIR, "payload_input.json")
+                            if os.path.exists(ai_script_path):
+                                try:
+                                    with open(ai_payload_path, "w") as pf: json.dump(response_json, pf)
+                                    subprocess.run([sys.executable, ai_script_path, "--file", ai_payload_path], check=True)
+                                except Exception as e:
+                                    console.print(f"[bold red]❌ Erro ao acionar o Auto Input: {e}[/bold red]")
 
                     if "ordens" in response_json:
                         lista_ordens = response_json["ordens"]
@@ -408,7 +438,7 @@ try:
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
                         os.system("pkill -f auto_copy.py > /dev/null 2>&1")
-                        set_function_status("auto_copy", False) 
+                        set_function_status("auto_copy", False)
                         os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
                         subprocess.run(git_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                         os.execv(sys.executable, ['python'] + sys.argv)
@@ -444,7 +474,6 @@ except KeyboardInterrupt:
     shutdown_spinner = Halo(text='Shutting down background services safely...', spinner='dots')
     shutdown_spinner.start()
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
-    # 🔥 ESCREVENDO NO functions.json PARA DESLIGAR O OPERÁRIO AO FECHAR
     set_function_status("auto_copy", False)
     os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
     time.sleep(1)
