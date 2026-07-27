@@ -18,8 +18,7 @@ def check_permission():
         except: pass
     return False
 
-def obter_todos_edittexts(max_tentativas=5, delay=1.5):
-    # Lista de classes que representam campos de texto (Nativos ou traduzidos de HTML)
+def obter_todos_edittexts(max_tentativas=10, delay=1.0):
     classes_alvo = [
         'android.widget.EditText',
         'android.widget.AutoCompleteTextView',
@@ -27,7 +26,7 @@ def obter_todos_edittexts(max_tentativas=5, delay=1.5):
     ]
 
     for tentativa in range(1, max_tentativas + 1):
-        print(f"[*] Tentativa {tentativa}/{max_tentativas} de varredura (buscando HTML e Nativos)...")
+        print(f"[*] Tentativa {tentativa}/{max_tentativas} de varredura (buscando campos)...")
         
         processo = subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_dump.xml'], capture_output=True, text=True)
         xml_data = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_dump.xml'], capture_output=True, text=True).stdout
@@ -39,14 +38,11 @@ def obter_todos_edittexts(max_tentativas=5, delay=1.5):
             contador = 1
 
             for node in xml_data.split('<node'):
-                # Verifica se o nó atual pertence a alguma classe de texto conhecida
                 is_text_field = any(f'class="{classe}"' in node for classe in classes_alvo)
-                
-                # Heurística avançada: Se o Chrome disfarçou o input HTML num View genérico, mas ele está focado
                 is_focused_html = 'class="android.view.View"' in node and 'focused="true"' in node and 'focusable="true"' in node
 
                 if is_text_field or is_focused_html:
-                    if contador > 10: # Aumentei para 10 campos por segurança em sites grandes
+                    if contador > 10:
                         break
 
                     match_bounds = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
@@ -117,7 +113,6 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
     subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_check.xml'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     xml_atual = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_check.xml'], capture_output=True, text=True).stdout
 
-    # Na checagem de segurança, também aceitamos que seja um campo genérico focado
     node_seguro = False
     for node in xml_atual.split('<node'):
         if str_bounds in node and ('EditText' in node or 'AutoCompleteTextView' in node or 'focused="true"' in node):
