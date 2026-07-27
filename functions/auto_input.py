@@ -21,15 +21,15 @@ def check_permission():
 def obter_todos_edittexts():
     subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_dump.xml'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     xml_data = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_dump.xml'], capture_output=True, text=True).stdout
-    
+
     campos = []
     contador = 1
-    
+
     for node in xml_data.split('<node'):
         if 'class="android.widget.EditText"' in node:
             if contador > 5:
                 break
-                
+
             match_bounds = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
             match_id = re.search(r'resource-id="([^"]*)"', node)
             match_desc = re.search(r'content-desc="([^"]*)"', node)
@@ -44,7 +44,7 @@ def obter_todos_edittexts():
 
                 nome_base = desc or (res_id.split('/')[-1] if res_id else (text_val or "Campo Oculto"))
                 nome_lower, texto_lower = nome_base.lower(), text_val.lower()
-                
+
                 is_url = any(p in nome_lower for p in ['url','link','site']) or texto_lower.startswith(('http','www.'))
                 is_pwd = match_pwd or 'senha' in nome_lower or 'password' in nome_lower
 
@@ -55,15 +55,15 @@ def obter_todos_edittexts():
                 campos.append({
                     "id": contador,
                     "nome_identificador": nome_final,
-                    "bounds": bounds 
+                    "bounds": bounds
                 })
                 contador += 1
-                
+
     return campos
 
 def aplicar_texto_com_seguranca(id_alvo, texto):
     print(f"[*] Verificando segurança para aplicar no ID {id_alvo}...")
-    
+
     if not os.path.exists(CAMPOS_FILE):
         print("[-] Arquivo de campos mapeados não encontrado. Nada a fazer.")
         return
@@ -76,7 +76,7 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
         return
 
     alvo = next((c for c in dados_locais.get("campos_disponiveis", []) if c["id"] == id_alvo), None)
-    
+
     if not alvo:
         print(f"[-] ID {id_alvo} não encontrado na última varredura da tela.")
         return
@@ -98,10 +98,10 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
     if node_seguro:
         print("[+] Tela validada de forma cirúrgica! O campo original está lá. Aplicando...")
         cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
-        
+
         subprocess.run(['su', '-c', f'input tap {cx} {cy}'])
         time.sleep(0.5)
-        
+
         texto_formatado = texto.replace(' ', '%s')
         subprocess.run(['su', '-c', f"input text '{texto_formatado}'"])
         print("\n[✔] Ação HTTP concluída e segura!")
@@ -120,14 +120,15 @@ def main():
     # MODO 1: RECEBEU ORDEM VIA HTTP (Chamado pelo import.py)
     if len(sys.argv) >= 3 and sys.argv[1] == "--file":
         payload_path = sys.argv[2]
+        print(f"[*] MODO 1 INICIADO: Lendo payload de {payload_path}")
         try:
             with open(payload_path, "r") as f:
                 payload_http = json.load(f)
-            
+
             cmd = payload_http.get("auto_input_cmd", {})
             id_alvo = cmd.get("id_alvo")
             texto_para_aplicar = cmd.get("texto")
-            
+
             if id_alvo and texto_para_aplicar:
                 aplicar_texto_com_seguranca(int(id_alvo), str(texto_para_aplicar))
             else:
@@ -137,19 +138,35 @@ def main():
         sys.exit(0)
 
     # MODO 2: OLHEIRO DA TELA (Chamado pelo MacroDroid ao copiar/clicar)
+    print("[*] MODO 2 INICIADO: Iniciando Olheiro...")
     if not check_permission():
+        print("[-] Permissão 'auto_input' negada no functions.json. Abortando.")
         sys.exit(0)
 
     campos = obter_todos_edittexts()
-    
+
     if campos:
         payload = {
             "status_autoinput": True,
             "campos_disponiveis": campos
         }
+        
+        # Garante que a pasta Data existe antes de tentar salvar
+        os.makedirs(DATA_DIR, exist_ok=True)
+        
+        print(f"[*] Tentando salvar mapeamento no caminho exato: {CAMPOS_FILE}")
         with open(CAMPOS_FILE, "w") as f:
             json.dump(payload, f, indent=4)
+            
+        # PROVA REAL: Verifica se o arquivo existe fisicamente
+        if os.path.exists(CAMPOS_FILE):
+            print(f"[✔] CONFIRMADO: O arquivo campos_mapeados.json foi CRIADO fisicamente!")
+        else:
+            print(f"[!] BIZARRO: O arquivo não está no diretório após o salvamento!")
+
         print(f"[+] Tela mapeada e salva de forma cirúrgica. ID's de 1 a {len(campos)} prontos.")
+    else:
+        print("[-] Nenhum campo de texto encontrado na tela atual.")
 
 if __name__ == '__main__':
     main()
