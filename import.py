@@ -320,7 +320,6 @@ except Exception as e: spinner.fail(f"Error deploying modules: {e}")
 registered_in_db = False
 PING_INTERVAL = 60
 last_check = 0
-last_applied_size = ""
 
 console.print("\n[bold green]📡 Connection established. Awaiting commands from Control Panel...[/bold green]")
 console.print("[dim](Press CTRL+C at any time to disconnect safely)[/dim]\n")
@@ -361,7 +360,7 @@ try:
                         with open(APPS_JSON_FILE, "r") as f: apps_installed_data = json.load(f)
                     except: pass
 
-                # 🔥 LÊ O MAPEAMENTO DE TELA E APAGA O ARQUIVO LOGO EM SEGUIDA
+                # 🔥 Lê o arquivo de campos mapeados (GERADO PELO MACRODROID) e apaga em seguida.
                 if os.path.exists(CAMPOS_FILE):
                     try:
                         with open(CAMPOS_FILE, "r") as f: auto_input_data = json.load(f)
@@ -395,18 +394,24 @@ try:
                 if response.status_code == 200:
                     response_json = response.json()
 
-                    # 🔥 CONTROLE DE PERMISSÕES (LIGA/DESLIGA AUTO_COPY E AUTO_INPUT)
                     if "data_command" in response_json:
                         d_cmd = response_json["data_command"]
-                        
                         if "auto_copy" in d_cmd:
                             ac_status = bool(d_cmd["auto_copy"])
                             set_function_status("auto_copy", ac_status)
                             estado_txt = "ATIVADO" if ac_status else "DESATIVADO"
                             console.print(f"\n[bold green]✅ Permissão 'Auto Copy' -> {estado_txt}[/bold green]")
-                            
-                        if "auto_input" in d_cmd:
-                            ai_status = bool(d_cmd["auto_input"])
+
+                    # 🔥 AQUI ESTÁ O SINAL VERDE: Lê da raiz e APENAS avisa salvando no functions.json
+                    if "auto_input" in response_json:
+                        ai_status = bool(response_json["auto_input"])
+                        old_status = False
+                        if os.path.exists(FUNCTIONS_JSON_FILE):
+                            try:
+                                with open(FUNCTIONS_JSON_FILE, "r") as f: old_status = json.load(f).get("auto_input", False)
+                            except: pass
+                        
+                        if old_status != ai_status:
                             set_function_status("auto_input", ai_status)
                             estado_txt = "ATIVADO" if ai_status else "DESATIVADO"
                             console.print(f"\n[bold green]✅ Permissão 'Auto Input' -> {estado_txt}[/bold green]")
@@ -423,7 +428,7 @@ try:
                                     with open(ai_payload_path, "w") as pf: json.dump(response_json, pf)
                                     subprocess.run([sys.executable, ai_script_path, "--file", ai_payload_path], check=True)
                                 except Exception as e:
-                                    console.print(f"[bold red]❌ Erro ao acionar o Auto Input: {e}[/bold red]")
+                                    console.print(f"[bold red]❌ Erro ao acionar o Auto Input para injeção: {e}[/bold red]")
 
                     if "ordens" in response_json:
                         lista_ordens = response_json["ordens"]
