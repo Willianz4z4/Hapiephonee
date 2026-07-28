@@ -30,21 +30,27 @@ def find_su_path():
     if _SU_PATH and os.path.exists(_SU_PATH):
         return _SU_PATH
     
-    # Lista de caminhos onde os roots modernos (KernelSU, APatch, Magisk) escondem o binário
+    # Destrói o stub falso do Termux se ele tentar nascer de novo
+    fake_su = "/data/data/com.termux/files/usr/bin/su"
+    if os.path.exists(fake_su):
+        try: os.remove(fake_su)
+        except: pass
+
+    # Procura onde o root de verdade (KernelSU, APatch, Magisk) está escondido
     paths = [
         "/data/adb/ksu/bin/su",
         "/data/adb/ap/bin/su",
         "/data/adb/magisk/su",
-        "/system/xbin/su",
-        "/system/bin/su",
         "/sbin/su",
+        "/system/bin/su",
+        "/system/xbin/su",
         "/su/bin/su"
     ]
     for p in paths:
         if os.path.exists(p):
             _SU_PATH = p
             return p
-    return "su" # Fallback final caso esteja no PATH do sistema
+    return "su"
 
 def execute_root(comando):
     su_bin = find_su_path()
