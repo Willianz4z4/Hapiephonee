@@ -24,12 +24,10 @@ def log_debug(msg):
     except: pass
 
 def execute_root(comando):
-    # 🔥 USA O TSU DO TERMUX PARA BURLAR O BLOQUEIO
-    try:
-        return subprocess.run(['tsu', '-c', comando], capture_output=True, text=True)
-    except FileNotFoundError:
-        # Fallback caso o pacote tsu não esteja instalado
-        return subprocess.run(['su', '-c', comando], capture_output=True, text=True)
+    # 🔥 OPÇÃO NUCLEAR: Força o PATH original do Android, ignorando a trava do Termux.
+    # Assim ele acha o 'su' verdadeiro do Magisk/KernelSU na marra.
+    cmd_completo = f"PATH=/sbin:/system/xbin:/system/bin:$PATH su -c '{comando}'"
+    return subprocess.run(cmd_completo, shell=True, capture_output=True, text=True)
 
 def check_permission():
     if os.path.exists(FUNCTIONS_FILE):
