@@ -23,41 +23,23 @@ def log_debug(msg):
             f.write(texto + "\n")
     except: pass
 
-_SU_BIN = None
-
-def find_su():
-    global _SU_BIN
-    if _SU_BIN:
-        return _SU_BIN
-    
-    # Destrói o stub falso do Termux se ele tentar atrapalhar
-    fake_su = "/data/data/com.termux/files/usr/bin/su"
-    if os.path.exists(fake_su):
-        try: os.remove(fake_su)
-        except: pass
-
-    # Caminhos comuns de root em celulares em nuvem (UGPhone / Redfinger / Emuladores)
-    caminhos_possiveis = [
-        "/system/xbin/su",
-        "/system/bin/su",
-        "/sbin/su",
-        "/vendor/bin/su",
-        "/data/adb/ksu/bin/su",
-        "/data/adb/magisk/su"
-    ]
-    
-    for caminho in caminhos_possiveis:
-        if os.path.exists(caminho):
-            _SU_BIN = caminho
-            return caminho
-            
-    return "su" # Fallback final
-
 def execute_root(comando):
-    su_path = find_su()
-    # Força o PATH original do Android para o UGPhone não bloquear o comando
-    cmd_completo = f"PATH=/sbin:/system/xbin:/system/bin:/vendor/bin:$PATH {su_path} -c '{comando}'"
-    return subprocess.run(cmd_completo, shell=True, capture_output=True, text=True)
+    # Tenta usar o TSU (Termux SU) primeiro, depois tenta os caminhos absolutos clássicos
+    binarios_root = ["tsu", "/system/bin/su", "/system/xbin/su", "su"]
+    
+    for bin_su in binarios_root:
+        try:
+            # Chama como lista e sem shell=True para impedir que o Termux intercepte
+            resultado = subprocess.run([bin_su, '-c', comando], capture_output=True, text=True)
+            
+            # Se não der erro de "not found", significa que esse executável funcionou
+            if "not found" not in resultado.stderr.lower():
+                return resultado
+        except FileNotFoundError:
+            continue
+            
+    # Se nada funcionar, devolve um fallback para não quebrar o código
+    return subprocess.run(['su', '-c', comando], capture_output=True, text=True)
 
 def check_permission():
     if os.path.exists(FUNCTIONS_FILE):
@@ -73,7 +55,7 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
         'android.widget.AutoCompleteTextView',
         'android.widget.MultiAutoCompleteTextView'
     ]
-    
+
     for tentativa in range(1, max_tentativas + 1):
         log_debug(f"[*] Tentativa {tentativa}/{max_tentativas}...")
 
@@ -111,7 +93,7 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
                         res_id = match_id.group(1) if match_id else ""
                         desc = match_desc.group(1) if match_desc else ""
                         text_val = match_text.group(1) if match_text else ""
-                        
+
                         nome_base = desc or (res_id.split('/')[-1] if res_id else (text_val or "Campo HTML/Nativo"))
                         nome_lower, texto_lower = nome_base.lower(), text_val.lower()
 
@@ -156,7 +138,7 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
     execute_root('pkill uiautomator')
     execute_root('rm -f /data/local/tmp/ui_check.xml')
     execute_root('uiautomator dump /data/local/tmp/ui_check.xml')
-    
+
     xml_atual = execute_root('cat /data/local/tmp/ui_check.xml').stdout
 
     node_seguro = False
