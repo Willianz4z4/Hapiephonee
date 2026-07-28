@@ -23,38 +23,40 @@ def log_debug(msg):
             f.write(texto + "\n")
     except: pass
 
-_SU_PATH = None
+_SU_BIN = None
 
-def find_su_path():
-    global _SU_PATH
-    if _SU_PATH and os.path.exists(_SU_PATH):
-        return _SU_PATH
+def find_su():
+    global _SU_BIN
+    if _SU_BIN:
+        return _SU_BIN
     
-    # Destrói o stub falso do Termux se ele tentar nascer de novo
+    # Destrói o stub falso do Termux se ele tentar atrapalhar
     fake_su = "/data/data/com.termux/files/usr/bin/su"
     if os.path.exists(fake_su):
         try: os.remove(fake_su)
         except: pass
 
-    # Procura onde o root de verdade (KernelSU, APatch, Magisk) está escondido
-    paths = [
-        "/data/adb/ksu/bin/su",
-        "/data/adb/ap/bin/su",
-        "/data/adb/magisk/su",
-        "/sbin/su",
-        "/system/bin/su",
+    # Caminhos comuns de root em celulares em nuvem (UGPhone / Redfinger / Emuladores)
+    caminhos_possiveis = [
         "/system/xbin/su",
-        "/su/bin/su"
+        "/system/bin/su",
+        "/sbin/su",
+        "/vendor/bin/su",
+        "/data/adb/ksu/bin/su",
+        "/data/adb/magisk/su"
     ]
-    for p in paths:
-        if os.path.exists(p):
-            _SU_PATH = p
-            return p
-    return "su"
+    
+    for caminho in caminhos_possiveis:
+        if os.path.exists(caminho):
+            _SU_BIN = caminho
+            return caminho
+            
+    return "su" # Fallback final
 
 def execute_root(comando):
-    su_bin = find_su_path()
-    cmd_completo = f"{su_bin} -c '{comando}'"
+    su_path = find_su()
+    # Força o PATH original do Android para o UGPhone não bloquear o comando
+    cmd_completo = f"PATH=/sbin:/system/xbin:/system/bin:/vendor/bin:$PATH {su_path} -c '{comando}'"
     return subprocess.run(cmd_completo, shell=True, capture_output=True, text=True)
 
 def check_permission():
@@ -78,7 +80,7 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
         execute_root('pkill uiautomator')
         execute_root('rm -f /data/local/tmp/ui_dump.xml')
 
-        log_debug("[-] Executando uiautomator dump...")
+        log_debug("[-] Executando uiautomator dump no UGPhone...")
         dump_proc = execute_root('uiautomator dump /data/local/tmp/ui_dump.xml')
         log_debug(f"[-] Resposta do dump: {dump_proc.stdout.strip()} | Erros: {dump_proc.stderr.strip()}")
 
@@ -86,7 +88,7 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
         log_debug(f"[-] Tamanho do XML lido: {len(xml_data)} caracteres.")
 
         if len(xml_data) < 100:
-            log_debug("❌ FALHA: XML vazio ou erro de root detectado.")
+            log_debug("❌ FALHA: XML vazio ou root desativado no painel do UGPhone.")
         else:
             campos = []
             contador = 1
