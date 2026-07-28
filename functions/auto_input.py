@@ -24,8 +24,8 @@ def log_debug(msg):
     except: pass
 
 def execute_root(comando):
-    # Removido o PATH forçado. O 'su' puro vai usar o ambiente correto do Termux/Magisk.
-    cmd_completo = f"su -c '{comando}'"
+    # 🔥 A SOLUÇÃO FINAL: Ignora o ambiente do Termux e puxa o su verdadeiro do Android!
+    cmd_completo = f"/system/bin/su -c '{comando}'"
     return subprocess.run(cmd_completo, shell=True, capture_output=True, text=True)
 
 def check_permission():
