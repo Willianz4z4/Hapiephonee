@@ -23,9 +23,32 @@ def log_debug(msg):
             f.write(texto + "\n")
     except: pass
 
+_SU_PATH = None
+
+def find_su_path():
+    global _SU_PATH
+    if _SU_PATH and os.path.exists(_SU_PATH):
+        return _SU_PATH
+    
+    # Lista de caminhos onde os roots modernos (KernelSU, APatch, Magisk) escondem o binário
+    paths = [
+        "/data/adb/ksu/bin/su",
+        "/data/adb/ap/bin/su",
+        "/data/adb/magisk/su",
+        "/system/xbin/su",
+        "/system/bin/su",
+        "/sbin/su",
+        "/su/bin/su"
+    ]
+    for p in paths:
+        if os.path.exists(p):
+            _SU_PATH = p
+            return p
+    return "su" # Fallback final caso esteja no PATH do sistema
+
 def execute_root(comando):
-    # 🔥 A SOLUÇÃO FINAL: Ignora o ambiente do Termux e puxa o su verdadeiro do Android!
-    cmd_completo = f"/system/bin/su -c '{comando}'"
+    su_bin = find_su_path()
+    cmd_completo = f"{su_bin} -c '{comando}'"
     return subprocess.run(cmd_completo, shell=True, capture_output=True, text=True)
 
 def check_permission():
