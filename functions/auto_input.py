@@ -27,12 +27,17 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
 
     for tentativa in range(1, max_tentativas + 1):
         print(f"[*] Tentativa {tentativa}/{max_tentativas} de varredura (buscando campos)...")
-        
+
+        # 🔥 CORREÇÃO 1: Matar processos travados do uiautomator
+        subprocess.run(['su', '-c', 'pkill uiautomator'], capture_output=True)
+        # 🔥 CORREÇÃO 2: Apagar o arquivo velho para garantir que não vai ler lixo
+        subprocess.run(['su', '-c', 'rm -f /data/local/tmp/ui_dump.xml'], capture_output=True)
+
         processo = subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_dump.xml'], capture_output=True, text=True)
         xml_data = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_dump.xml'], capture_output=True, text=True).stdout
 
         if len(xml_data) < 100:
-            print("[-] uiautomator falhou (A tela deve estar em movimento).")
+            print("[-] uiautomator falhou (Possível cursor piscando ou travamento de UI).")
         else:
             campos = []
             contador = 1
@@ -110,6 +115,10 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
     b = alvo["bounds"]
     str_bounds = f'bounds="[{b[0]},{b[1]}][{b[2]},{b[3]}]"'
 
+    # 🔥 CORREÇÃO 3: Limpeza de uiautomator antes de checar a tela
+    subprocess.run(['su', '-c', 'pkill uiautomator'], capture_output=True)
+    subprocess.run(['su', '-c', 'rm -f /data/local/tmp/ui_check.xml'], capture_output=True)
+
     subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_check.xml'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     xml_atual = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_check.xml'], capture_output=True, text=True).stdout
 
@@ -126,7 +135,8 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
         subprocess.run(['su', '-c', f'input tap {cx} {cy}'])
         time.sleep(0.5)
 
-        texto_formatado = texto.replace(' ', '%s')
+        # 🔥 PREVENÇÃO EXTRA: Escapa aspas simples para não crashar o comando Shell!
+        texto_formatado = texto.replace(' ', '%s').replace("'", "\\'")
         subprocess.run(['su', '-c', f"input text '{texto_formatado}'"])
         print("\n[✔] Ação HTTP concluída e segura!")
     else:
@@ -171,12 +181,12 @@ def main():
             "status_autoinput": True,
             "campos_disponiveis": campos
         }
-        
+
         os.makedirs(DATA_DIR, exist_ok=True)
-        
+
         with open(CAMPOS_FILE, "w") as f:
             json.dump(payload, f, indent=4)
-            
+
         if os.path.exists(CAMPOS_FILE):
             print(f"[✔] CONFIRMADO: O arquivo campos_mapeados.json foi CRIADO fisicamente!")
 
