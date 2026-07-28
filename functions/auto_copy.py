@@ -49,31 +49,53 @@ def sync_com_macrodroid(ativar):
     token = obter_client_token()
     if ativar:
         print(f"🚀 [SYNC] Enviando link para o MacroDroid: {URL_WEBHOOK}", flush=True)
-        cmd = f"""su -c "am broadcast -a hapiephone.sync --es url_webhook '{URL_WEBHOOK}' --es device_id '{DEVICE_ID}' --es guild_id '{GUILD_ID}' --es owner_id '{OWNER_ID}' --es client_token '{token}'" > /dev/null 2>&1"""
+        cmd = f'su -c "am broadcast -a hapiephone.sync --es url_webhook \\"{URL_WEBHOOK}\\" --es device_id \\"{DEVICE_ID}\\" --es guild_id \\"{GUILD_ID}\\" --es owner_id \\"{OWNER_ID}\\" --es client_token \\"{token}\\"" > /dev/null 2>&1'
     else:
         print("🛑 [SYNC] Mandando o MacroDroid pausar a cópia...", flush=True)
-        cmd = f"""su -c "am broadcast -a hapiephone.stop_sync" > /dev/null 2>&1"""
-    
+        cmd = 'su -c "am broadcast -a hapiephone.stop_sync" > /dev/null 2>&1'
+
     subprocess.run(cmd, shell=True)
 
 def main():
     print("📡 Hapiephone Copy System Online...", flush=True)
     subprocess.run("termux-wake-lock", shell=True, check=False)
-    
+
     forcar_acessibilidade()
-    
+
     estado_ativo = False
+    last_sync_time = 0
+    SYNC_INTERVAL = 1209600  # 14 dias em segundos (14 * 24 * 60 * 60)
+    SYNC_REQUEST_FILE = "/sdcard/Hapiephone_Data/sync_request.txt"
 
     while True:
         deve_rodar = check_local_status()
-        
-        # O NOSSO PRINT FOFOQUEIRO AQUI
-        print(f"👀 [DEBUG] Lendo functions.json | deve_rodar = {deve_rodar} | estado_ativo = {estado_ativo}", flush=True)
-        
-        if deve_rodar and not estado_ativo:
-            print("🟢 [GATILHO] O status mudou para TRUE! Acionando o Sync...", flush=True)
-            sync_com_macrodroid(True)
-            estado_ativo = True
+
+        # 1. VERIFICA SE O MACRODROID PEDIU SOCORRO
+        force_sync = False
+        if os.path.exists(SYNC_REQUEST_FILE):
+            print("⚠️ [S.O.S] MacroDroid relatou erro HTTP e pediu a URL nova!", flush=True)
+            force_sync = True
+            try:
+                os.remove(SYNC_REQUEST_FILE)
+            except: pass
+
+        print(f"👀 [DEBUG] deve_rodar = {deve_rodar} | estado_ativo = {estado_ativo}", flush=True)
+
+        if deve_rodar:
+            tempo_passado = time.time() - last_sync_time
+            
+            if not estado_ativo or force_sync or tempo_passado >= SYNC_INTERVAL:
+                if not estado_ativo:
+                    print("🟢 [GATILHO] O status mudou para TRUE! Acionando o Sync...", flush=True)
+                elif force_sync:
+                    print("🔄 [GATILHO FORÇADO] Mandando os dados de emergência pro MacroDroid...", flush=True)
+                else:
+                    print("⏳ [TIMER 14 DIAS] Renovando a injeção no MacroDroid preventivamente...", flush=True)
+                
+                sync_com_macrodroid(True)
+                estado_ativo = True
+                last_sync_time = time.time()
+                
         elif not deve_rodar and estado_ativo:
             print("🔴 [GATILHO] O status mudou para FALSE! Desligando o Sync...", flush=True)
             sync_com_macrodroid(False)
