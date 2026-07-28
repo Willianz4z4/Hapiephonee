@@ -24,22 +24,26 @@ def log_debug(msg):
     except: pass
 
 def execute_root(comando):
-    # Tenta usar o TSU (Termux SU) primeiro, depois tenta os caminhos absolutos clássicos
-    binarios_root = ["tsu", "/system/bin/su", "/system/xbin/su", "su"]
+    """
+    Motor de execução Root Definitivo.
+    Ignora o ambiente restrito do Termux e acessa o binário 'su' nativo do Android.
+    """
+    caminhos_su_android = ["/system/xbin/su", "/system/bin/su", "/sbin/su"]
+    su_nativo = None
     
-    for bin_su in binarios_root:
-        try:
-            # Chama como lista e sem shell=True para impedir que o Termux intercepte
-            resultado = subprocess.run([bin_su, '-c', comando], capture_output=True, text=True)
+    # Procura o arquivo root real do sistema Android
+    for path in caminhos_su_android:
+        if os.path.exists(path):
+            su_nativo = path
+            break
             
-            # Se não der erro de "not found", significa que esse executável funcionou
-            if "not found" not in resultado.stderr.lower():
-                return resultado
-        except FileNotFoundError:
-            continue
-            
-    # Se nada funcionar, devolve um fallback para não quebrar o código
-    return subprocess.run(['su', '-c', comando], capture_output=True, text=True)
+    if su_nativo:
+        # Invoca o SU original do Android direto, sem passar pelo shell do Termux
+        return subprocess.run([su_nativo, "-c", comando], capture_output=True, text=True)
+    else:
+        # Fallback de emergência forçando as variáveis de ambiente do Android
+        cmd_fallback = f"PATH=/system/bin:/system/xbin:/sbin:$PATH su -c \"{comando}\""
+        return subprocess.run(cmd_fallback, shell=True, capture_output=True, text=True)
 
 def check_permission():
     if os.path.exists(FUNCTIONS_FILE):
@@ -59,22 +63,29 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
     for tentativa in range(1, max_tentativas + 1):
         log_debug(f"[*] Tentativa {tentativa}/{max_tentativas}...")
 
+        # Mata instâncias antigas para destravar o UIAutomator
         execute_root('pkill uiautomator')
         execute_root('rm -f /data/local/tmp/ui_dump.xml')
 
         log_debug("[-] Executando uiautomator dump no UGPhone...")
         dump_proc = execute_root('uiautomator dump /data/local/tmp/ui_dump.xml')
-        log_debug(f"[-] Resposta do dump: {dump_proc.stdout.strip()} | Erros: {dump_proc.stderr.strip()}")
+        
+        xml_proc = execute_root('cat /data/local/tmp/ui_dump.xml')
+        xml_data = xml_proc.stdout
 
-        xml_data = execute_root('cat /data/local/tmp/ui_dump.xml').stdout
         log_debug(f"[-] Tamanho do XML lido: {len(xml_data)} caracteres.")
+        
+        # Loga eventuais erros do processo root para depuração
+        if dump_proc.stderr:
+            log_debug(f"[-] Avisos Root: {dump_proc.stderr.strip()}")
 
         if len(xml_data) < 100:
-            log_debug("❌ FALHA: XML vazio ou root desativado no painel do UGPhone.")
+            log_debug("❌ FALHA: XML vazio ou erro no mapeamento da tela.")
         else:
             campos = []
             contador = 1
 
+            # Varredura usando Regex para não depender de bibliotecas externas complexas
             for node in xml_data.split('<node'):
                 is_text_field = any(f'class="{classe}"' in node for classe in classes_alvo)
                 is_focused_html = 'class="android.view.View"' in node and 'focused="true"' in node and 'focusable="true"' in node
@@ -112,13 +123,13 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
                 log_debug(f"✅ SUCESSO! {len(campos)} campos mapeados na tentativa {tentativa}.")
                 return campos
             else:
-                log_debug("⚠️ XML capturado, mas a regex não encontrou nenhum campo de texto.")
+                log_debug("⚠️ XML capturado, mas a regex não encontrou nenhum campo de texto digitável.")
 
         if tentativa < max_tentativas:
             log_debug(f"[*] Aguardando {delay}s...")
             time.sleep(delay)
 
-    log_debug("❌ ESGOTADO: Todas as tentativas falharam.")
+    log_debug("❌ ESGOTADO: Todas as tentativas de leitura falharam.")
     return []
 
 def aplicar_texto_com_seguranca(id_alvo, texto):
@@ -135,6 +146,7 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
     b = alvo["bounds"]
     str_bounds = f'bounds="[{b[0]},{b[1]}][{b[2]},{b[3]}]"'
 
+    # Verifica se o campo ainda está no mesmo lugar na tela antes de injetar
     execute_root('pkill uiautomator')
     execute_root('rm -f /data/local/tmp/ui_check.xml')
     execute_root('uiautomator dump /data/local/tmp/ui_check.xml')
@@ -147,11 +159,13 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
             node_seguro = True
             break
 
+    # Se estiver seguro, clica e digita
     if node_seguro:
         cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
         execute_root(f'input tap {cx} {cy}')
         time.sleep(0.5)
 
+        # Trata espaços e aspas para o input shell do Android
         texto_formatado = texto.replace(' ', '%s').replace("'", "\\'")
         execute_root(f"input text '{texto_formatado}'")
 
@@ -159,6 +173,7 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
     except: pass
 
 def main():
+    # 1. Modo Injeção: Se receber --file, lê a ordem do servidor e aplica o texto
     if len(sys.argv) >= 3 and sys.argv[1] == "--file":
         payload_path = sys.argv[2]
         try:
@@ -172,6 +187,7 @@ def main():
         except: pass
         sys.exit(0)
 
+    # 2. Modo Varredura: Verifica se tem permissão antes de gastar recursos
     if not check_permission(): sys.exit(0)
 
     campos = obter_todos_edittexts()
