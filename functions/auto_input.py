@@ -4,11 +4,32 @@ import json
 import os
 import sys
 import time
+from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "Data")
 CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json")
 FUNCTIONS_FILE = os.path.join(BASE_DIR, "functions.json")
+DEBUG_LOG = os.path.join(DATA_DIR, "auto_input_debug.txt")
+
+os.makedirs(DATA_DIR, exist_ok=True)
+
+def log_debug(msg):
+    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    texto = f"[{agora}] {msg}"
+    print(texto) # Mantém printando na tela
+    try:
+        # Salva tudo no TXT
+        with open(DEBUG_LOG, "a", encoding="utf-8") as f:
+            f.write(texto + "\n")
+    except: pass
+
+def get_app_aberto():
+    try:
+        out = subprocess.check_output(['su', '-c', 'dumpsys window windows | grep -E "mCurrentFocus|mFocusedApp"'], text=True).strip()
+        return out if out else "Nenhum app focado detectado"
+    except Exception as e:
+        return f"Erro ao detectar app: {e}"
 
 def check_permission():
     if os.path.exists(FUNCTIONS_FILE):
@@ -24,20 +45,26 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
         'android.widget.AutoCompleteTextView',
         'android.widget.MultiAutoCompleteTextView'
     ]
+    
+    app_atual = get_app_aberto()
+    log_debug(f"🔍 INICIANDO VARREDURA. App em foco no Android:\n{app_atual}")
 
     for tentativa in range(1, max_tentativas + 1):
-        print(f"[*] Tentativa {tentativa}/{max_tentativas} de varredura (buscando campos)...")
+        log_debug(f"[*] Tentativa {tentativa}/{max_tentativas}...")
 
-        # 🔥 CORREÇÃO 1: Matar processos travados do uiautomator
+        log_debug("[-] Matando uiautomator fantasma e apagando XML velho...")
         subprocess.run(['su', '-c', 'pkill uiautomator'], capture_output=True)
-        # 🔥 CORREÇÃO 2: Apagar o arquivo velho para garantir que não vai ler lixo
         subprocess.run(['su', '-c', 'rm -f /data/local/tmp/ui_dump.xml'], capture_output=True)
 
-        processo = subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_dump.xml'], capture_output=True, text=True)
+        log_debug("[-] Executando uiautomator dump...")
+        dump_proc = subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_dump.xml'], capture_output=True, text=True)
+        log_debug(f"[-] Resposta do dump: {dump_proc.stdout.strip()} | Erros: {dump_proc.stderr.strip()}")
+
         xml_data = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_dump.xml'], capture_output=True, text=True).stdout
+        log_debug(f"[-] Tamanho do XML lido: {len(xml_data)} caracteres.")
 
         if len(xml_data) < 100:
-            print("[-] uiautomator falhou (Possível cursor piscando ou travamento de UI).")
+            log_debug("❌ FALHA: XML vazio ou muito pequeno. O uiautomator travou (tela em movimento ou cursor piscando).")
         else:
             campos = []
             contador = 1
@@ -47,8 +74,7 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
                 is_focused_html = 'class="android.view.View"' in node and 'focused="true"' in node and 'focusable="true"' in node
 
                 if is_text_field or is_focused_html:
-                    if contador > 10:
-                        break
+                    if contador > 10: break
 
                     match_bounds = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
                     match_id = re.search(r'resource-id="([^"]*)"', node)
@@ -61,7 +87,7 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
                         res_id = match_id.group(1) if match_id else ""
                         desc = match_desc.group(1) if match_desc else ""
                         text_val = match_text.group(1) if match_text else ""
-
+                        
                         nome_base = desc or (res_id.split('/')[-1] if res_id else (text_val or "Campo HTML/Nativo"))
                         nome_lower, texto_lower = nome_base.lower(), text_val.lower()
 
@@ -72,54 +98,51 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
                         elif is_pwd: nome_final = f"[🔑 SENHA] {nome_base}"
                         else: nome_final = f"[📝 TEXTO] {nome_base}"
 
-                        campos.append({
-                            "id": contador,
-                            "nome_identificador": nome_final,
-                            "bounds": bounds
-                        })
+                        campos.append({"id": contador, "nome_identificador": nome_final, "bounds": bounds})
+                        log_debug(f"    -> Encontrado ID {contador}: {nome_final}")
                         contador += 1
 
             if campos:
-                print(f"[*] Sucesso na tentativa {tentativa}! {len(campos)} campos encontrados.")
+                log_debug(f"✅ SUCESSO! {len(campos)} campos mapeados na tentativa {tentativa}.")
                 return campos
             else:
-                print("[-] Tela capturada, mas nenhum campo de texto visível ainda.")
+                log_debug("⚠️ XML capturado, mas a regex não encontrou nenhum campo de texto.")
 
         if tentativa < max_tentativas:
-            print(f"[*] Aguardando {delay}s antes de tentar novamente...")
+            log_debug(f"[*] Aguardando {delay}s...")
             time.sleep(delay)
 
-    print("[-] Esgotaram-se as tentativas. Nenhum campo mapeado.")
+    log_debug("❌ ESGOTADO: Todas as tentativas falharam.")
     return []
 
 def aplicar_texto_com_seguranca(id_alvo, texto):
-    print(f"[*] Verificando segurança para aplicar no ID {id_alvo}...")
+    log_debug(f"⚡ INJEÇÃO: Validando ID {id_alvo} para injetar texto...")
 
     if not os.path.exists(CAMPOS_FILE):
-        print("[-] Arquivo de campos mapeados não encontrado. Nada a fazer.")
+        log_debug("❌ INJEÇÃO CANCELADA: Arquivo campos_mapeados.json sumiu!")
         return
 
     try:
         with open(CAMPOS_FILE, "r") as f:
             dados_locais = json.load(f)
     except Exception as e:
-        print(f"[-] Erro ao ler JSON local: {e}")
+        log_debug(f"❌ INJEÇÃO ERRO: Falha ao ler JSON local - {e}")
         return
 
     alvo = next((c for c in dados_locais.get("campos_disponiveis", []) if c["id"] == id_alvo), None)
 
     if not alvo:
-        print(f"[-] ID {id_alvo} não encontrado na última varredura da tela.")
+        log_debug(f"❌ INJEÇÃO CANCELADA: ID {id_alvo} não achado na memória local.")
         return
 
     b = alvo["bounds"]
     str_bounds = f'bounds="[{b[0]},{b[1]}][{b[2]},{b[3]}]"'
 
-    # 🔥 CORREÇÃO 3: Limpeza de uiautomator antes de checar a tela
+    log_debug("[-] Limpando cache para re-checar a tela (segurança)...")
     subprocess.run(['su', '-c', 'pkill uiautomator'], capture_output=True)
     subprocess.run(['su', '-c', 'rm -f /data/local/tmp/ui_check.xml'], capture_output=True)
-
     subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_check.xml'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
     xml_atual = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_check.xml'], capture_output=True, text=True).stdout
 
     node_seguro = False
@@ -129,30 +152,28 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
             break
 
     if node_seguro:
-        print("[+] Tela validada de forma cirúrgica! O campo original está lá. Aplicando...")
+        log_debug("✅ INJEÇÃO AUTORIZADA: Campo validado no mesmo local.")
         cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
-
         subprocess.run(['su', '-c', f'input tap {cx} {cy}'])
         time.sleep(0.5)
 
-        # 🔥 PREVENÇÃO EXTRA: Escapa aspas simples para não crashar o comando Shell!
         texto_formatado = texto.replace(' ', '%s').replace("'", "\\'")
         subprocess.run(['su', '-c', f"input text '{texto_formatado}'"])
-        print("\n[✔] Ação HTTP concluída e segura!")
+        log_debug("✅ INJEÇÃO CONCLUÍDA: Texto digitado!")
     else:
-        print("\n[!] ALERTA CRÍTICO: A tela mudou radicalmente, foi rolada ou o campo desapareceu.")
-        print("[!] Abortando injeção de texto por medida de segurança extrema.")
+        log_debug("🚨 INJEÇÃO ABORTADA CRITICAMENTE: A tela mudou ou rolou antes de digitar!")
 
     try:
         os.remove(CAMPOS_FILE)
-        print("[*] Arquivo campos_mapeados.json deletado para evitar reciclar dados antigos.")
+        log_debug("[-] Arquivo campos_mapeados.json deletado com sucesso.")
     except Exception as e:
-        print(f"[-] Erro ao tentar excluir arquivo residual: {e}")
+        log_debug(f"⚠️ Erro ao excluir arquivo residual: {e}")
 
 def main():
+    log_debug("==================================================")
     if len(sys.argv) >= 3 and sys.argv[1] == "--file":
         payload_path = sys.argv[2]
-        print(f"[*] MODO 1 INICIADO: Lendo payload de {payload_path}")
+        log_debug(f"🚀 [MODO 1 - INJEÇÃO] Iniciado via Webhook.")
         try:
             with open(payload_path, "r") as f:
                 payload_http = json.load(f)
@@ -164,35 +185,26 @@ def main():
             if id_alvo and texto_para_aplicar:
                 aplicar_texto_com_seguranca(int(id_alvo), str(texto_para_aplicar))
             else:
-                print("[-] O Payload HTTP não continha 'id_alvo' ou 'texto'.")
+                log_debug("❌ MODO 1 FALHA: Faltou 'id_alvo' ou 'texto' no payload.")
         except Exception as e:
-            print(f"[-] Erro ao processar arquivo de payload HTTP: {e}")
+            log_debug(f"❌ MODO 1 ERRO GERAL: {e}")
         sys.exit(0)
 
-    print("[*] MODO 2 INICIADO: Iniciando Olheiro...")
+    log_debug("🚀 [MODO 2 - OLHEIRO] Acionado para mapear a tela.")
     if not check_permission():
-        print("[-] Permissão 'auto_input' negada no functions.json. Abortando.")
+        log_debug("❌ MODO 2 CANCELADO: Permissão 'auto_input' negada no functions.json.")
         sys.exit(0)
 
     campos = obter_todos_edittexts()
 
     if campos:
-        payload = {
-            "status_autoinput": True,
-            "campos_disponiveis": campos
-        }
-
-        os.makedirs(DATA_DIR, exist_ok=True)
-
+        payload = {"status_autoinput": True, "campos_disponiveis": campos}
         with open(CAMPOS_FILE, "w") as f:
             json.dump(payload, f, indent=4)
-
         if os.path.exists(CAMPOS_FILE):
-            print(f"[✔] CONFIRMADO: O arquivo campos_mapeados.json foi CRIADO fisicamente!")
-
-        print(f"[+] Tela mapeada e salva de forma cirúrgica. ID's de 1 a {len(campos)} prontos.")
+            log_debug(f"✅ FINAL: campos_mapeados.json criado e pronto para o import.py recolher.")
     else:
-        print("[-] Falha ao mapear a tela após todas as tentativas.")
+        log_debug("❌ FINAL: Falha total. Nenhum campo salvo.")
 
 if __name__ == '__main__':
     main()
