@@ -17,17 +17,28 @@ os.makedirs(DATA_DIR, exist_ok=True)
 def log_debug(msg):
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     texto = f"[{agora}] {msg}"
-    print(texto) # Mantém printando na tela
+    print(texto)
     try:
-        # Salva tudo no TXT
         with open(DEBUG_LOG, "a", encoding="utf-8") as f:
             f.write(texto + "\n")
     except: pass
 
+# 🔥 NOVA FUNÇÃO: Burlar a trava do Termux buscando o Root Real
+def execute_root(comando):
+    caminhos_su = ['/system/bin/su', '/system/xbin/su', '/sbin/su', '/su/bin/su']
+    su_correto = 'su' # Fallback
+    
+    for caminho in caminhos_su:
+        if os.path.exists(caminho):
+            su_correto = caminho
+            break
+            
+    return subprocess.run([su_correto, '-c', comando], capture_output=True, text=True)
+
 def get_app_aberto():
     try:
-        out = subprocess.check_output(['su', '-c', 'dumpsys window windows | grep -E "mCurrentFocus|mFocusedApp"'], text=True).strip()
-        return out if out else "Nenhum app focado detectado"
+        out = execute_root('dumpsys window windows | grep -E "mCurrentFocus|mFocusedApp"')
+        return out.stdout.strip() if out.stdout else "Nenhum app focado detectado"
     except Exception as e:
         return f"Erro ao detectar app: {e}"
 
@@ -53,14 +64,14 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
         log_debug(f"[*] Tentativa {tentativa}/{max_tentativas}...")
 
         log_debug("[-] Matando uiautomator fantasma e apagando XML velho...")
-        subprocess.run(['su', '-c', 'pkill uiautomator'], capture_output=True)
-        subprocess.run(['su', '-c', 'rm -f /data/local/tmp/ui_dump.xml'], capture_output=True)
+        execute_root('pkill uiautomator')
+        execute_root('rm -f /data/local/tmp/ui_dump.xml')
 
         log_debug("[-] Executando uiautomator dump...")
-        dump_proc = subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_dump.xml'], capture_output=True, text=True)
+        dump_proc = execute_root('uiautomator dump /data/local/tmp/ui_dump.xml')
         log_debug(f"[-] Resposta do dump: {dump_proc.stdout.strip()} | Erros: {dump_proc.stderr.strip()}")
 
-        xml_data = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_dump.xml'], capture_output=True, text=True).stdout
+        xml_data = execute_root('cat /data/local/tmp/ui_dump.xml').stdout
         log_debug(f"[-] Tamanho do XML lido: {len(xml_data)} caracteres.")
 
         if len(xml_data) < 100:
@@ -139,11 +150,11 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
     str_bounds = f'bounds="[{b[0]},{b[1]}][{b[2]},{b[3]}]"'
 
     log_debug("[-] Limpando cache para re-checar a tela (segurança)...")
-    subprocess.run(['su', '-c', 'pkill uiautomator'], capture_output=True)
-    subprocess.run(['su', '-c', 'rm -f /data/local/tmp/ui_check.xml'], capture_output=True)
-    subprocess.run(['su', '-c', 'uiautomator dump /data/local/tmp/ui_check.xml'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    execute_root('pkill uiautomator')
+    execute_root('rm -f /data/local/tmp/ui_check.xml')
+    execute_root('uiautomator dump /data/local/tmp/ui_check.xml')
     
-    xml_atual = subprocess.run(['su', '-c', 'cat /data/local/tmp/ui_check.xml'], capture_output=True, text=True).stdout
+    xml_atual = execute_root('cat /data/local/tmp/ui_check.xml').stdout
 
     node_seguro = False
     for node in xml_atual.split('<node'):
@@ -154,11 +165,11 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
     if node_seguro:
         log_debug("✅ INJEÇÃO AUTORIZADA: Campo validado no mesmo local.")
         cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
-        subprocess.run(['su', '-c', f'input tap {cx} {cy}'])
+        execute_root(f'input tap {cx} {cy}')
         time.sleep(0.5)
 
         texto_formatado = texto.replace(' ', '%s').replace("'", "\\'")
-        subprocess.run(['su', '-c', f"input text '{texto_formatado}'"])
+        execute_root(f"input text '{texto_formatado}'")
         log_debug("✅ INJEÇÃO CONCLUÍDA: Texto digitado!")
     else:
         log_debug("🚨 INJEÇÃO ABORTADA CRITICAMENTE: A tela mudou ou rolou antes de digitar!")
