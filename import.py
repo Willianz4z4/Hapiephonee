@@ -396,6 +396,13 @@ try:
                         auto_input_data["session_raw"] = sess_val
                         auto_input_data["session"] = sess_val
 
+                
+                if isinstance(auto_input_data, dict) and auto_input_data.get("campos_disponiveis"):
+                    print(f"\n\n[GRAMPO DA POLÍCIA] 🛑 INTERCEPTANDO PACOTE ANTES DE ENVIAR:")
+                    print(f"-> ID na raiz do pacote (payload): '{payload.get('session_raw', 'VAZIO')}'")
+                    print(f"-> ID dentro da gaveta (auto_input_data): '{auto_input_data.get('session_raw', 'VAZIO')}'")
+                    print(f"-> O que tem na gaveta toda: {auto_input_data}\n")
+                    
                 headers = {"Content-Type": "application/json", "ngrok-skip-browser-warning": "true"}
                 response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=30)
 
