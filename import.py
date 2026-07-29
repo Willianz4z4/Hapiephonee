@@ -7,9 +7,6 @@ import uuid
 import signal
 from datetime import datetime
 
-# ==========================================
-# 🛡️ WATCHDOG: O CÃO DE GUARDA INTELIGENTE
-# ==========================================
 if os.environ.get("HAPIE_WATCHDOG") != "1":
     os.environ["HAPIE_WATCHDOG"] = "1"
     os.system("clear" if os.name == "posix" else "cls")
@@ -55,10 +52,6 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
                 except: pass
             sys.exit(0)
 
-# ==========================================
-# 🤖 CÓDIGO NORMAL DO BOT COMEÇA AQUI
-# ==========================================
-
 def handle_child_sigterm(signum, frame):
     raise KeyboardInterrupt
 signal.signal(signal.SIGTERM, handle_child_sigterm)
@@ -82,9 +75,6 @@ console = Console()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 sys.path.insert(0, BASE_DIR)
 
-# ==========================================
-# 🚀 GATILHO DE PRIMEIRA VIAGEM (AUTO SETUP)
-# ==========================================
 arquivo_comprovante = os.path.join(BASE_DIR, "setup_concluido.txt")
 if not os.path.exists(arquivo_comprovante):
     console.print("\n[bold yellow]🛠️ Primeira execução detectada! Rodando a blindagem do sistema...[/bold yellow]")
@@ -134,13 +124,11 @@ def set_function_status(func_name, is_active):
     data = {}
     if os.path.exists(FUNCTIONS_JSON_FILE):
         try:
-            with open(FUNCTIONS_JSON_FILE, "r") as f:
-                data = json.load(f)
+            with open(FUNCTIONS_JSON_FILE, "r") as f: data = json.load(f)
         except: pass
     data[func_name] = is_active
     try:
-        with open(FUNCTIONS_JSON_FILE, "w") as f:
-            json.dump(data, f, indent=4)
+        with open(FUNCTIONS_JSON_FILE, "w") as f: json.dump(data, f, indent=4)
     except: pass
 
 saved_config = {}
@@ -148,8 +136,7 @@ console.print(Panel.fit(f"[bold cyan]Hapiephone Cloud Node[/bold cyan]\n[dim]Ver
 
 if os.path.exists(CONFIG_FILE):
     try:
-        with open(CONFIG_FILE, "r") as f:
-            saved_config = json.load(f)
+        with open(CONFIG_FILE, "r") as f: saved_config = json.load(f)
     except: pass
 
 if len(sys.argv) > 2:
@@ -168,8 +155,7 @@ if guild_id and owner_id:
     try:
         config_to_save = {"guild_id": guild_id, "owner_id": owner_id}
         if client_token: config_to_save["client_token"] = client_token
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(config_to_save, f)
+        with open(CONFIG_FILE, "w") as f: json.dump(config_to_save, f)
     except: pass
 else:
     console.print("[bold red]❌ Authentication IDs missing. Exiting.[/bold red]")
@@ -395,12 +381,6 @@ try:
                         auto_input_data["session_raw"] = sess_val
                         auto_input_data["session"] = sess_val
 
-                if isinstance(auto_input_data, dict) and auto_input_data.get("campos_disponiveis"):
-                    print(f"\n\n[GRAMPO DA POLÍCIA] 🛑 INTERCEPTANDO PACOTE ANTES DE ENVIAR:")
-                    print(f"-> ID na raiz do pacote (payload): '{payload.get('session_raw', 'VAZIO')}'")
-                    print(f"-> ID dentro da gaveta (auto_input_data): '{auto_input_data.get('session_raw', 'VAZIO')}'")
-                    print(f"-> O que tem na gaveta toda: {auto_input_data}\n")
-
                 headers = {"Content-Type": "application/json", "ngrok-skip-browser-warning": "true"}
                 response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=30)
 
@@ -438,7 +418,6 @@ try:
                         else:
                             os.system("pkill -f auto_input.py > /dev/null 2>&1")
 
-                    # 🔥 ORDEM DE INJEÇÃO DE TEXTO NA TELA (Agora com o valor de Auto-Enter)
                     if "auto_input_cmd" in response_json:
                         cmd_data = response_json["auto_input_cmd"]
                         if "id_alvo" in cmd_data and "texto" in cmd_data:
@@ -447,7 +426,6 @@ try:
                             try:
                                 with open(trigger_inject_path, "w", encoding="utf-8") as tf:
                                     auto_enter_val = "1" if cmd_data.get("auto_enter", False) else "0"
-                                    # Formato novo: ID | AutoEnter(1 ou 0) | Texto
                                     tf.write(f"{cmd_data['id_alvo']}|{auto_enter_val}|{cmd_data['texto']}")
                                 console.print("[dim]💉 Gatilho de injeção enviado para o Daemon Auto Input.[/dim]")
                             except Exception as e:
