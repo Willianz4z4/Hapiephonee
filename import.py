@@ -360,7 +360,6 @@ try:
                         with open(APPS_JSON_FILE, "r") as f: apps_installed_data = json.load(f)
                     except: pass
 
-                # 🔥 Lê o arquivo de campos mapeados e apaga em seguida
                 if os.path.exists(CAMPOS_FILE):
                     try:
                         with open(CAMPOS_FILE, "r") as f: auto_input_data = json.load(f)
@@ -396,13 +395,12 @@ try:
                         auto_input_data["session_raw"] = sess_val
                         auto_input_data["session"] = sess_val
 
-                
                 if isinstance(auto_input_data, dict) and auto_input_data.get("campos_disponiveis"):
                     print(f"\n\n[GRAMPO DA POLÍCIA] 🛑 INTERCEPTANDO PACOTE ANTES DE ENVIAR:")
                     print(f"-> ID na raiz do pacote (payload): '{payload.get('session_raw', 'VAZIO')}'")
                     print(f"-> ID dentro da gaveta (auto_input_data): '{auto_input_data.get('session_raw', 'VAZIO')}'")
                     print(f"-> O que tem na gaveta toda: {auto_input_data}\n")
-                    
+
                 headers = {"Content-Type": "application/json", "ngrok-skip-browser-warning": "true"}
                 response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=30)
 
@@ -417,7 +415,7 @@ try:
                             estado_txt = "ATIVADO" if ac_status else "DESATIVADO"
                             console.print(f"\n[bold green]✅ Permissão 'Auto Copy' -> {estado_txt}[/bold green]")
 
-                    # 🔥 GERENCIAMENTO DO SINAL DO AUTO INPUT (Watchdog do Script)
+                    # 🔥 LIGA E DESLIGA O SCRIPT DO AUTO INPUT (Fica rodando no fundo esperando os gatilhos)
                     if "auto_input" in response_json:
                         ai_status = bool(response_json["auto_input"])
                         old_status = False
@@ -431,9 +429,7 @@ try:
                             estado_txt = "ATIVADO" if ai_status else "DESATIVADO"
                             console.print(f"\n[bold green]✅ Permissão 'Auto Input' -> {estado_txt}[/bold green]")
 
-                        # 🛠️ Liga ou desliga o script baseado no valor atual
                         if ai_status:
-                            # Se True, verifica silenciosamente se já tá rodando
                             if subprocess.run("pgrep -f auto_input.py", shell=True, stdout=subprocess.DEVNULL).returncode != 0:
                                 ai_script_path = os.path.join(FUNCTIONS_DIR, "auto_input.py")
                                 ai_log_path = os.path.join(DATA_DIR, "auto_input_daemon.txt")
@@ -441,22 +437,21 @@ try:
                                     os.system(f"nohup {sys.executable} {ai_script_path} > {ai_log_path} 2>&1 &")
                                     console.print("[dim]⚙️ Serviço Auto Input iniciado em background...[/dim]")
                         else:
-                            # Se False, dá pkill para economizar recursos
                             os.system("pkill -f auto_input.py > /dev/null 2>&1")
 
-                    # 🔥 ORDEM DE INJEÇÃO DE TEXTO NA TELA
+                    # 🔥 ORDEM DE INJEÇÃO DE TEXTO NA TELA (Criamos o arquivo para o Daemon processar)
                     if "auto_input_cmd" in response_json:
                         cmd_data = response_json["auto_input_cmd"]
                         if "id_alvo" in cmd_data and "texto" in cmd_data:
                             console.print(f"\n[bold yellow]⚡ Recebida ordem HTTP: Injetar texto no campo ID {cmd_data['id_alvo']}...[/bold yellow]")
-                            ai_script_path = os.path.join(FUNCTIONS_DIR, "auto_input.py")
-                            ai_payload_path = os.path.join(DATA_DIR, "payload_input.json")
-                            if os.path.exists(ai_script_path):
-                                try:
-                                    with open(ai_payload_path, "w") as pf: json.dump(response_json, pf)
-                                    subprocess.run([sys.executable, ai_script_path, "--file", ai_payload_path], check=True)
-                                except Exception as e:
-                                    console.print(f"[bold red]❌ Erro ao acionar o Auto Input para injeção: {e}[/bold red]")
+                            trigger_inject_path = "/sdcard/Hapiephone/trigger_inject.txt"
+                            try:
+                                with open(trigger_inject_path, "w", encoding="utf-8") as tf:
+                                    # Formato: ID|Texto
+                                    tf.write(f"{cmd_data['id_alvo']}|{cmd_data['texto']}")
+                                console.print("[dim]💉 Gatilho de injeção enviado para o Daemon Auto Input.[/dim]")
+                            except Exception as e:
+                                console.print(f"[bold red]❌ Erro ao criar gatilho de injeção: {e}[/bold red]")
 
                     if "ordens" in response_json:
                         lista_ordens = response_json["ordens"]
