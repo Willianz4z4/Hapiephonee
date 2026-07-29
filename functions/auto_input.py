@@ -11,10 +11,12 @@ DATA_DIR = os.path.join(BASE_DIR, "Data")
 CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json")
 FUNCTIONS_FILE = os.path.join(BASE_DIR, "functions.json")
 DEBUG_LOG = os.path.join(DATA_DIR, "auto_input_debug.txt")
-TRIGGER_FILE = "/sdcard/Hapiephone_Data/trigger_visao.txt"
+
+# 🔥 AQUI ESTÁ O AJUSTE: O Python agora vai ler na pasta exata que você configurou!
+TRIGGER_FILE = "/sdcard/Hapiephone/trigger_visao.txt"
 
 os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs("/sdcard/Hapiephone_Data", exist_ok=True)
+os.makedirs("/sdcard/Hapiephone", exist_ok=True)
 
 def log_debug(msg):
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -96,8 +98,7 @@ def main():
     while True:
         if os.path.exists(TRIGGER_FILE):
             log_debug("🚀 O MacroDroid pediu leitura da tela! Iniciando Raio-X...")
-            
-            # 🔥 Lendo o session_id que vem depois do "|"
+
             session_id = ""
             try:
                 with open(TRIGGER_FILE, "r", encoding="utf-8") as f:
@@ -117,14 +118,13 @@ def main():
                         "status_autoinput": True,
                         "campos_disponiveis": campos
                     }
-                    
-                    # Se achou um session_id válido no arquivo, injeta no JSON
+
                     if session_id:
                         payload["session_id"] = session_id
-                        
-                    with open(CAMPOS_FILE, "w", encoding="utf-8") as f: 
+
+                    with open(CAMPOS_FILE, "w", encoding="utf-8") as f:
                         json.dump(payload, f, indent=4)
-                        
+
                     log_debug(f"✅ FINAL: campos_mapeados.json criado! (Session: {session_id})")
                 else:
                     log_debug("❌ FINAL: Falha total. Nenhum campo salvo.")
