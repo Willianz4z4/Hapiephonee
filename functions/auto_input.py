@@ -17,33 +17,19 @@ os.makedirs(DATA_DIR, exist_ok=True)
 def log_debug(msg):
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     texto = f"[{agora}] {msg}"
-    print(texto)
+    print(texto, flush=True)
     try:
         with open(DEBUG_LOG, "a", encoding="utf-8") as f:
             f.write(texto + "\n")
     except: pass
 
 def execute_root(comando):
-    """
-    Motor de execução Root Definitivo.
-    Ignora o ambiente restrito do Termux e acessa o binário 'su' nativo do Android.
-    """
     caminhos_su_android = ["/system/xbin/su", "/system/bin/su", "/sbin/su"]
-    su_nativo = None
-    
-    # Procura o arquivo root real do sistema Android
     for path in caminhos_su_android:
         if os.path.exists(path):
-            su_nativo = path
-            break
-            
-    if su_nativo:
-        # Invoca o SU original do Android direto, sem passar pelo shell do Termux
-        return subprocess.run([su_nativo, "-c", comando], capture_output=True, text=True)
-    else:
-        # Fallback de emergência forçando as variáveis de ambiente do Android
-        cmd_fallback = f"PATH=/system/bin:/system/xbin:/sbin:$PATH su -c \"{comando}\""
-        return subprocess.run(cmd_fallback, shell=True, capture_output=True, text=True)
+            return subprocess.run([path, "-c", comando], capture_output=True, text=True)
+    cmd_fallback = f"PATH=/system/bin:/system/xbin:/sbin:$PATH su -c \"{comando}\""
+    return subprocess.run(cmd_fallback, shell=True, capture_output=True, text=True)
 
 def check_permission():
     if os.path.exists(FUNCTIONS_FILE):
@@ -53,17 +39,27 @@ def check_permission():
         except: pass
     return False
 
-def obter_todos_edittexts(max_tentativas=10, delay=1.0):
+def toggle_accessibility(estado):
+    # 0 = Desliga (Libera a tela) | 1 = Liga (Volta o MacroDroid)
+    execute_root(f'settings put secure accessibility_enabled {estado}')
+
+def obter_todos_edittexts(max_tentativas=5, delay=1.5):
     classes_alvo = [
         'android.widget.EditText',
         'android.widget.AutoCompleteTextView',
         'android.widget.MultiAutoCompleteTextView'
     ]
 
+    # 1. DESLIGA A ACESSIBILIDADE TEMPORARIAMENTE PARA O DUMP FUNCIONAR (Evita XML de 161 bytes)
+    log_debug("[-] Desativando acessibilidade para liberar a tela pro UIAutomator...")
+    toggle_accessibility(0)
+    time.sleep(0.5)
+
+    campos = []
+
     for tentativa in range(1, max_tentativas + 1):
         log_debug(f"[*] Tentativa {tentativa}/{max_tentativas}...")
 
-        # Mata instâncias antigas para destravar o UIAutomator
         execute_root('pkill uiautomator')
         execute_root('rm -f /data/local/tmp/ui_dump.xml')
 
@@ -74,25 +70,17 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
         xml_data = xml_proc.stdout
 
         log_debug(f"[-] Tamanho do XML lido: {len(xml_data)} caracteres.")
-        
-        # Loga eventuais erros do processo root para depuração
-        if dump_proc.stderr:
-            log_debug(f"[-] Avisos Root: {dump_proc.stderr.strip()}")
 
-        if len(xml_data) < 100:
-            log_debug("❌ FALHA: XML vazio ou erro no mapeamento da tela.")
-        else:
-            campos = []
+        # Se for maior que 300 caracteres, pegou a tela real (e não só a hierarquia vazia de 161)
+        if len(xml_data) > 300:
             contador = 1
-
-            # Varredura usando Regex para não depender de bibliotecas externas complexas
             for node in xml_data.split('<node'):
+                # 2. MELHORIA AQUI: Captura Google (WebView/Chrome) e sites
                 is_text_field = any(f'class="{classe}"' in node for classe in classes_alvo)
-                is_focused_html = 'class="android.view.View"' in node and 'focused="true"' in node and 'focusable="true"' in node
-
-                if is_text_field or is_focused_html:
-                    if contador > 10: break
-
+                is_editable = 'editable="true"' in node
+                is_focused = 'focused="true"' in node and 'focusable="true"' in node
+                
+                if is_text_field or is_editable or is_focused:
                     match_bounds = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
                     match_id = re.search(r'resource-id="([^"]*)"', node)
                     match_desc = re.search(r'content-desc="([^"]*)"', node)
@@ -101,36 +89,47 @@ def obter_todos_edittexts(max_tentativas=10, delay=1.0):
 
                     if match_bounds:
                         bounds = tuple(map(int, match_bounds.groups()))
+                        # Ignora elementos fantasmas invisíveis na tela
+                        if bounds[2] - bounds[0] <= 0 or bounds[3] - bounds[1] <= 0:
+                            continue
+
                         res_id = match_id.group(1) if match_id else ""
                         desc = match_desc.group(1) if match_desc else ""
                         text_val = match_text.group(1) if match_text else ""
 
-                        nome_base = desc or (res_id.split('/')[-1] if res_id else (text_val or "Campo HTML/Nativo"))
+                        nome_base = desc or text_val or (res_id.split('/')[-1] if res_id else "Campo Web/Google")
                         nome_lower, texto_lower = nome_base.lower(), text_val.lower()
 
-                        is_url = any(p in nome_lower for p in ['url','link','site']) or texto_lower.startswith(('http','www.'))
+                        is_url = any(p in nome_lower for p in ['url','link','site','pesquisar','search']) or texto_lower.startswith(('http','www.'))
                         is_pwd = match_pwd or 'senha' in nome_lower or 'password' in nome_lower
 
-                        if is_url: nome_final = f"[🔗 URL] {nome_base}"
+                        if is_url: nome_final = f"[🔗 BUSCA/URL] {nome_base}"
                         elif is_pwd: nome_final = f"[🔑 SENHA] {nome_base}"
                         else: nome_final = f"[📝 TEXTO] {nome_base}"
 
                         campos.append({"id": contador, "nome_identificador": nome_final, "bounds": bounds})
                         log_debug(f"    -> Encontrado ID {contador}: {nome_final}")
                         contador += 1
-
+            
             if campos:
                 log_debug(f"✅ SUCESSO! {len(campos)} campos mapeados na tentativa {tentativa}.")
-                return campos
+                break
             else:
-                log_debug("⚠️ XML capturado, mas a regex não encontrou nenhum campo de texto digitável.")
+                log_debug("⚠️ XML capturado, mas não encontrou campos HTML ou Nativos digitáveis.")
+        else:
+            log_debug("⚠️ XML vazio (O Android bloqueou a leitura da tela).")
 
         if tentativa < max_tentativas:
             log_debug(f"[*] Aguardando {delay}s...")
             time.sleep(delay)
 
-    log_debug("❌ ESGOTADO: Todas as tentativas de leitura falharam.")
-    return []
+    # 3. LIGA O MACRODROID DE VOLTA
+    log_debug("[-] Reativando acessibilidade para o MacroDroid voltar a funcionar...")
+    toggle_accessibility(1)
+
+    if not campos:
+        log_debug("❌ ESGOTADO: Todas as tentativas de leitura falharam.")
+    return campos
 
 def aplicar_texto_com_seguranca(id_alvo, texto):
     if not os.path.exists(CAMPOS_FILE): return
@@ -144,36 +143,26 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
     if not alvo: return
 
     b = alvo["bounds"]
-    str_bounds = f'bounds="[{b[0]},{b[1]}][{b[2]},{b[3]}]"'
+    
+    # Desliga a acessibilidade rapidamente para não bugar o clique
+    toggle_accessibility(0)
+    time.sleep(0.3)
 
-    # Verifica se o campo ainda está no mesmo lugar na tela antes de injetar
-    execute_root('pkill uiautomator')
-    execute_root('rm -f /data/local/tmp/ui_check.xml')
-    execute_root('uiautomator dump /data/local/tmp/ui_check.xml')
+    cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
+    execute_root(f'input tap {cx} {cy}')
+    time.sleep(0.5)
 
-    xml_atual = execute_root('cat /data/local/tmp/ui_check.xml').stdout
-
-    node_seguro = False
-    for node in xml_atual.split('<node'):
-        if str_bounds in node and ('EditText' in node or 'AutoCompleteTextView' in node or 'focused="true"' in node):
-            node_seguro = True
-            break
-
-    # Se estiver seguro, clica e digita
-    if node_seguro:
-        cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
-        execute_root(f'input tap {cx} {cy}')
-        time.sleep(0.5)
-
-        # Trata espaços e aspas para o input shell do Android
-        texto_formatado = texto.replace(' ', '%s').replace("'", "\\'")
-        execute_root(f"input text '{texto_formatado}'")
+    # Trata aspas simples do texto para não quebrar o terminal do Android
+    texto_formatado = str(texto).replace("'", "'\\''")
+    execute_root(f"input text '{texto_formatado}'")
+    
+    # Liga de volta
+    toggle_accessibility(1)
 
     try: os.remove(CAMPOS_FILE)
     except: pass
 
 def main():
-    # 1. Modo Injeção: Se receber --file, lê a ordem do servidor e aplica o texto
     if len(sys.argv) >= 3 and sys.argv[1] == "--file":
         payload_path = sys.argv[2]
         try:
@@ -183,11 +172,10 @@ def main():
             id_alvo = cmd.get("id_alvo")
             texto_para_aplicar = cmd.get("texto")
             if id_alvo and texto_para_aplicar:
-                aplicar_texto_com_seguranca(int(id_alvo), str(texto_para_aplicar))
+                aplicar_texto_com_seguranca(int(id_alvo), texto_para_aplicar)
         except: pass
         sys.exit(0)
 
-    # 2. Modo Varredura: Verifica se tem permissão antes de gastar recursos
     if not check_permission(): sys.exit(0)
 
     campos = obter_todos_edittexts()
