@@ -93,7 +93,6 @@ def main():
 
     while True:
         if os.path.exists(TRIGGER_FILE):
-            # 🔥 ANTI-RACE CONDITION: Dá meio segundo pro Android terminar de salvar o texto!
             time.sleep(0.5) 
             log_debug("🚀 O MacroDroid pediu leitura da tela! Iniciando Raio-X...")
 
@@ -118,6 +117,8 @@ def main():
                     }
 
                     if session_id:
+                        # 🔥 O SEGREDO ESTAVA AQUI: Injetando os dois nomes para o servidor não errar!
+                        payload["session"] = session_id
                         payload["session_id"] = session_id
 
                     with open(CAMPOS_FILE, "w", encoding="utf-8") as f:
