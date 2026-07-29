@@ -12,7 +12,6 @@ CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json")
 FUNCTIONS_FILE = os.path.join(BASE_DIR, "functions.json")
 DEBUG_LOG = os.path.join(DATA_DIR, "auto_input_debug.txt")
 
-# 🔥 AQUI ESTÁ O AJUSTE: O Python agora vai ler na pasta exata que você configurou!
 TRIGGER_FILE = "/sdcard/Hapiephone/trigger_visao.txt"
 
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -57,10 +56,8 @@ def obter_todos_edittexts_robusto(max_tentativas=3, delay=1.5):
         execute_root('uiautomator dump /sdcard/ui_dump_loop.xml')
         xml_data = execute_root('cat /sdcard/ui_dump_loop.xml').stdout
 
-        log_debug(f"[-] Tamanho do XML lido: {len(xml_data)} caracteres.")
-
         if len(xml_data) <= 300:
-            log_debug(f"⚠️ O ANDROID RETORNOU ESTE XML VAZIO:\n{xml_data.strip()}\n")
+            pass
         else:
             contador = 1
             for node in xml_data.split('<node'):
@@ -82,7 +79,6 @@ def obter_todos_edittexts_robusto(max_tentativas=3, delay=1.5):
 
                         nome_final = f"[📝 TEXTO] {nome_base}"
                         campos.append({"id": contador, "nome_identificador": nome_final, "bounds": bounds})
-                        log_debug(f"    -> Encontrado ID {contador}: {nome_final}")
                         contador += 1
             if campos: break
         time.sleep(delay)
@@ -97,17 +93,19 @@ def main():
 
     while True:
         if os.path.exists(TRIGGER_FILE):
+            # 🔥 ANTI-RACE CONDITION: Dá meio segundo pro Android terminar de salvar o texto!
+            time.sleep(0.5) 
             log_debug("🚀 O MacroDroid pediu leitura da tela! Iniciando Raio-X...")
 
             session_id = ""
             try:
                 with open(TRIGGER_FILE, "r", encoding="utf-8") as f:
                     conteudo = f.read().strip()
+                    log_debug(f"Conteúdo lido do arquivo: '{conteudo}'")
                     if "|" in conteudo:
                         session_id = conteudo.split("|")[1].strip()
                 os.remove(TRIGGER_FILE)
             except Exception as e:
-                log_debug(f"⚠️ Erro ao ler o txt do MacroDroid: {e}")
                 try: os.remove(TRIGGER_FILE)
                 except: pass
 
@@ -128,8 +126,6 @@ def main():
                     log_debug(f"✅ FINAL: campos_mapeados.json criado! (Session: {session_id})")
                 else:
                     log_debug("❌ FINAL: Falha total. Nenhum campo salvo.")
-            else:
-                log_debug("⚠️ Sem permissão no functions.json para ler a tela.")
 
         time.sleep(1.0)
 
