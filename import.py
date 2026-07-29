@@ -393,6 +393,8 @@ try:
                     if sess_val:
                         payload["session_raw"] = sess_val
                         payload["session"] = sess_val
+                        auto_input_data["session_raw"] = sess_val
+                        auto_input_data["session"] = sess_val
 
                 headers = {"Content-Type": "application/json", "ngrok-skip-browser-warning": "true"}
                 response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=30)
