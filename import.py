@@ -388,9 +388,11 @@ try:
                     "auto_input_data": auto_input_data
                 }
 
-                if isinstance(auto_input_data, dict) and "session_raw" in auto_input_data:
-                    payload["session_raw"] = auto_input_data["session_raw"]
-                    payload["session"] = auto_input_data["session_raw"]
+                if isinstance(auto_input_data, dict):
+                    sess_val = auto_input_data.get("session") or auto_input_data.get("session_id") or auto_input_data.get("session_raw")
+                    if sess_val:
+                        payload["session_raw"] = sess_val
+                        payload["session"] = sess_val
 
                 headers = {"Content-Type": "application/json", "ngrok-skip-browser-warning": "true"}
                 response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=30)
