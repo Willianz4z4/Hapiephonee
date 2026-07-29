@@ -40,20 +40,22 @@ def check_permission():
     return False
 
 def toggle_accessibility(estado):
-    # 0 = Desliga (Libera a tela) | 1 = Liga (Volta o MacroDroid)
     execute_root(f'settings put secure accessibility_enabled {estado}')
 
-def obter_todos_edittexts(max_tentativas=5, delay=1.5):
+def obter_todos_edittexts_robusto(max_tentativas=3, delay=2.0):
+    """
+    Abordagem Híbrida: Tenta uiautomator com mais tempo. Se vier vazio, faz fallback para dumpsys.
+    """
     classes_alvo = [
         'android.widget.EditText',
         'android.widget.AutoCompleteTextView',
         'android.widget.MultiAutoCompleteTextView'
     ]
 
-    # 1. DESLIGA A ACESSIBILIDADE TEMPORARIAMENTE PARA O DUMP FUNCIONAR (Evita XML de 161 bytes)
-    log_debug("[-] Desativando acessibilidade para liberar a tela pro UIAutomator...")
+    log_debug("[-] Desativando acessibilidade e dando tempo ao Android...")
     toggle_accessibility(0)
-    time.sleep(0.5)
+    # Aumento crítico no sleep. Cloud phones precisam de mais tempo pra liberar a árvore.
+    time.sleep(2.5) 
 
     campos = []
 
@@ -62,20 +64,18 @@ def obter_todos_edittexts(max_tentativas=5, delay=1.5):
 
         execute_root('pkill uiautomator')
         execute_root('rm -f /data/local/tmp/ui_dump.xml')
-
-        log_debug("[-] Executando uiautomator dump no UGPhone...")
-        dump_proc = execute_root('uiautomator dump /data/local/tmp/ui_dump.xml')
+        
+        # A flag --compressed ajuda muito a evitar crashs em Cloud Phones
+        dump_proc = execute_root('uiautomator dump --compressed /data/local/tmp/ui_dump.xml')
         
         xml_proc = execute_root('cat /data/local/tmp/ui_dump.xml')
         xml_data = xml_proc.stdout
 
-        log_debug(f"[-] Tamanho do XML lido: {len(xml_data)} caracteres.")
+        log_debug(f"[-] Tamanho do XML uiautomator lido: {len(xml_data)} caracteres.")
 
-        # Se for maior que 300 caracteres, pegou a tela real (e não só a hierarquia vazia de 161)
         if len(xml_data) > 300:
             contador = 1
             for node in xml_data.split('<node'):
-                # 2. MELHORIA AQUI: Captura Google (WebView/Chrome) e sites
                 is_text_field = any(f'class="{classe}"' in node for classe in classes_alvo)
                 is_editable = 'editable="true"' in node
                 is_focused = 'focused="true"' in node and 'focusable="true"' in node
@@ -85,50 +85,56 @@ def obter_todos_edittexts(max_tentativas=5, delay=1.5):
                     match_id = re.search(r'resource-id="([^"]*)"', node)
                     match_desc = re.search(r'content-desc="([^"]*)"', node)
                     match_text = re.search(r'text="([^"]*)"', node)
-                    match_pwd = re.search(r'password="(true)"', node)
 
                     if match_bounds:
                         bounds = tuple(map(int, match_bounds.groups()))
-                        # Ignora elementos fantasmas invisíveis na tela
-                        if bounds[2] - bounds[0] <= 0 or bounds[3] - bounds[1] <= 0:
-                            continue
+                        if bounds[2] - bounds[0] <= 0 or bounds[3] - bounds[1] <= 0: continue
 
                         res_id = match_id.group(1) if match_id else ""
                         desc = match_desc.group(1) if match_desc else ""
                         text_val = match_text.group(1) if match_text else ""
 
                         nome_base = desc or text_val or (res_id.split('/')[-1] if res_id else "Campo Web/Google")
-                        nome_lower, texto_lower = nome_base.lower(), text_val.lower()
-
-                        is_url = any(p in nome_lower for p in ['url','link','site','pesquisar','search']) or texto_lower.startswith(('http','www.'))
-                        is_pwd = match_pwd or 'senha' in nome_lower or 'password' in nome_lower
-
-                        if is_url: nome_final = f"[🔗 BUSCA/URL] {nome_base}"
-                        elif is_pwd: nome_final = f"[🔑 SENHA] {nome_base}"
-                        else: nome_final = f"[📝 TEXTO] {nome_base}"
+                        nome_final = f"[📝 TEXTO] {nome_base}"
 
                         campos.append({"id": contador, "nome_identificador": nome_final, "bounds": bounds})
                         log_debug(f"    -> Encontrado ID {contador}: {nome_final}")
                         contador += 1
             
             if campos:
-                log_debug(f"✅ SUCESSO! {len(campos)} campos mapeados na tentativa {tentativa}.")
+                log_debug(f"✅ SUCESSO via uiautomator! {len(campos)} campos.")
                 break
-            else:
-                log_debug("⚠️ XML capturado, mas não encontrou campos HTML ou Nativos digitáveis.")
         else:
-            log_debug("⚠️ XML vazio (O Android bloqueou a leitura da tela).")
+            log_debug("⚠️ uiautomator falhou. Tentando DUMPSYS fallback...")
+            # Fallback de leitura direta da memória caso o uiautomator esteja bloqueado
+            dump_mem = execute_root('dumpsys activity top')
+            mem_data = dump_mem.stdout
+            
+            contador = 1
+            # Busca simples por EditTexts nas dimensões mostradas no dumpsys
+            for line in mem_data.splitlines():
+                if 'EditText' in line or 'AutoCompleteTextView' in line:
+                    match = re.search(r'([0-9]+,[0-9]+)-([0-9]+,[0-9]+)', line)
+                    if match:
+                        p1, p2 = match.groups()
+                        x1, y1 = map(int, p1.split(','))
+                        x2, y2 = map(int, p2.split(','))
+                        # Ajuste de borda pra evitar clicar fora
+                        bounds = (x1, y1, x1+x2, y1+y2) 
+                        nome = f"[📝 DUMPSYS] Campo {contador}"
+                        campos.append({"id": contador, "nome_identificador": nome, "bounds": bounds})
+                        log_debug(f"    -> Encontrado via Dumpsys ID {contador}")
+                        contador += 1
+            if campos:
+                log_debug("✅ SUCESSO via DUMPSYS!")
+                break
 
         if tentativa < max_tentativas:
-            log_debug(f"[*] Aguardando {delay}s...")
             time.sleep(delay)
 
-    # 3. LIGA O MACRODROID DE VOLTA
-    log_debug("[-] Reativando acessibilidade para o MacroDroid voltar a funcionar...")
+    log_debug("[-] Reativando acessibilidade...")
     toggle_accessibility(1)
 
-    if not campos:
-        log_debug("❌ ESGOTADO: Todas as tentativas de leitura falharam.")
     return campos
 
 def aplicar_texto_com_seguranca(id_alvo, texto):
@@ -143,22 +149,17 @@ def aplicar_texto_com_seguranca(id_alvo, texto):
     if not alvo: return
 
     b = alvo["bounds"]
-    
-    # Desliga a acessibilidade rapidamente para não bugar o clique
     toggle_accessibility(0)
-    time.sleep(0.3)
+    time.sleep(1.0) # Mais tempo pro Cloud Phone processar
 
     cx, cy = (b[0] + b[2]) // 2, (b[1] + b[3]) // 2
     execute_root(f'input tap {cx} {cy}')
     time.sleep(0.5)
 
-    # Trata aspas simples do texto para não quebrar o terminal do Android
     texto_formatado = str(texto).replace("'", "'\\''")
     execute_root(f"input text '{texto_formatado}'")
     
-    # Liga de volta
     toggle_accessibility(1)
-
     try: os.remove(CAMPOS_FILE)
     except: pass
 
@@ -177,8 +178,8 @@ def main():
         sys.exit(0)
 
     if not check_permission(): sys.exit(0)
-
-    campos = obter_todos_edittexts()
+    
+    campos = obter_todos_edittexts_robusto()
 
     if campos:
         payload = {"status_autoinput": True, "campos_disponiveis": campos}
