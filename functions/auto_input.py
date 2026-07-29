@@ -12,14 +12,12 @@ CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json")
 FUNCTIONS_FILE = os.path.join(BASE_DIR, "functions.json")
 DEBUG_LOG = os.path.join(DATA_DIR, "auto_input_debug.txt")
 
-# Gatilhos
 TRIGGER_FILE = "/sdcard/Hapiephone/trigger_visao.txt"
 TRIGGER_INJECT = "/sdcard/Hapiephone/trigger_inject.txt"
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs("/sdcard/Hapiephone", exist_ok=True)
 
-# 🧠 Variável global para guardar o mapa na memória RAM do Daemon
 cache_mapa = {}
 
 def log_debug(msg):
@@ -27,8 +25,7 @@ def log_debug(msg):
     texto = f"[{agora}] {msg}"
     print(texto, flush=True)
     try:
-        with open(DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(texto + "\n")
+        with open(DEBUG_LOG, "a", encoding="utf-8") as f: f.write(texto + "\n")
     except: pass
 
 def execute_root(comando):
@@ -36,40 +33,32 @@ def execute_root(comando):
     for path in caminhos_su_android:
         if os.path.exists(path):
             return subprocess.run([path, "-c", comando], capture_output=True, text=True)
-    cmd_fallback = f"PATH=/system/bin:/system/xbin:/sbin:$PATH su -c \"{comando}\""
-    return subprocess.run(cmd_fallback, shell=True, capture_output=True, text=True)
+    return subprocess.run(f"PATH=/system/bin:/system/xbin:/sbin:$PATH su -c \"{comando}\"", shell=True, capture_output=True, text=True)
 
 def check_permission():
     if os.path.exists(FUNCTIONS_FILE):
         try:
-            with open(FUNCTIONS_FILE, "r") as f:
-                return json.load(f).get("auto_input", False)
+            with open(FUNCTIONS_FILE, "r") as f: return json.load(f).get("auto_input", False)
         except: pass
     return False
 
 def obter_todos_edittexts_robusto(max_tentativas=3, delay=1.5):
     classes_alvo = ['android.widget.EditText', 'android.widget.AutoCompleteTextView']
-
     campos = []
     for tentativa in range(1, max_tentativas + 1):
         log_debug(f"[*] Tentativa {tentativa}/{max_tentativas}...")
-
         execute_root('pkill uiautomator')
         time.sleep(0.5)
         execute_root('rm -f /sdcard/ui_dump_loop.xml')
-
         execute_root('uiautomator dump /sdcard/ui_dump_loop.xml')
         xml_data = execute_root('cat /sdcard/ui_dump_loop.xml').stdout
 
-        if len(xml_data) <= 300:
-            pass
-        else:
+        if len(xml_data) > 300:
             contador = 1
             for node in xml_data.split('<node'):
                 is_text_field = any(f'class="{classe}"' in node for classe in classes_alvo)
                 is_editable = 'editable="true"' in node
                 is_focused = 'focused="true"' in node and 'focusable="true"' in node
-
                 if is_text_field or is_editable or is_focused:
                     match_bounds = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
                     match_id = re.search(r'resource-id="([^"]*)"', node)
@@ -77,43 +66,31 @@ def obter_todos_edittexts_robusto(max_tentativas=3, delay=1.5):
                     if match_bounds:
                         bounds = tuple(map(int, match_bounds.groups()))
                         if bounds[2] - bounds[0] <= 0: continue
-
                         res_id = match_id.group(1) if match_id else ""
                         text_val = match_text.group(1) if match_text else ""
                         nome_base = text_val or (res_id.split('/')[-1] if res_id else "Campo Web/Google")
-
-                        nome_final = f"[📝 TEXTO] {nome_base}"
-                        campos.append({"id": contador, "nome_identificador": nome_final, "bounds": bounds})
+                        campos.append({"id": contador, "nome_identificador": f"[📝 TEXTO] {nome_base}", "bounds": bounds})
                         contador += 1
             if campos: break
         time.sleep(delay)
-
     return campos
 
 def main():
     global cache_mapa
-    
-    if len(sys.argv) >= 3 and sys.argv[1] == "--file":
-        sys.exit(0)
-
+    if len(sys.argv) >= 3 and sys.argv[1] == "--file": sys.exit(0)
     print("👁️ [VISÃO] Bot Online. Vigiando chamados do MacroDroid...", flush=True)
 
     while True:
-        # 1. Checa se o MacroDroid pediu um Raio-X
         if os.path.exists(TRIGGER_FILE):
             time.sleep(0.5)
             log_debug("🚀 O MacroDroid pediu leitura da tela! Iniciando Raio-X...")
-
             session_id = ""
             try:
                 with open(TRIGGER_FILE, "r", encoding="utf-8") as f:
                     conteudo = f.read().strip()
-                    if "|" in conteudo:
-                        session_id = conteudo.split("|")[1].strip()
+                    if "|" in conteudo: session_id = conteudo.split("|")[1].strip()
                 os.remove(TRIGGER_FILE)
-            except Exception:
-                try: os.remove(TRIGGER_FILE)
-                except: pass
+            except: pass
 
             if check_permission():
                 campos = obter_todos_edittexts_robusto()
@@ -122,68 +99,47 @@ def main():
                     if session_id:
                         payload["session"] = session_id
                         payload["session_id"] = session_id
-
-                    # 🧠 Salva no CACHE DA MEMÓRIA para injeção posterior
                     cache_mapa = payload
+                    with open(CAMPOS_FILE, "w", encoding="utf-8") as f: json.dump(payload, f, indent=4)
+                    log_debug(f"✅ Mapa salvo! (Session: {session_id})")
 
-                    # 📄 Salva no arquivo apenas para o import.py ler e mandar pro servidor
-                    with open(CAMPOS_FILE, "w", encoding="utf-8") as f:
-                        json.dump(payload, f, indent=4)
-                    log_debug(f"✅ FINAL: Mapa salvo na memória e no json! (Session: {session_id})")
-                else:
-                    log_debug("❌ FINAL: Falha total. Nenhum campo salvo.")
-
-        # 2. Checa se o MacroDroid pediu para Digitar um Texto (Ação Reversa)
         if os.path.exists(TRIGGER_INJECT):
             time.sleep(0.3)
             try:
-                with open(TRIGGER_INJECT, "r", encoding="utf-8") as f:
-                    conteudo_injetar = f.read().strip()
+                with open(TRIGGER_INJECT, "r", encoding="utf-8") as f: conteudo_injetar = f.read().strip()
                 os.remove(TRIGGER_INJECT)
 
+                # O split(" | ", 2) limita o corte em 3 pedaços, assim ele não quebra caso o texto alvo tenha "|"
                 if "|" in conteudo_injetar:
-                    partes = conteudo_injetar.split("|", 1)
+                    partes = conteudo_injetar.split("|", 2)
                     id_alvo = int(partes[0].strip())
-                    texto_alvo = partes[1].strip()
+                    auto_enter_flag = (partes[1].strip() == "1")
+                    texto_alvo = partes[2].strip()
 
-                    log_debug(f"💉 [INJEÇÃO] Recebido pedido para ID: {id_alvo} | Texto: {texto_alvo}")
-                    
-                    # 🧠 Puxa direto da memória RAM (não importa se o import.py já deletou o arquivo)
+                    log_debug(f"💉 [INJEÇÃO] ID: {id_alvo} | Auto-Enter: {auto_enter_flag} | Texto: {texto_alvo}")
                     mapeamento = cache_mapa
-                    
-                    # Se por acaso o script reiniciou, tenta o arquivo como fallback
                     if not mapeamento and os.path.exists(CAMPOS_FILE):
-                        with open(CAMPOS_FILE, "r", encoding="utf-8") as f:
-                            mapeamento = json.load(f)
+                        with open(CAMPOS_FILE, "r", encoding="utf-8") as f: mapeamento = json.load(f)
 
                     if mapeamento:
-                        campo_escolhido = None
-                        for campo in mapeamento.get("campos_disponiveis", []):
-                            if campo["id"] == id_alvo:
-                                campo_escolhido = campo
-                                break
-                        
+                        campo_escolhido = next((c for c in mapeamento.get("campos_disponiveis", []) if c["id"] == id_alvo), None)
                         if campo_escolhido:
                             bounds = campo_escolhido["bounds"]
-                            # Calcula o centro geométrico (x, y) do campo para poder clicar
                             centro_x = (bounds[0] + bounds[2]) // 2
                             centro_y = (bounds[1] + bounds[3]) // 2
-                            
-                            log_debug(f"👆 Focando no campo (Clicando em X:{centro_x} Y:{centro_y})")
                             execute_root(f"input tap {centro_x} {centro_y}")
-                            time.sleep(0.5) # Dá tempo de o teclado subir / campo focar
+                            time.sleep(0.5)
                             
-                            log_debug("⌨️ Digitando o texto...")
-                            # O Android exige que espaços sejam '%s' no comando 'input text'
                             texto_formatado = texto_alvo.replace(" ", "%s").replace("'", "\\'")
                             execute_root(f"input text '{texto_formatado}'")
-                            log_debug("✅ Injeção concluída com sucesso!")
-                        else:
-                            log_debug(f"❌ Erro: ID {id_alvo} não encontrado no mapa em memória!")
-                    else:
-                        log_debug("❌ Erro: Nenhum mapa em memória para puxar as coordenadas.")
+                            
+                            if auto_enter_flag:
+                                log_debug("↵ Pressionando ENTER...")
+                                execute_root("input keyevent 66")
+                            
+                            log_debug("✅ Injeção concluída!")
             except Exception as e:
-                log_debug(f"❌ Erro crítico na injeção: {e}")
+                log_debug(f"❌ Erro na injeção: {e}")
                 try: os.remove(TRIGGER_INJECT)
                 except: pass
 

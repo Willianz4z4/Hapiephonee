@@ -415,7 +415,6 @@ try:
                             estado_txt = "ATIVADO" if ac_status else "DESATIVADO"
                             console.print(f"\n[bold green]✅ Permissão 'Auto Copy' -> {estado_txt}[/bold green]")
 
-                    # 🔥 LIGA E DESLIGA O SCRIPT DO AUTO INPUT (Fica rodando no fundo esperando os gatilhos)
                     if "auto_input" in response_json:
                         ai_status = bool(response_json["auto_input"])
                         old_status = False
@@ -439,7 +438,7 @@ try:
                         else:
                             os.system("pkill -f auto_input.py > /dev/null 2>&1")
 
-                    # 🔥 ORDEM DE INJEÇÃO DE TEXTO NA TELA (Criamos o arquivo para o Daemon processar)
+                    # 🔥 ORDEM DE INJEÇÃO DE TEXTO NA TELA (Agora com o valor de Auto-Enter)
                     if "auto_input_cmd" in response_json:
                         cmd_data = response_json["auto_input_cmd"]
                         if "id_alvo" in cmd_data and "texto" in cmd_data:
@@ -447,8 +446,9 @@ try:
                             trigger_inject_path = "/sdcard/Hapiephone/trigger_inject.txt"
                             try:
                                 with open(trigger_inject_path, "w", encoding="utf-8") as tf:
-                                    # Formato: ID|Texto
-                                    tf.write(f"{cmd_data['id_alvo']}|{cmd_data['texto']}")
+                                    auto_enter_val = "1" if cmd_data.get("auto_enter", False) else "0"
+                                    # Formato novo: ID | AutoEnter(1 ou 0) | Texto
+                                    tf.write(f"{cmd_data['id_alvo']}|{auto_enter_val}|{cmd_data['texto']}")
                                 console.print("[dim]💉 Gatilho de injeção enviado para o Daemon Auto Input.[/dim]")
                             except Exception as e:
                                 console.print(f"[bold red]❌ Erro ao criar gatilho de injeção: {e}[/bold red]")
