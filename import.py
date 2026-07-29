@@ -360,7 +360,7 @@ try:
                         with open(APPS_JSON_FILE, "r") as f: apps_installed_data = json.load(f)
                     except: pass
 
-                # 🔥 Lê o arquivo de campos mapeados (GERADO PELO MACRODROID) e apaga em seguida.
+                # 🔥 Lê o arquivo de campos mapeados e apaga em seguida
                 if os.path.exists(CAMPOS_FILE):
                     try:
                         with open(CAMPOS_FILE, "r") as f: auto_input_data = json.load(f)
@@ -402,7 +402,7 @@ try:
                             estado_txt = "ATIVADO" if ac_status else "DESATIVADO"
                             console.print(f"\n[bold green]✅ Permissão 'Auto Copy' -> {estado_txt}[/bold green]")
 
-                    # 🔥 AQUI ESTÁ O SINAL VERDE: Lê da raiz e APENAS avisa salvando no functions.json
+                    # 🔥 GERENCIAMENTO DO SINAL DO AUTO INPUT (Watchdog do Script)
                     if "auto_input" in response_json:
                         ai_status = bool(response_json["auto_input"])
                         old_status = False
@@ -410,13 +410,26 @@ try:
                             try:
                                 with open(FUNCTIONS_JSON_FILE, "r") as f: old_status = json.load(f).get("auto_input", False)
                             except: pass
-                        
+
                         if old_status != ai_status:
                             set_function_status("auto_input", ai_status)
                             estado_txt = "ATIVADO" if ai_status else "DESATIVADO"
                             console.print(f"\n[bold green]✅ Permissão 'Auto Input' -> {estado_txt}[/bold green]")
 
-                    # 🔥 ORDEM DE INJEÇÃO DE TEXTO NA TELA (ALVO + TEXTO)
+                        # 🛠️ Liga ou desliga o script baseado no valor atual
+                        if ai_status:
+                            # Se True, verifica silenciosamente se já tá rodando
+                            if subprocess.run("pgrep -f auto_input.py", shell=True, stdout=subprocess.DEVNULL).returncode != 0:
+                                ai_script_path = os.path.join(FUNCTIONS_DIR, "auto_input.py")
+                                ai_log_path = os.path.join(DATA_DIR, "auto_input_daemon.txt")
+                                if os.path.exists(ai_script_path):
+                                    os.system(f"nohup {sys.executable} {ai_script_path} > {ai_log_path} 2>&1 &")
+                                    console.print("[dim]⚙️ Serviço Auto Input iniciado em background...[/dim]")
+                        else:
+                            # Se False, dá pkill para economizar recursos
+                            os.system("pkill -f auto_input.py > /dev/null 2>&1")
+
+                    # 🔥 ORDEM DE INJEÇÃO DE TEXTO NA TELA
                     if "auto_input_cmd" in response_json:
                         cmd_data = response_json["auto_input_cmd"]
                         if "id_alvo" in cmd_data and "texto" in cmd_data:
@@ -443,6 +456,7 @@ try:
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
                         os.system("pkill -f auto_copy.py > /dev/null 2>&1")
+                        os.system("pkill -f auto_input.py > /dev/null 2>&1")
                         set_function_status("auto_copy", False)
                         os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
                         subprocess.run(git_cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -479,6 +493,7 @@ except KeyboardInterrupt:
     shutdown_spinner = Halo(text='Shutting down background services safely...', spinner='dots')
     shutdown_spinner.start()
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
+    os.system("pkill -f auto_input.py > /dev/null 2>&1")
     set_function_status("auto_copy", False)
     os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
     time.sleep(1)
