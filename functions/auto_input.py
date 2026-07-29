@@ -41,30 +41,26 @@ def check_permission():
         except: pass
     return False
 
-def toggle_macrodroid_only(ligar):
-    MACRODROID_SERVICES = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.MacroDroidAccessibilityServiceJellyBean:com.arlosoft.macrodroid/com.arlosoft.macrodroid.UIInteractionAccessibilityService:com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"
-    if ligar: execute_root(f'settings put secure enabled_accessibility_services {MACRODROID_SERVICES}')
-    else: execute_root('settings put secure enabled_accessibility_services null')
-
-def obter_todos_edittexts_robusto(max_tentativas=3, delay=2.0):
+def obter_todos_edittexts_robusto(max_tentativas=3, delay=1.5):
     classes_alvo = ['android.widget.EditText', 'android.widget.AutoCompleteTextView']
     
-    log_debug("[-] Pausando APENAS o MacroDroid cirurgicamente...")
-    toggle_macrodroid_only(False)
-    time.sleep(2.0) 
-
     campos = []
     for tentativa in range(1, max_tentativas + 1):
         log_debug(f"[*] Tentativa {tentativa}/{max_tentativas}...")
-        execute_root('pkill uiautomator')
-        execute_root('rm -f /data/local/tmp/ui_dump.xml')
         
-        execute_root('uiautomator dump --compressed /data/local/tmp/ui_dump.xml')
-        xml_data = execute_root('cat /data/local/tmp/ui_dump.xml').stdout
+        execute_root('pkill uiautomator')
+        time.sleep(0.5)
+        execute_root('rm -f /sdcard/ui_dump_loop.xml')
+        
+        execute_root('uiautomator dump /sdcard/ui_dump_loop.xml')
+        xml_data = execute_root('cat /sdcard/ui_dump_loop.xml').stdout
 
         log_debug(f"[-] Tamanho do XML lido: {len(xml_data)} caracteres.")
 
-        if len(xml_data) > 300:
+        # O DETETIVE ENTRA EM AÇÃO AQUI: Se for os 161 caracteres, ele imprime na tela!
+        if len(xml_data) <= 300:
+            log_debug(f"⚠️ O ANDROID RETORNOU ESTE XML VAZIO:\n{xml_data.strip()}\n")
+        else:
             contador = 1
             for node in xml_data.split('<node'):
                 is_text_field = any(f'class="{classe}"' in node for classe in classes_alvo)
@@ -78,25 +74,27 @@ def obter_todos_edittexts_robusto(max_tentativas=3, delay=2.0):
                     if match_bounds:
                         bounds = tuple(map(int, match_bounds.groups()))
                         if bounds[2] - bounds[0] <= 0: continue
-                        nome_base = match_text.group(1) if match_text else "Campo Web/Google"
-                        campos.append({"id": contador, "nome_identificador": f"[📝 TEXTO] {nome_base}", "bounds": bounds})
+                        
+                        res_id = match_id.group(1) if match_id else ""
+                        text_val = match_text.group(1) if match_text else ""
+                        nome_base = text_val or (res_id.split('/')[-1] if res_id else "Campo Web/Google")
+
+                        nome_final = f"[📝 TEXTO] {nome_base}"
+                        campos.append({"id": contador, "nome_identificador": nome_final, "bounds": bounds})
+                        log_debug(f"    -> Encontrado ID {contador}: {nome_final}")
                         contador += 1
             if campos: break
         time.sleep(delay)
 
-    log_debug("[-] Relativando o MacroDroid...")
-    toggle_macrodroid_only(True)
     return campos
 
 def main():
     if len(sys.argv) >= 3 and sys.argv[1] == "--file":
-        # Logica de aplicar o texto que já tínhamos fica aqui intacta (omitida para resumir visualmente)
         sys.exit(0)
 
     print("👁️ [VISÃO] Bot Online. Vigiando chamados do MacroDroid...", flush=True)
     
     while True:
-        # Se o MacroDroid criar esse arquivo, o Termux ataca!
         if os.path.exists(TRIGGER_FILE):
             log_debug("🚀 O MacroDroid pediu leitura da tela! Iniciando Raio-X...")
             try: os.remove(TRIGGER_FILE)
@@ -113,7 +111,7 @@ def main():
             else:
                 log_debug("⚠️ Sem permissão no functions.json para ler a tela.")
                 
-        time.sleep(1.5)
+        time.sleep(1.0)
 
 if __name__ == '__main__':
     main()
