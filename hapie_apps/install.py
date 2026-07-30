@@ -8,11 +8,14 @@ import subprocess
 import argparse
 import requests
 import gdown
-from urllib.parse import urlparse
 
-# ==========================================
-# 📂 CONFIGURAÇÃO DE DIRETÓRIOS
-# ==========================================
+# Cores
+C_GREEN = '\033[92m'
+C_YELLOW = '\033[93m'
+C_CYAN = '\033[96m'
+C_RED = '\033[91m'
+C_RESET = '\033[0m'
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FUNCTIONS_JSON_FILE = os.path.join(BASE_DIR, "functions.json")
 DATA_DIR = os.path.join(BASE_DIR, "Data")
@@ -21,45 +24,45 @@ HAPIE_APPS_DIR = os.path.join(BASE_DIR, "hapie_apps")
 PAYLOAD_FILE = os.path.join(DATA_DIR, "payload_install.json")
 REPORT_FILE = os.path.join(DATA_DIR, "install_report.json")
 TEMP_EXTRACT_DIR = os.path.join(DATA_DIR, "temp_extract")
+DEBUG_LOG_FILE = os.path.join(DATA_DIR, "install_debug.txt")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# ==========================================
-# 🛠️ FUNÇÃO CHAVE: ATIVAÇÃO DINÂMICA GLOBAL
-# ==========================================
-def activate_global_tag(tag):
-    if not tag or str(tag).strip().lower() in ["", "none", "null"]:
-        return
+# Limpa o log antigo a cada nova execução
+with open(DEBUG_LOG_FILE, 'w', encoding='utf-8') as f:
+    f.write(f"--- LOG DE INSTALAÇÃO INICIADO EM {time.ctime()} ---\n")
 
+def log_debug(msg):
+    """Escreve tudo nos bastidores para você poder caçar bugs depois"""
+    try:
+        with open(DEBUG_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+    except: pass
+
+def activate_global_tag(tag):
+    if not tag or str(tag).strip().lower() in ["", "none", "null"]: return
     tag = str(tag).strip()
     data = {}
-
     if os.path.exists(FUNCTIONS_JSON_FILE):
         try:
-            with open(FUNCTIONS_JSON_FILE, "r") as f:
-                data = json.load(f)
+            with open(FUNCTIONS_JSON_FILE, "r") as f: data = json.load(f)
         except: pass
-
     data[tag] = True
-
     try:
-        with open(FUNCTIONS_JSON_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-        print(f"✅ [SUCESSO] Chave Global '{tag}' ATIVADA no painel do celular!")
+        with open(FUNCTIONS_JSON_FILE, "w") as f: json.dump(data, f, indent=4)
+        log_debug(f"Tag Global '{tag}' ativada com sucesso.")
     except Exception as e:
-        print(f"❌ [ERRO] Falha ao ligar a chave '{tag}': {e}")
+        log_debug(f"ERRO ao ativar Tag Global: {e}")
 
-# ==========================================
-# 📥 FUNÇÕES DE DOWNLOAD E INSTALAÇÃO
-# ==========================================
 def download_file(url, dest_folder, extras=None):
     if extras is None: extras = {}
     os.makedirs(dest_folder, exist_ok=True)
-
     temp_filename = f"payload_{int(time.time())}_temp"
     dest_path = os.path.join(dest_folder, temp_filename)
 
     try:
+        print(f"{C_CYAN}📥 Baixando pacote...{C_RESET}")
+        log_debug(f"Iniciando download do link: {url[:50]}...")
         if "drive.google.com" in url:
             gdown.download(url, dest_path, quiet=False)
         else:
@@ -73,70 +76,52 @@ def download_file(url, dest_folder, extras=None):
         try:
             if zipfile.is_zipfile(dest_path):
                 with zipfile.ZipFile(dest_path, 'r') as z:
-                    if "AndroidManifest.xml" in z.namelist():
-                        ext = ".apk"
-                    else:
+                    if "AndroidManifest.xml" not in z.namelist():
                         ext = ".zip"
-        except Exception:
-            pass 
+        except: pass 
 
         final_path = dest_path.replace("_temp", ext)
         os.rename(dest_path, final_path)
-        print(f"🔍 Detetive de arquivo detectou: pacote {ext.upper()}")
-
+        log_debug(f"Download concluído! Arquivo identificado como {ext.upper()}")
         return final_path
     except Exception as e:
-        print(f"❌ Erro ao baixar arquivo: {e}")
+        log_debug(f"ERRO CRÍTICO NO DOWNLOAD: {e}")
         return None
 
 def install_apk(apk_path, visibility):
-    print(f"📦 Instalando APK: {os.path.basename(apk_path)}")
     try:
+        log_debug(f"Executando PM INSTALL para: {os.path.basename(apk_path)}")
         result = subprocess.run(f"su -c 'pm install -r \"{apk_path}\"'", shell=True, capture_output=True, text=True)
         if "Success" in result.stdout:
-            print("✅ APK Instalado com sucesso!")
-            if str(visibility).lower() == "system":
-                print("👻 Comando para ocultar o app registrado (Modo System).")
+            log_debug(f"Instalação do APK {os.path.basename(apk_path)} -> SUCESSO")
             return True
         else:
-            print(f"❌ Falha ao instalar APK: {result.stdout} {result.stderr}")
+            log_debug(f"FALHA na instalação do APK {os.path.basename(apk_path)}. Erro: {result.stdout} | {result.stderr}")
             return False
     except Exception as e:
-        print(f"❌ Erro crítico no PM INSTALL: {e}")
+        log_debug(f"ERRO EXCEPTION NO PM INSTALL: {e}")
         return False
 
 def run_data_injection(tar_file):
-    print(f"💉 Dados encontrados ({os.path.basename(tar_file)}). Enviando para o apps_data.py...")
     apps_data_script = os.path.join(HAPIE_APPS_DIR, "apps_data.py")
-
-    if not os.path.exists(apps_data_script):
-        print("⚠️ Script apps_data.py não encontrado. Injeção abortada.")
+    if not os.path.exists(apps_data_script): 
+        log_debug("Script apps_data.py não encontrado. Cancelando injeção.")
         return False
-
     try:
-        subprocess.run([sys.executable, apps_data_script, "--file", tar_file], check=True)
-        print("✅ Dados injetados com maestria no data user!")
+        log_debug(f"Iniciando injeção de dados ({os.path.basename(tar_file)})...")
+        subprocess.run([sys.executable, apps_data_script, "--file", tar_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        log_debug("Injeção de dados concluída com sucesso.")
         return True
-    except subprocess.CalledProcessError:
-        print("❌ apps_data.py falhou ao injetar os dados.")
-        return False
     except Exception as e:
-        print(f"❌ Erro ao chamar injetor de dados: {e}")
+        log_debug(f"FALHA NA INJEÇÃO DE DADOS: {e}")
         return False
 
-# ==========================================
-# 🗜️ MOTOR DE EXTRAÇÃO BLINDADO V2
-# ==========================================
 def recursive_extract(target_dir, senha_padrao):
-    # Garante que os pacotes estão instalados
-    os.system("pkg install 7zip p7zip unzip -y -q > /dev/null 2>&1")
-
-    # Detetive de Binários (Termux moderno usa 7zz)
-    bin_7z = None
-    if shutil.which("7zz"):
-        bin_7z = "7zz"
-    elif shutil.which("7z"):
-        bin_7z = "7z"
+    log_debug("Preparando extrator 7z nativo...")
+    os.system("pkg install p7zip -y -q > /dev/null 2>&1")
+    
+    # Confirma qual é o comando do 7z disponível
+    bin_7z = "7zz" if shutil.which("7zz") else "7z" if shutil.which("7z") else "7za"
 
     while True:
         zip_found = False
@@ -144,94 +129,78 @@ def recursive_extract(target_dir, senha_padrao):
             for file in files:
                 if file.lower().endswith(".zip"):
                     zip_path = os.path.join(root, file)
+                    log_debug(f"Achou ZIP para extrair: {file} (Usando {bin_7z})")
                     
-                    if bin_7z:
-                        print(f"🗜️ Extraindo: {file} (Usando {bin_7z})...")
-                        cmd = f'{bin_7z} x "{zip_path}" -o"{root}" -y'
-                        if senha_padrao:
-                            cmd = f'{bin_7z} x "{zip_path}" -o"{root}" -p"{senha_padrao}" -y'
-                        fallback = f'{bin_7z} x "{zip_path}" -o"{root}" -p"123" -y'
-                    else:
-                        print(f"🗜️ Extraindo: {file} (Usando unzip)...")
-                        cmd = f'unzip -o -q "{zip_path}" -d "{root}"'
-                        if senha_padrao:
-                            cmd = f'unzip -o -q -P "{senha_padrao}" "{zip_path}" -d "{root}"'
-                        fallback = f'unzip -o -q -P "123" "{zip_path}" -d "{root}"'
+                    cmd_principal = f'{bin_7z} x "{zip_path}" -o"{root}" -y'
+                    if senha_padrao:
+                        cmd_principal = f'{bin_7z} x "{zip_path}" -o"{root}" -p"{senha_padrao}" -y'
+                    
+                    cmd_fallback = f'{bin_7z} x "{zip_path}" -o"{root}" -p"123" -y'
 
                     try:
-                        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+                        # Roda primeira tentativa (com senha do json ou sem senha)
+                        log_debug(f"Tentativa 1...")
+                        result = subprocess.run(cmd_principal, shell=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
                         
                         if result.returncode != 0:
-                            print(f"🔒 Falha na primeira tentativa. Tentando senha '123'...")
-                            result_fallback = subprocess.run(fallback, shell=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+                            log_debug(f"Tentativa 1 falhou. Motivo provável: {result.stderr.strip()[:100]}... Chutando senha '123'.")
+                            result_fallback = subprocess.run(cmd_fallback, shell=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
                             
                             if result_fallback.returncode != 0:
-                                print(f"❌ Erro fatal ao extrair {file}.")
-                                erro_real = result_fallback.stderr.strip() or result_fallback.stdout.strip()
-                                print(f"🔍 MOTIVO DO ERRO: {erro_real}")
+                                log_debug(f"ERRO FATAL NA EXTRAÇÃO DE {file}: {result_fallback.stderr.strip()}")
                             else:
-                                print(f"🔓 Sucesso! A senha '123' abriu o cofre.")
+                                log_debug(f"Sucesso! A senha '123' abriu o {file}.")
+                        else:
+                            log_debug(f"Extração do {file} finalizada sem problemas.")
                     except Exception as e:
-                        print(f"❌ Erro no terminal ao chamar o extrator para {file}: {e}")
+                        log_debug(f"ERRO DE SISTEMA AO CHAMAR EXTRAÇÃO: {e}")
                     
-                    # Deleta o ZIP que acabou de ser processado
                     try: os.remove(zip_path)
                     except: pass
                     
                     zip_found = True
                     break
-            if zip_found:
-                break
-                
-        if not zip_found:
-            break
+            if zip_found: break
+        if not zip_found: break
 
-# ==========================================
-# 🧠 MOTOR PRINCIPAL DE INSTALAÇÃO
-# ==========================================
 def main():
+    os.system("clear" if os.name == "posix" else "cls")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", help="Caminho do arquivo payload.json", default=PAYLOAD_FILE)
+    parser.add_argument("--file", default=PAYLOAD_FILE)
     args = parser.parse_args()
 
-    if not os.path.exists(args.file):
-        print("💤 Nenhum arquivo de payload encontrado. Saindo...")
-        return
+    if not os.path.exists(args.file): return
 
     try:
-        with open(args.file, "r") as f:
-            payload = json.load(f)
-    except Exception as e:
-        print(f"❌ Erro ao ler payload: {e}")
-        return
+        with open(args.file, "r") as f: payload = json.load(f)
+    except: return
 
     install_orders = payload.get("install", [])
-    if not install_orders:
-        print("💤 Nenhuma ordem de instalação encontrada.")
-        return
+    if not install_orders: return
 
     report = {"install_success": [], "install_failed": []}
 
     for app_data in install_orders:
-        if len(app_data) < 4:
-            continue
-
+        if len(app_data) < 4: continue
         link, visibility, tag, extras = app_data
-        print(f"\n🚀 Iniciando processamento do link: {link[:40]}...")
-
+        
+        print(f"\n{C_CYAN}----------------------------------------{C_RESET}")
+        
         downloaded_file = download_file(link, DATA_DIR, extras)
         if not downloaded_file:
+            print(f"{C_RED}❌ Falha no download.{C_RESET}")
             report["install_failed"].append(link)
             continue
 
         process_100_percent_success = False
+        apps_installed_count = 0
 
         if downloaded_file.endswith(".zip"):
-            if os.path.exists(TEMP_EXTRACT_DIR):
-                shutil.rmtree(TEMP_EXTRACT_DIR)
+            print(f"{C_YELLOW}📦 Instalando grupo...{C_RESET}")
+            log_debug(f"--- INICIANDO PROCESSAMENTO DE GRUPO ZIP ---")
+            
+            if os.path.exists(TEMP_EXTRACT_DIR): shutil.rmtree(TEMP_EXTRACT_DIR)
             os.makedirs(TEMP_EXTRACT_DIR, exist_ok=True)
-
-            print("🗜️ Iniciando varredura e extração recursiva...")
             senha = extras.get("password") if isinstance(extras, dict) else None
             
             main_zip_temp = os.path.join(TEMP_EXTRACT_DIR, "main_payload.zip")
@@ -243,56 +212,52 @@ def main():
             tar_file = None
             for root_dir, _, files in os.walk(TEMP_EXTRACT_DIR):
                 for f in files:
-                    if f.endswith(".apk"):
-                        apk_files.append(os.path.join(root_dir, f))
-                    elif f.endswith(".tar.gz") and tar_file is None:
-                        tar_file = os.path.join(root_dir, f)
+                    if f.endswith(".apk"): apk_files.append(os.path.join(root_dir, f))
+                    elif f.endswith(".tar.gz") and tar_file is None: tar_file = os.path.join(root_dir, f)
 
+            log_debug(f"Total de APKs encontrados no pacote: {len(apk_files)}")
+            
             apk_success = False
-
             if apk_files:
                 apk_success = True 
-                print(f"📦 Foram encontrados {len(apk_files)} APK(s) no total. Iniciando instalações...")
                 for apk_path in apk_files:
-                    if not install_apk(apk_path, visibility):
+                    if install_apk(apk_path, visibility):
+                        apps_installed_count += 1
+                    else:
                         apk_success = False
-                        print(f"❌ Falha ao instalar o APK: {os.path.basename(apk_path)}")
-            else:
-                print("⚠️ Nenhum APK encontrado dentro de toda a estrutura do ZIP!")
-
+            
             if apk_success:
                 if tar_file:
-                    injection_success = run_data_injection(tar_file)
-                    if injection_success:
-                        process_100_percent_success = True
-                    else:
-                        print("⚠️ Os APKs instalaram, mas a injeção FALHOU. A tag global não será ativada.")
+                    if run_data_injection(tar_file): process_100_percent_success = True
                 else:
                     process_100_percent_success = True
 
             shutil.rmtree(TEMP_EXTRACT_DIR, ignore_errors=True)
 
         elif downloaded_file.endswith(".apk"):
+            nome_apk = os.path.basename(downloaded_file).replace(".apk", "")
+            print(f"{C_YELLOW}📦 Instalando {nome_apk}...{C_RESET}")
+            log_debug(f"--- INICIANDO PROCESSAMENTO DE APK ÚNICO: {nome_apk} ---")
             if install_apk(downloaded_file, visibility):
+                apps_installed_count += 1
                 process_100_percent_success = True
 
         if process_100_percent_success:
             report["install_success"].append(link)
-            print("🌟 Processo finalizado com SUCESSO ABSOLUTO.")
             activate_global_tag(tag)
+            print(f"{C_GREEN}✅ Sucesso! {apps_installed_count} app(s) instalado(s).{C_RESET}")
+            log_debug(f"STATUS FINAL: SUCESSO TOTAL.")
         else:
+            print(f"{C_RED}❌ Falha na instalação.{C_RESET}")
             report["install_failed"].append(link)
+            log_debug(f"STATUS FINAL: FALHA.")
 
-        if os.path.exists(downloaded_file):
-            os.remove(downloaded_file)
+        if os.path.exists(downloaded_file): os.remove(downloaded_file)
 
     try:
-        with open(REPORT_FILE, "w") as f:
-            json.dump(report, f)
+        with open(REPORT_FILE, "w") as f: json.dump(report, f)
     except: pass
-
-    if os.path.exists(args.file):
-        os.remove(args.file)
+    if os.path.exists(args.file): os.remove(args.file)
 
 if __name__ == "__main__":
     main()
