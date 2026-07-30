@@ -6,3 +6,6 @@ gdown
 rich
 halo
 colorama
+ujson
+aiofiles
+aiohttp
