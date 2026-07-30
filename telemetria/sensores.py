@@ -2,6 +2,47 @@ import subprocess
 import time
 import json
 import os
+import hashlib
+import hmac
+
+# ==========================================
+# 🔒 CONFIGURAÇÃO DE SEGURANÇA
+# No futuro, este segredo e estas funções de hash
+# devem ir para o arquivo compilado (.so) para ninguém ler.
+# ==========================================
+HMAC_SECRET = b"Hapie_Super_Secret_Key_2026_!@#"
+
+def obter_dna_dispositivo():
+    """Gera um Hash único e imutável baseado no hardware real do aparelho."""
+    comandos_dna = {
+        "android_id": "su -c 'settings get secure android_id'",
+        "serial": "getprop ro.serialno",
+        "placa": "getprop ro.board.platform"
+    }
+    
+    dna_coletado = []
+    for chave, comando in comandos_dna.items():
+        try:
+            resultado = subprocess.check_output(comando, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+            if resultado and resultado.lower() != "unknown":
+                dna_coletado.append(resultado)
+        except Exception:
+            pass
+            
+    dna_bruto = "|".join(dna_coletado) if dna_coletado else "fallback_gen_id"
+    # Retorna o SHA-256 do hardware (não envia o serial real, apenas a matemática)
+    return hashlib.sha256(dna_bruto.encode('utf-8')).hexdigest()
+
+def gerar_assinatura_hmac(dna, timestamp):
+    """Cria o token dinâmico impossível de ser falsificado sem a chave secreta."""
+    # A mensagem a ser assinada é a união do DNA com a Hora Atual
+    mensagem = f"{dna}:{timestamp}".encode('utf-8')
+    assinatura = hmac.new(HMAC_SECRET, mensagem, hashlib.sha256).hexdigest()
+    return assinatura
+
+# ==========================================
+# 📊 FUNÇÕES DE TELEMETRIA ORIGINAIS
+# ==========================================
 
 def obter_nome_processador():
     nome_cpu = "Desconhecido"
@@ -175,8 +216,13 @@ def coletar_telemetria_completa():
     bateria = obter_dados_bateria()
     armazenamento = obter_armazenamento()
     rede = obter_trafego_rede()
+    
+    # Coleta a segurança
+    dna = obter_dna_dispositivo()
+    ts = int(time.time())
 
     relatorio = {
+        "device_dna": dna,
         "cpu_name": obter_nome_processador(),
         "cpu_percent": obter_uso_cpu(),
         "cpu_temp_c": obter_temperatura_cpu(),
@@ -193,10 +239,23 @@ def coletar_telemetria_completa():
         "network_download_mb": rede["download_mb"],
         "network_upload_mb": rede["upload_mb"],
         "apps_cpu": obter_apps_consumindo_mais(),
-        "timestamp": int(time.time())
+        "timestamp": ts
     }
-    return relatorio
+    
+    return relatorio, dna, ts
 
 if __name__ == "__main__":
-    # Modo silencioso: Apenas imprime o JSON puro no stdout para ser lido por outros scripts, sem formatação ou interface.
-    print(json.dumps(coletar_telemetria_completa()))
+    # Gera o relatório, pega o DNA e o Timestamp
+    relatorio, dna, timestamp = coletar_telemetria_completa()
+    
+    # Cria a assinatura de segurança
+    assinatura = gerar_assinatura_hmac(dna, timestamp)
+    
+    # Constrói o "Envelope" final
+    envelope_seguro = {
+        "signature": assinatura,
+        "payload": relatorio
+    }
+    
+    # Imprime para quem for ler (agora encapsulado com segurança)
+    print(json.dumps(envelope_seguro))
