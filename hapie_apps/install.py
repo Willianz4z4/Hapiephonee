@@ -55,8 +55,7 @@ def activate_global_tag(tag):
 def download_file(url, dest_folder, extras=None):
     if extras is None: extras = {}
     os.makedirs(dest_folder, exist_ok=True)
-    
-    # Baixa com nome temporário para não adivinhar errado
+
     temp_filename = f"payload_{int(time.time())}_temp"
     dest_path = os.path.join(dest_folder, temp_filename)
 
@@ -69,24 +68,22 @@ def download_file(url, dest_folder, extras=None):
             with open(dest_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
-                    
-        # 🕵️ DETETIVE DE ARQUIVO: Olha o que tem dentro antes de nomear
-        ext = ".apk" # Fallback
+
+        ext = ".apk"
         try:
             if zipfile.is_zipfile(dest_path):
                 with zipfile.ZipFile(dest_path, 'r') as z:
-                    # Se tiver o manifesto na raiz, é um APK real
                     if "AndroidManifest.xml" in z.namelist():
                         ext = ".apk"
                     else:
-                        ext = ".zip" # Não tem manifesto, então é um pacote ZIP com App + Dados
+                        ext = ".zip"
         except Exception as e:
-            pass # Se der erro na leitura, mantém como .apk e deixa o sistema tentar
-            
+            pass 
+
         final_path = dest_path.replace("_temp", ext)
         os.rename(dest_path, final_path)
         print(f"🔍 Detetive de arquivo detectou que isso é um pacote: {ext.upper()}")
-        
+
         return final_path
     except Exception as e:
         print(f"❌ Erro ao baixar arquivo: {e}")
@@ -95,7 +92,6 @@ def download_file(url, dest_folder, extras=None):
 def install_apk(apk_path, visibility):
     print(f"📦 Instalando APK: {os.path.basename(apk_path)}")
     try:
-        # Instalação limpa via Root
         result = subprocess.run(f"su -c 'pm install -r \"{apk_path}\"'", shell=True, capture_output=True, text=True)
         if "Success" in result.stdout:
             print("✅ APK Instalado com sucesso!")
@@ -110,7 +106,7 @@ def install_apk(apk_path, visibility):
         return False
 
 def run_data_injection(tar_file):
-    print(f"💉 Dados encontrados ({os.path.basename(tar_file)}). Enviando para o apps_data.py injetar no data user...")
+    print(f"💉 Dados encontrados ({os.path.basename(tar_file)}). Enviando para o apps_data.py...")
     apps_data_script = os.path.join(HAPIE_APPS_DIR, "apps_data.py")
 
     if not os.path.exists(apps_data_script):
@@ -118,7 +114,6 @@ def run_data_injection(tar_file):
         return False
 
     try:
-        # Aciona o script que cuida da injeção na partição data
         subprocess.run([sys.executable, apps_data_script, "--file", tar_file], check=True)
         print("✅ Dados injetados com maestria no data user!")
         return True
@@ -138,7 +133,7 @@ def main():
     args = parser.parse_args()
 
     if not os.path.exists(args.file):
-        print("⚠️ Arquivo de payload não encontrado. Saindo...")
+        print("💤 Nenhum arquivo de payload encontrado. Saindo...")
         return
 
     try:
@@ -162,52 +157,76 @@ def main():
         link, visibility, tag, extras = app_data
         print(f"\n🚀 Iniciando processamento do link: {link[:40]}...")
 
-        # 1. Download
         downloaded_file = download_file(link, DATA_DIR, extras)
         if not downloaded_file:
             report["install_failed"].append(link)
             continue
-        
+
         process_100_percent_success = False
 
-        # 2. Roteamento (Pacote ZIP com Dados vs APK Simples)
         if downloaded_file.endswith(".zip"):
             if os.path.exists(TEMP_EXTRACT_DIR):
                 shutil.rmtree(TEMP_EXTRACT_DIR)
             os.makedirs(TEMP_EXTRACT_DIR, exist_ok=True)
-            
-            print("🗜️ Extraindo arquivo ZIP (Separando APK e Dados)...")
+
+            print("🗜️ Extraindo arquivo ZIP (Separando APKs e Dados)...")
             try:
+                senha = extras.get("password") if isinstance(extras, dict) else None
+                
                 with zipfile.ZipFile(downloaded_file, 'r') as zip_ref:
-                    zip_ref.extractall(TEMP_EXTRACT_DIR)
+                    try:
+                        if senha:
+                            zip_ref.extractall(TEMP_EXTRACT_DIR, pwd=str(senha).encode('utf-8'))
+                        else:
+                            zip_ref.extractall(TEMP_EXTRACT_DIR)
+                    except RuntimeError as e:
+                        erro_str = str(e).lower()
+                        if 'password' in erro_str or 'bad password' in erro_str or 'encrypted' in erro_str:
+                            print("🔒 ZIP protegido! Tentando a senha padrão '123'...")
+                            zip_ref.extractall(TEMP_EXTRACT_DIR, pwd=b'123')
+                            print("🔓 Sucesso! A senha '123' abriu o arquivo.")
+                        else:
+                            raise e
+            
+            except RuntimeError as e:
+                if 'password' in str(e).lower() or 'bad password' in str(e).lower():
+                    print("❌ Erro: O arquivo exige senha e a tentativa com '123' falhou!")
+                else:
+                    print(f"❌ Erro ao extrair ZIP: {e}")
+                report["install_failed"].append(link)
+                continue
             except Exception as e:
-                print(f"❌ Erro ao extrair ZIP: {e}")
+                print(f"❌ Erro crítico ao processar o ZIP: {e}")
                 report["install_failed"].append(link)
                 continue
 
             arquivos_extraidos = os.listdir(TEMP_EXTRACT_DIR)
-            apk_file = next((f for f in arquivos_extraidos if f.endswith(".apk")), None)
+            
+            # Pega todos os APKs e garante que vai tentar todos
+            apk_files = [f for f in arquivos_extraidos if f.endswith(".apk")]
             tar_file = next((f for f in arquivos_extraidos if f.endswith(".tar.gz")), None)
 
             apk_success = False
-            
-            # Passo 2A: Instala o App
-            if apk_file:
-                apk_path = os.path.join(TEMP_EXTRACT_DIR, apk_file)
-                apk_success = install_apk(apk_path, visibility)
+
+            if apk_files:
+                apk_success = True 
+                print(f"📦 Foram encontrados {len(apk_files)} APK(s) no pacote. Iniciando instalações...")
+                for apk in apk_files:
+                    apk_path = os.path.join(TEMP_EXTRACT_DIR, apk)
+                    if not install_apk(apk_path, visibility):
+                        apk_success = False
+                        print(f"❌ Falha ao instalar o APK: {apk}")
             else:
                 print("⚠️ Nenhum APK encontrado dentro do ZIP!")
-            
-            # Passo 2B: Se instalou com sucesso, injeta os dados
+
             if apk_success:
                 if tar_file:
                     tar_path = os.path.join(TEMP_EXTRACT_DIR, tar_file)
                     injection_success = run_data_injection(tar_path)
-                    
                     if injection_success:
                         process_100_percent_success = True
                     else:
-                        print("⚠️ O APK instalou, mas a injeção FALHOU. A tag global não será ativada.")
+                        print("⚠️ Os APKs instalaram, mas a injeção FALHOU. A tag global não será ativada.")
                 else:
                     process_100_percent_success = True
 
@@ -217,14 +236,13 @@ def main():
             if install_apk(downloaded_file, visibility):
                 process_100_percent_success = True
 
-        # 3. Finalização
         if process_100_percent_success:
             report["install_success"].append(link)
             print("🌟 Processo finalizado com SUCESSO ABSOLUTO.")
             activate_global_tag(tag)
         else:
             report["install_failed"].append(link)
-        
+
         if os.path.exists(downloaded_file):
             os.remove(downloaded_file)
 
