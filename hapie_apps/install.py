@@ -125,11 +125,18 @@ def run_data_injection(tar_file):
         return False
 
 # ==========================================
-# 🗜️ MOTOR DE EXTRAÇÃO BLINDADO (7-ZIP)
+# 🗜️ MOTOR DE EXTRAÇÃO BLINDADO V2
 # ==========================================
 def recursive_extract(target_dir, senha_padrao):
-    # Instala o mestre das extrações e garante que não vai travar
-    os.system("pkg install p7zip -y -q > /dev/null 2>&1")
+    # Garante que os pacotes estão instalados
+    os.system("pkg install 7zip p7zip unzip -y -q > /dev/null 2>&1")
+
+    # Detetive de Binários (Termux moderno usa 7zz)
+    bin_7z = None
+    if shutil.which("7zz"):
+        bin_7z = "7zz"
+    elif shutil.which("7z"):
+        bin_7z = "7z"
 
     while True:
         zip_found = False
@@ -137,39 +144,45 @@ def recursive_extract(target_dir, senha_padrao):
             for file in files:
                 if file.lower().endswith(".zip"):
                     zip_path = os.path.join(root, file)
-                    print(f"🗜️ Extraindo: {file} (Força Bruta com 7z)...")
                     
-                    try:
-                        # O 7z lida com AES e o stdin=subprocess.DEVNULL impede que ele congele esperando você digitar algo
+                    if bin_7z:
+                        print(f"🗜️ Extraindo: {file} (Usando {bin_7z})...")
+                        cmd = f'{bin_7z} x "{zip_path}" -o"{root}" -y'
                         if senha_padrao:
-                            cmd = f'7z x "{zip_path}" -o"{root}" -p"{senha_padrao}" -y'
-                        else:
-                            cmd = f'7z x "{zip_path}" -o"{root}" -y'
-                            
+                            cmd = f'{bin_7z} x "{zip_path}" -o"{root}" -p"{senha_padrao}" -y'
+                        fallback = f'{bin_7z} x "{zip_path}" -o"{root}" -p"123" -y'
+                    else:
+                        print(f"🗜️ Extraindo: {file} (Usando unzip)...")
+                        cmd = f'unzip -o -q "{zip_path}" -d "{root}"'
+                        if senha_padrao:
+                            cmd = f'unzip -o -q -P "{senha_padrao}" "{zip_path}" -d "{root}"'
+                        fallback = f'unzip -o -q -P "123" "{zip_path}" -d "{root}"'
+
+                    try:
                         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
                         
                         if result.returncode != 0:
-                            print(f"🔒 {file} recusou a extração! Chutando a porta com a senha '123'...")
-                            cmd_fallback = f'7z x "{zip_path}" -o"{root}" -p"123" -y'
-                            result_fallback = subprocess.run(cmd_fallback, shell=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+                            print(f"🔒 Falha na primeira tentativa. Tentando senha '123'...")
+                            result_fallback = subprocess.run(fallback, shell=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
                             
                             if result_fallback.returncode != 0:
-                                print(f"❌ Erro fatal ao extrair {file}. (Pode estar corrompido ou a senha não é 123)")
+                                print(f"❌ Erro fatal ao extrair {file}.")
+                                erro_real = result_fallback.stderr.strip() or result_fallback.stdout.strip()
+                                print(f"🔍 MOTIVO DO ERRO: {erro_real}")
                             else:
                                 print(f"🔓 Sucesso! A senha '123' abriu o cofre.")
                     except Exception as e:
-                        print(f"❌ Erro no terminal ao chamar 7z para {file}: {e}")
+                        print(f"❌ Erro no terminal ao chamar o extrator para {file}: {e}")
                     
-                    # Deleta o ZIP que acabou de ser processado para não criar loop infinito
+                    # Deleta o ZIP que acabou de ser processado
                     try: os.remove(zip_path)
                     except: pass
                     
                     zip_found = True
-                    break # Quebra para recomeçar a varredura com os novos arquivos extraídos
+                    break
             if zip_found:
                 break
                 
-        # Se varreu tudo e não achou nenhum .zip, sai do loop
         if not zip_found:
             break
 
@@ -221,14 +234,11 @@ def main():
             print("🗜️ Iniciando varredura e extração recursiva...")
             senha = extras.get("password") if isinstance(extras, dict) else None
             
-            # Copia o zip principal para o temp_extract
             main_zip_temp = os.path.join(TEMP_EXTRACT_DIR, "main_payload.zip")
             shutil.copy2(downloaded_file, main_zip_temp)
 
-            # Extração veloz com 7z
             recursive_extract(TEMP_EXTRACT_DIR, senha)
             
-            # Caça TODOS os APKs e o arquivo tar.gz em todas as subpastas criadas
             apk_files = []
             tar_file = None
             for root_dir, _, files in os.walk(TEMP_EXTRACT_DIR):
