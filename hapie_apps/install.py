@@ -125,45 +125,47 @@ def run_data_injection(tar_file):
         return False
 
 # ==========================================
-# 🗜️ MOTOR DE EXTRAÇÃO RECURSIVA (ZIP DENTRO DE ZIP)
+# 🗜️ MOTOR DE EXTRAÇÃO RECURSIVA TURBINADO (UNZIP NATIVO)
 # ==========================================
 def recursive_extract(target_dir, senha_padrao):
+    # Garante que o pacote unzip está instalado no sistema
+    os.system("pkg install unzip -y -q > /dev/null 2>&1")
+
     while True:
         zip_found = False
-        # Vasculha todas as subpastas
         for root, dirs, files in os.walk(target_dir):
             for file in files:
                 if file.lower().endswith(".zip"):
                     zip_path = os.path.join(root, file)
                     print(f"🗜️ Extraindo: {file}...")
-                    try:
-                        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                            try:
-                                if senha_padrao:
-                                    zip_ref.extractall(root, pwd=str(senha_padrao).encode('utf-8'))
-                                else:
-                                    zip_ref.extractall(root)
-                            except RuntimeError as e:
-                                erro_str = str(e).lower()
-                                if 'password' in erro_str or 'bad password' in erro_str or 'encrypted' in erro_str:
-                                    print(f"🔒 {file} protegido! Tentando a senha '123'...")
-                                    zip_ref.extractall(root, pwd=b'123')
-                                else:
-                                    raise e
-                    except RuntimeError as e:
-                        if 'password' in str(e).lower() or 'bad password' in str(e).lower():
-                            print(f"❌ Erro: {file} exige senha e a tentativa com '123' falhou!")
-                        else:
-                            print(f"❌ Erro ao extrair {file}: {e}")
-                    except Exception as e:
-                        print(f"❌ Erro crítico no ZIP {file}: {e}")
                     
-                    # Deleta o ZIP que acabou de ser processado para não criar loop infinito
+                    try:
+                        # O '< /dev/null' impede que o comando trave a tela pedindo senha manualmente
+                        if senha_padrao:
+                            cmd = f'unzip -o -q -P "{senha_padrao}" "{zip_path}" -d "{root}" < /dev/null'
+                        else:
+                            cmd = f'unzip -o -q "{zip_path}" -d "{root}" < /dev/null'
+                            
+                        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                        
+                        if result.returncode != 0:
+                            print(f"🔒 {file} falhou ou exigiu senha! Tentando a senha '123'...")
+                            cmd_fallback = f'unzip -o -q -P "123" "{zip_path}" -d "{root}" < /dev/null'
+                            result_fallback = subprocess.run(cmd_fallback, shell=True, capture_output=True, text=True)
+                            
+                            if result_fallback.returncode != 0:
+                                print(f"❌ Erro ao extrair {file}. A senha 123 também falhou!")
+                            else:
+                                print(f"🔓 Sucesso! A senha '123' abriu o arquivo.")
+                    except Exception as e:
+                        print(f"❌ Erro crítico no comando unzip para {file}: {e}")
+                    
+                    # Deleta o ZIP que acabou de ser processado
                     try: os.remove(zip_path)
                     except: pass
                     
                     zip_found = True
-                    break # Quebra para recomeçar a varredura com os novos arquivos
+                    break # Quebra para recomeçar a varredura com os novos arquivos extraídos
             if zip_found:
                 break
                 
@@ -223,16 +225,16 @@ def main():
             main_zip_temp = os.path.join(TEMP_EXTRACT_DIR, "main_payload.zip")
             shutil.copy2(downloaded_file, main_zip_temp)
 
-            # Roda a extração em cascata (descompacta e deleta os .zips)
+            # Roda a extração rápida com unzip nativo
             recursive_extract(TEMP_EXTRACT_DIR, senha)
             
-            # Agora caça TODOS os APKs e o tar em todas as pastas resultantes
+            # Caça TODOS os APKs e o arquivo tar.gz em todas as subpastas criadas
             apk_files = []
             tar_file = None
             for root_dir, _, files in os.walk(TEMP_EXTRACT_DIR):
                 for f in files:
                     if f.endswith(".apk"):
-                        apk_files.append(os.path.join(root_dir, f)) # Pega o caminho completo
+                        apk_files.append(os.path.join(root_dir, f))
                     elif f.endswith(".tar.gz") and tar_file is None:
                         tar_file = os.path.join(root_dir, f)
 
