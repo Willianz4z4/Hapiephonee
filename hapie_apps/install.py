@@ -50,7 +50,7 @@ def activate_global_tag(tag):
         print(f"❌ [ERRO] Falha ao ligar a chave '{tag}': {e}")
 
 # ==========================================
-# 📥 FUNÇÕES DE DOWNLOAD E EXTRAÇÃO
+# 📥 FUNÇÕES DE DOWNLOAD E INSTALAÇÃO
 # ==========================================
 def download_file(url, dest_folder, extras=None):
     if extras is None: extras = {}
@@ -77,12 +77,12 @@ def download_file(url, dest_folder, extras=None):
                         ext = ".apk"
                     else:
                         ext = ".zip"
-        except Exception as e:
+        except Exception:
             pass 
 
         final_path = dest_path.replace("_temp", ext)
         os.rename(dest_path, final_path)
-        print(f"🔍 Detetive de arquivo detectou que isso é um pacote: {ext.upper()}")
+        print(f"🔍 Detetive de arquivo detectou: pacote {ext.upper()}")
 
         return final_path
     except Exception as e:
@@ -123,6 +123,53 @@ def run_data_injection(tar_file):
     except Exception as e:
         print(f"❌ Erro ao chamar injetor de dados: {e}")
         return False
+
+# ==========================================
+# 🗜️ MOTOR DE EXTRAÇÃO RECURSIVA (ZIP DENTRO DE ZIP)
+# ==========================================
+def recursive_extract(target_dir, senha_padrao):
+    while True:
+        zip_found = False
+        # Vasculha todas as subpastas
+        for root, dirs, files in os.walk(target_dir):
+            for file in files:
+                if file.lower().endswith(".zip"):
+                    zip_path = os.path.join(root, file)
+                    print(f"🗜️ Extraindo: {file}...")
+                    try:
+                        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                            try:
+                                if senha_padrao:
+                                    zip_ref.extractall(root, pwd=str(senha_padrao).encode('utf-8'))
+                                else:
+                                    zip_ref.extractall(root)
+                            except RuntimeError as e:
+                                erro_str = str(e).lower()
+                                if 'password' in erro_str or 'bad password' in erro_str or 'encrypted' in erro_str:
+                                    print(f"🔒 {file} protegido! Tentando a senha '123'...")
+                                    zip_ref.extractall(root, pwd=b'123')
+                                else:
+                                    raise e
+                    except RuntimeError as e:
+                        if 'password' in str(e).lower() or 'bad password' in str(e).lower():
+                            print(f"❌ Erro: {file} exige senha e a tentativa com '123' falhou!")
+                        else:
+                            print(f"❌ Erro ao extrair {file}: {e}")
+                    except Exception as e:
+                        print(f"❌ Erro crítico no ZIP {file}: {e}")
+                    
+                    # Deleta o ZIP que acabou de ser processado para não criar loop infinito
+                    try: os.remove(zip_path)
+                    except: pass
+                    
+                    zip_found = True
+                    break # Quebra para recomeçar a varredura com os novos arquivos
+            if zip_found:
+                break
+                
+        # Se varreu tudo e não achou nenhum .zip, sai do loop
+        if not zip_found:
+            break
 
 # ==========================================
 # 🧠 MOTOR PRINCIPAL DE INSTALAÇÃO
@@ -169,60 +216,41 @@ def main():
                 shutil.rmtree(TEMP_EXTRACT_DIR)
             os.makedirs(TEMP_EXTRACT_DIR, exist_ok=True)
 
-            print("🗜️ Extraindo arquivo ZIP (Separando APKs e Dados)...")
-            try:
-                senha = extras.get("password") if isinstance(extras, dict) else None
-                
-                with zipfile.ZipFile(downloaded_file, 'r') as zip_ref:
-                    try:
-                        if senha:
-                            zip_ref.extractall(TEMP_EXTRACT_DIR, pwd=str(senha).encode('utf-8'))
-                        else:
-                            zip_ref.extractall(TEMP_EXTRACT_DIR)
-                    except RuntimeError as e:
-                        erro_str = str(e).lower()
-                        if 'password' in erro_str or 'bad password' in erro_str or 'encrypted' in erro_str:
-                            print("🔒 ZIP protegido! Tentando a senha padrão '123'...")
-                            zip_ref.extractall(TEMP_EXTRACT_DIR, pwd=b'123')
-                            print("🔓 Sucesso! A senha '123' abriu o arquivo.")
-                        else:
-                            raise e
+            print("🗜️ Preparando extração em camadas (ZIP dentro de ZIP)...")
+            senha = extras.get("password") if isinstance(extras, dict) else None
             
-            except RuntimeError as e:
-                if 'password' in str(e).lower() or 'bad password' in str(e).lower():
-                    print("❌ Erro: O arquivo exige senha e a tentativa com '123' falhou!")
-                else:
-                    print(f"❌ Erro ao extrair ZIP: {e}")
-                report["install_failed"].append(link)
-                continue
-            except Exception as e:
-                print(f"❌ Erro crítico ao processar o ZIP: {e}")
-                report["install_failed"].append(link)
-                continue
+            # Copia o zip principal para o temp_extract
+            main_zip_temp = os.path.join(TEMP_EXTRACT_DIR, "main_payload.zip")
+            shutil.copy2(downloaded_file, main_zip_temp)
 
-            arquivos_extraidos = os.listdir(TEMP_EXTRACT_DIR)
+            # Roda a extração em cascata (descompacta e deleta os .zips)
+            recursive_extract(TEMP_EXTRACT_DIR, senha)
             
-            # Pega todos os APKs e garante que vai tentar todos
-            apk_files = [f for f in arquivos_extraidos if f.endswith(".apk")]
-            tar_file = next((f for f in arquivos_extraidos if f.endswith(".tar.gz")), None)
+            # Agora caça TODOS os APKs e o tar em todas as pastas resultantes
+            apk_files = []
+            tar_file = None
+            for root_dir, _, files in os.walk(TEMP_EXTRACT_DIR):
+                for f in files:
+                    if f.endswith(".apk"):
+                        apk_files.append(os.path.join(root_dir, f)) # Pega o caminho completo
+                    elif f.endswith(".tar.gz") and tar_file is None:
+                        tar_file = os.path.join(root_dir, f)
 
             apk_success = False
 
             if apk_files:
                 apk_success = True 
-                print(f"📦 Foram encontrados {len(apk_files)} APK(s) no pacote. Iniciando instalações...")
-                for apk in apk_files:
-                    apk_path = os.path.join(TEMP_EXTRACT_DIR, apk)
+                print(f"📦 Foram encontrados {len(apk_files)} APK(s) no total. Iniciando instalações...")
+                for apk_path in apk_files:
                     if not install_apk(apk_path, visibility):
                         apk_success = False
-                        print(f"❌ Falha ao instalar o APK: {apk}")
+                        print(f"❌ Falha ao instalar o APK: {os.path.basename(apk_path)}")
             else:
-                print("⚠️ Nenhum APK encontrado dentro do ZIP!")
+                print("⚠️ Nenhum APK encontrado dentro de toda a estrutura do ZIP!")
 
             if apk_success:
                 if tar_file:
-                    tar_path = os.path.join(TEMP_EXTRACT_DIR, tar_file)
-                    injection_success = run_data_injection(tar_path)
+                    injection_success = run_data_injection(tar_file)
                     if injection_success:
                         process_100_percent_success = True
                     else:
