@@ -33,7 +33,6 @@ with open(DEBUG_LOG_FILE, 'w', encoding='utf-8') as f:
     f.write(f"--- LOG DE INSTALAÇÃO INICIADO EM {time.ctime()} ---\n")
 
 def log_debug(msg):
-    """Escreve tudo nos bastidores para você poder caçar bugs depois"""
     try:
         with open(DEBUG_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
@@ -117,11 +116,15 @@ def run_data_injection(tar_file):
         return False
 
 def recursive_extract(target_dir, senha_padrao):
-    log_debug("Preparando extrator 7z nativo...")
-    os.system("pkg install p7zip -y -q > /dev/null 2>&1")
+    log_debug("Preparando extratores...")
+    os.system("pkg install p7zip 7zip unzip -y -q > /dev/null 2>&1")
     
-    # Confirma qual é o comando do 7z disponível
-    bin_7z = "7zz" if shutil.which("7zz") else "7z" if shutil.which("7z") else "7za"
+    # Detetive Inteligente de Extrator (CORRIGIDO)
+    bin_7z = None
+    for cmd in ["7zz", "7z", "7za"]:
+        if shutil.which(cmd):
+            bin_7z = cmd
+            break
 
     while True:
         zip_found = False
@@ -129,21 +132,26 @@ def recursive_extract(target_dir, senha_padrao):
             for file in files:
                 if file.lower().endswith(".zip"):
                     zip_path = os.path.join(root, file)
-                    log_debug(f"Achou ZIP para extrair: {file} (Usando {bin_7z})")
                     
-                    cmd_principal = f'{bin_7z} x "{zip_path}" -o"{root}" -y'
-                    if senha_padrao:
-                        cmd_principal = f'{bin_7z} x "{zip_path}" -o"{root}" -p"{senha_padrao}" -y'
-                    
-                    cmd_fallback = f'{bin_7z} x "{zip_path}" -o"{root}" -p"123" -y'
+                    if bin_7z:
+                        log_debug(f"Achou ZIP para extrair: {file} (Usando {bin_7z})")
+                        cmd_principal = f'{bin_7z} x "{zip_path}" -o"{root}" -y'
+                        if senha_padrao:
+                            cmd_principal = f'{bin_7z} x "{zip_path}" -o"{root}" -p"{senha_padrao}" -y'
+                        cmd_fallback = f'{bin_7z} x "{zip_path}" -o"{root}" -p"123" -y'
+                    else:
+                        log_debug(f"Achou ZIP para extrair: {file} (Usando UNZIP Nativo - 7z não achado!)")
+                        cmd_principal = f'unzip -o -q "{zip_path}" -d "{root}"'
+                        if senha_padrao:
+                            cmd_principal = f'unzip -o -q -P "{senha_padrao}" "{zip_path}" -d "{root}"'
+                        cmd_fallback = f'unzip -o -q -P "123" "{zip_path}" -d "{root}"'
 
                     try:
-                        # Roda primeira tentativa (com senha do json ou sem senha)
                         log_debug(f"Tentativa 1...")
                         result = subprocess.run(cmd_principal, shell=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
                         
                         if result.returncode != 0:
-                            log_debug(f"Tentativa 1 falhou. Motivo provável: {result.stderr.strip()[:100]}... Chutando senha '123'.")
+                            log_debug(f"Tentativa 1 falhou. Motivo: {result.stderr.strip()[:100]}... Chutando senha '123'.")
                             result_fallback = subprocess.run(cmd_fallback, shell=True, capture_output=True, text=True, stdin=subprocess.DEVNULL)
                             
                             if result_fallback.returncode != 0:
