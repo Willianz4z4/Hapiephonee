@@ -1,30 +1,21 @@
 import sys
-import time
-import subprocess
 import os
+import time
 import json
+import subprocess
+import requests
 
-if len(sys.argv) < 5:
-    print(f"❌ [FATAL ERROR] Faltam argumentos! Recebido: {sys.argv}", flush=True)
-    sys.exit(1)
+# 1. Configura caminhos absolutos (Para o MacroDroid não se perder na hora de executar)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(CURRENT_DIR)
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 
-DEVICE_ID = sys.argv[1]
-GUILD_ID = sys.argv[2]
-OWNER_ID = sys.argv[3]
-URL_WEBHOOK = sys.argv[4]
-
-CONFIG_FILE = "hapie_config.json"
-FUNCTIONS_FILE = "functions.json"
-
-def obter_client_token():
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                return json.load(f).get("client_token", "")
-        except: pass
-    return ""
+FUNCTIONS_FILE = os.path.join(CURRENT_DIR, "functions.json")
+WEBHOOK_CACHE = os.path.join(CURRENT_DIR, ".webhook_cache")
 
 def check_local_status():
+    """Lê o JSON para saber se o sistema de cópia está ativado no painel."""
     if os.path.exists(FUNCTIONS_FILE):
         try:
             with open(FUNCTIONS_FILE, "r") as f:
@@ -33,6 +24,75 @@ def check_local_status():
         except: pass
     return False
 
+
+# =========================================================
+# MODO 1: GATILHO MACRODROID (Executado via root)
+# Ex: python auto_copy.py 'texto copiado'
+# =========================================================
+if len(sys.argv) == 2:
+    # Se o botão no seu painel estiver desligado, o script morre sem enviar nada
+    if not check_local_status():
+        sys.exit(0)
+
+    try:
+        # Acesso ao Cofre (Se o invasor interceptar, o Kamikaze detona aqui)
+        from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
+    except ImportError:
+        sys.exit(5)
+
+    # Puxa a URL dinâmica salva pelo Daemon (evita quebrar se o Ngrok mudar)
+    try:
+        with open(WEBHOOK_CACHE, "r") as f:
+            URL_WEBHOOK = f.read().strip()
+    except:
+        URL_WEBHOOK = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/webhook"
+
+    def enviar_para_nuvem(texto_copiado):
+        dna_seguro = obter_dna_dispositivo()
+        ts_agora = int(time.time())
+        assinatura = gerar_assinatura_hmac(dna_seguro, ts_agora)
+
+        payload = {
+            "event": "clipboard_sync",
+            "device_dna": dna_seguro,
+            "timestamp": ts_agora,
+            "clipboard_text": texto_copiado
+        }
+        
+        envelope_seguro = {
+            "signature": assinatura,
+            "payload": payload
+        }
+
+        try:
+            requests.post(URL_WEBHOOK, json=envelope_seguro, headers={"Content-Type": "application/json"}, timeout=10)
+        except Exception:
+            pass
+
+    # Dispara a função com o texto que o MacroDroid passou e encerra a execução
+    enviar_para_nuvem(sys.argv[1])
+    sys.exit(0)
+
+
+# =========================================================
+# MODO 2: DAEMON (Botão Ligado - Chamado pelo task_orchestrator)
+# Ex: python auto_copy.py DEVICE_ID GUILD_ID OWNER_ID URL_WEBHOOK
+# =========================================================
+if len(sys.argv) < 5:
+    print(f"❌ [FATAL ERROR] Faltam argumentos para o Daemon! Recebido: {sys.argv}", flush=True)
+    sys.exit(1)
+
+DEVICE_ID = sys.argv[1]
+GUILD_ID = sys.argv[2]
+OWNER_ID = sys.argv[3]
+URL_WEBHOOK = sys.argv[4]
+
+# Salva a URL dinamicamente para que o Modo 1 (MacroDroid) consiga ler com segurança
+try:
+    with open(WEBHOOK_CACHE, "w") as f:
+        f.write(URL_WEBHOOK)
+except: pass
+
 def forcar_acessibilidade():
     print("🔧 [SETUP] Injetando permissões de Acessibilidade no sistema...", flush=True)
     servicos = "com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.MacroDroidAccessibilityServiceJellyBean:com.arlosoft.macrodroid/com.arlosoft.macrodroid.UIInteractionAccessibilityService:com.arlosoft.macrodroid/com.arlosoft.macrodroid.MacroDroidAccessibilityService"
@@ -40,65 +100,22 @@ def forcar_acessibilidade():
     subprocess.run(f'su -c "settings put secure enabled_accessibility_services {servicos} > /dev/null 2>&1"', shell=True)
     subprocess.run('su -c "settings put secure accessibility_enabled 1 > /dev/null 2>&1"', shell=True)
 
-    print("📂 [SETUP] Liberando acesso ao armazenamento (Legado) para o MacroDroid...", flush=True)
-    subprocess.run('su -c "pm grant com.arlosoft.macrodroid android.permission.WRITE_EXTERNAL_STORAGE > /dev/null 2>&1"', shell=True)
-    subprocess.run('su -c "pm grant com.arlosoft.macrodroid android.permission.READ_EXTERNAL_STORAGE > /dev/null 2>&1"', shell=True)
-    subprocess.run('su -c "appops set com.arlosoft.macrodroid LEGACY_STORAGE allow > /dev/null 2>&1"', shell=True)
-
-def sync_com_macrodroid(ativar):
-    token = obter_client_token()
-    if ativar:
-        print(f"🚀 [SYNC] Enviando link para o MacroDroid: {URL_WEBHOOK}", flush=True)
-        cmd = f'su -c "am broadcast -a hapiephone.sync --es url_webhook \\"{URL_WEBHOOK}\\" --es device_id \\"{DEVICE_ID}\\" --es guild_id \\"{GUILD_ID}\\" --es owner_id \\"{OWNER_ID}\\" --es client_token \\"{token}\\"" > /dev/null 2>&1'
-    else:
-        print("🛑 [SYNC] Mandando o MacroDroid pausar a cópia...", flush=True)
-        cmd = 'su -c "am broadcast -a hapiephone.stop_sync" > /dev/null 2>&1'
-
-    subprocess.run(cmd, shell=True)
-
 def main():
-    print("📡 Hapiephone Copy System Online...", flush=True)
+    print("📡 Hapiephone Copy System Online (Modo Híbrido Seguro)...", flush=True)
     subprocess.run("termux-wake-lock", shell=True, check=False)
 
     forcar_acessibilidade()
-
     estado_ativo = False
-    last_sync_time = 0
-    SYNC_INTERVAL = 1209600  # 14 dias em segundos (14 * 24 * 60 * 60)
-    SYNC_REQUEST_FILE = "/sdcard/Hapiephone_Data/sync_request.txt"
 
     while True:
         deve_rodar = check_local_status()
 
-        # 1. VERIFICA SE O MACRODROID PEDIU SOCORRO
-        force_sync = False
-        if os.path.exists(SYNC_REQUEST_FILE):
-            print("⚠️ [S.O.S] MacroDroid relatou erro HTTP e pediu a URL nova!", flush=True)
-            force_sync = True
-            try:
-                os.remove(SYNC_REQUEST_FILE)
-            except: pass
-
-        print(f"👀 [DEBUG] deve_rodar = {deve_rodar} | estado_ativo = {estado_ativo}", flush=True)
-
-        if deve_rodar:
-            tempo_passado = time.time() - last_sync_time
+        if deve_rodar and not estado_ativo:
+            print("🟢 [GATILHO] Sistema de Cópia LIGADO. Aguardando gatilho invisível do MacroDroid...", flush=True)
+            estado_ativo = True
             
-            if not estado_ativo or force_sync or tempo_passado >= SYNC_INTERVAL:
-                if not estado_ativo:
-                    print("🟢 [GATILHO] O status mudou para TRUE! Acionando o Sync...", flush=True)
-                elif force_sync:
-                    print("🔄 [GATILHO FORÇADO] Mandando os dados de emergência pro MacroDroid...", flush=True)
-                else:
-                    print("⏳ [TIMER 14 DIAS] Renovando a injeção no MacroDroid preventivamente...", flush=True)
-                
-                sync_com_macrodroid(True)
-                estado_ativo = True
-                last_sync_time = time.time()
-                
         elif not deve_rodar and estado_ativo:
-            print("🔴 [GATILHO] O status mudou para FALSE! Desligando o Sync...", flush=True)
-            sync_com_macrodroid(False)
+            print("🔴 [GATILHO] Sistema de Cópia DESLIGADO.", flush=True)
             estado_ativo = False
 
         time.sleep(5)
