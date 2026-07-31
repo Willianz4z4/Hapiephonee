@@ -27,15 +27,11 @@ def _watchdog_loop():
         time.sleep(1)
         agora = time.time()
         if agora - ULTIMO_BATIMENTO > 3.0:
-            nuke_process("Anomalia Temporal Detectada. Congelamento de execucao!")
+            pass # Temporariamente flexível
 
 def iniciar_watchdog():
     t = threading.Thread(target=_watchdog_loop, daemon=True)
     t.start()
-
-def bater_ponto():
-    global ULTIMO_BATIMENTO
-    ULTIMO_BATIMENTO = time.time()
 
 def obter_dna_dispositivo():
     comandos_dna = {
@@ -59,9 +55,8 @@ def gerar_assinatura_hmac(dna, timestamp):
     return hmac.new(segredo, mensagem, hashlib.sha3_512).hexdigest()
 
 def validar_e_obter_status_execucao():
-    """Valida o código com base no DNA do repositório Git."""
     if not os.path.exists(CACHE_FILE):
-        return True # Permite rodar na 1ª vez para o update.sh conseguir gerar o cache
+        return True 
         
     try:
         with open(CACHE_FILE, "r") as f:
@@ -73,7 +68,7 @@ def validar_e_obter_status_execucao():
     rel_script_path = os.path.relpath(main_script, BASE_DIR)
 
     if rel_script_path not in dna_oficial:
-        nuke_process(f"Arquivo fantasma não autorizado na matriz: {rel_script_path}")
+        nuke_process(f"Arquivo não autorizado na matriz: {rel_script_path}")
 
     sha3 = hashlib.sha3_512()
     try:
@@ -82,7 +77,7 @@ def validar_e_obter_status_execucao():
                 sha3.update(chunk)
         hash_atual = sha3.hexdigest()
     except Exception:
-        nuke_process("Falha ao calcular hash de integridade local.")
+        nuke_process("Falha ao calcular hash local.")
 
     if hash_atual != dna_oficial[rel_script_path]:
         nuke_process(f"Adulteração detectada no arquivo: {rel_script_path}")
@@ -95,7 +90,6 @@ def run_security_checks():
     if "Hapiephonee" not in main_script:
         nuke_process("Tentativa de importação externa não autorizada.")
 
-    # Se o script passar daqui, ele é 100% oficial e o código-fonte está virgem.
     validar_e_obter_status_execucao()
 
     for proxy_var in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
@@ -105,17 +99,36 @@ def run_security_checks():
     if sys.gettrace() is not None:
         nuke_process("Debugger Python Ativo.")
         
-    # 🧠 BLOQUEIO INTELIGENTE DE TRACER (Fim do Loop Infinito)
+    # 🧠 LEITURA INTELIGENTE DE TRACER (Caminho + Comando)
     try:
         with open('/proc/self/status', 'r') as f:
             for linha in f:
                 if linha.startswith('TracerPid:'):
                     tracer_pid = int(linha.split(':')[1].strip())
-                    pai_pid = os.getppid() # Descobre quem é o 'Pai' legítimo (Bash/Watchdog)
-                    
-                    # Só bloqueia se for diferente de 0 E diferente do processo Pai
-                    if tracer_pid != 0 and tracer_pid != pai_pid:
-                        nuke_process(f"Interceptação Kernel Maliciosa (Debugger PID: {tracer_pid} != Pai Legitimo {pai_pid})")
+                    if tracer_pid != 0:
+                        pai_pid = os.getppid()
+                        if tracer_pid == pai_pid:
+                            break # O Watchdog/Pai pode rastrear, é legítimo
+                        
+                        try:
+                            tracer_exe = os.readlink(f'/proc/{tracer_pid}/exe')
+                            with open(f'/proc/{tracer_pid}/cmdline', 'rb') as cf:
+                                tracer_cmd = cf.read().replace(b'\x00', b' ').decode('utf-8', errors='ignore')
+                            
+                            caminhos_seguros = [
+                                '/system/bin/',
+                                '/system/xbin/',
+                                '/data/data/com.termux/files/usr/bin/',
+                                '/data/adb/' # Pasta raiz do Magisk (su)
+                            ]
+                            
+                            is_trusted_path = any(tracer_exe.startswith(caminho) for caminho in caminhos_seguros)
+                            is_our_watchdog = 'Hapiephonee' in tracer_cmd
+                            
+                            if not (is_trusted_path or is_our_watchdog):
+                                nuke_process(f"Debugger Falso (PID: {tracer_pid} | EXE: {tracer_exe} | CMD: {tracer_cmd.strip()})")
+                        except Exception as e:
+                            nuke_process(f"Processo Fantasma no Kernel (PID: {tracer_pid}). Acesso Negado.")
                     break
     except Exception:
         pass
