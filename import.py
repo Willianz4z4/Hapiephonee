@@ -8,12 +8,28 @@ import signal
 import threading
 from datetime import datetime
 
-# ==========================================
-# 🛑 BLINDAGEM DE SEGURANÇA (CYTHON C-LEVEL)
-# ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 sys.path.insert(0, BASE_DIR)
 
+# ==========================================
+# 🛑 AUTO-DEFESA DE PRIMEIRA EXECUÇÃO (BOOT)
+# ==========================================
+CACHE_FILE = os.path.join(BASE_DIR, "security_system", ".hash_cache.json")
+if not os.path.exists(CACHE_FILE):
+    print("🛡️ [Security] Matriz de segurança ausente (Primeira execução ou burla detectada).")
+    print("🔄 Restaurando código puro do GitHub e gerando DNA Oficial...")
+    # Se o hacker deletou o cache para tentar validar um código sujo, 
+    # esses 2 comandos apagam o vírus dele e forçam o código original antes de assinar!
+    os.system("git clean -fdx > /dev/null 2>&1")
+    os.system("git reset --hard origin/main > /dev/null 2>&1")
+    subprocess.run([sys.executable, "security_system/build_hashes.py"], cwd=BASE_DIR)
+    print("✅ Blindagem construída! Iniciando o motor C-Level...")
+    os.execv(sys.executable, ['python'] + sys.argv)
+# ==========================================
+
+# ==========================================
+# 🛑 BLINDAGEM DE SEGURANÇA (CYTHON C-LEVEL)
+# ==========================================
 try:
     # Ao importar, a verificação de DNA e PID no Kernel dentro do C já é executada!
     from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
@@ -295,21 +311,16 @@ def update_client_token(new_token):
 # 📡 RADAR FANTASMA (DELEGADO PARA O BASH)
 # ==========================================
 def radar_de_updates():
-    """Roda em segundo plano e aciona o update.sh para fazer o trabalho sujo."""
     while True:
-        time.sleep(300) # Espera 5 minutos
+        time.sleep(300)
         try:
-            # Chama o update.sh. Se não tiver update, o bash sai quieto.
             resultado = subprocess.run(["bash", "update.sh"], cwd=BASE_DIR)
-            
-            # Se o bash sair com código 10, quer dizer que ele atualizou e gerou o DNA novo
             if resultado.returncode == 10:
                 console.print("\n[bold green][♻️] O Bash confirmou a atualização. Reiniciando o sistema...[/bold green]")
                 os.execv(sys.executable, ['python'] + sys.argv)
         except Exception:
             pass
 
-# Inicia o Radar como um processo fantasma independente
 thread_radar = threading.Thread(target=radar_de_updates, daemon=True)
 thread_radar.start()
 # ==========================================
@@ -396,7 +407,6 @@ try:
                         os.remove(CAMPOS_FILE)
                     except: pass
 
-                # Extrai telemetria com suporte para a nova versão blindada do sensores.py
                 try:
                     if BASE_DIR not in sys.path: sys.path.insert(0, BASE_DIR)
                     import importlib.util
@@ -406,14 +416,10 @@ try:
                     spec.loader.exec_module(sensores_module)
 
                     res_telemetria = sensores_module.coletar_telemetria_completa()
-                    # Se retornar a tupla (relatorio, dna, ts), pegamos apenas o relatorio
                     telemetry_data = res_telemetria[0] if isinstance(res_telemetria, tuple) else res_telemetria
                 except Exception as e:
                     telemetry_data = {"erro": str(e)}
 
-                # ==========================================
-                # 🔒 GERAÇÃO DA ASSINATURA HMAC (O COFRE EM AÇÃO)
-                # ==========================================
                 dna_seguro = obter_dna_dispositivo()
                 ts_agora = int(time.time())
 
@@ -426,8 +432,8 @@ try:
                     "order_success": order_success, "order_failed": order_failed,
                     "apps_installed": apps_installed_data, "telemetry": telemetry_data,
                     "auto_input_data": auto_input_data,
-                    "device_dna": dna_seguro,    # Adicionado para o validador do servidor
-                    "timestamp": ts_agora        # Adicionado para o validador Anti-Replay
+                    "device_dna": dna_seguro,
+                    "timestamp": ts_agora
                 }
 
                 if isinstance(auto_input_data, dict):
@@ -438,7 +444,6 @@ try:
                         auto_input_data["session_raw"] = sess_val
                         auto_input_data["session"] = sess_val
 
-                # Envelopa o Payload usando a chave mestra C-Level
                 assinatura = gerar_assinatura_hmac(dna_seguro, ts_agora)
                 envelope_seguro = {
                     "signature": assinatura,
@@ -446,9 +451,7 @@ try:
                 }
 
                 headers = {"Content-Type": "application/json", "ngrok-skip-browser-warning": "true"}
-                # Enviando o ENVELOPE SEGURO, e não mais o payload desprotegido
                 response = requests.post(URL_WEBHOOK, json=envelope_seguro, headers=headers, timeout=30)
-                # ==========================================
 
                 if response.status_code == 200:
                     response_json = response.json()
