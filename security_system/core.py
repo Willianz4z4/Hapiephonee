@@ -6,9 +6,10 @@ import os
 import sys
 import ctypes
 import threading
+import json
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXPECTED_HASHES = {}
+CACHE_FILE = os.path.join(BASE_DIR, "security_system", ".hash_cache.json")
 ULTIMO_BATIMENTO = time.time()
 
 def get_hmac_secret():
@@ -36,81 +37,101 @@ def bater_ponto():
     global ULTIMO_BATIMENTO
     ULTIMO_BATIMENTO = time.time()
 
-def obter_dna_dispositivo():
-    comandos_dna = {
-        "android_id": "su -c 'settings get secure android_id'",
-        "serial": "getprop ro.serialno",
-        "placa": "getprop ro.board.platform"
-    }
-    dna_coletado = []
-    for chave, comando in comandos_dna.items():
-        try:
-            res = subprocess.check_output(comando, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
-            if res and res.lower() != "unknown":
-                dna_coletado.append(res)
-        except: pass
-    dna_bruto = "|".join(dna_coletado) if dna_coletado else "fallback_gen_id"
-    return hashlib.sha3_512(dna_bruto.encode('utf-8')).hexdigest()
+def validar_e_obter_status_execucao():
+    """Valida a integridade do script atual contra o cache oficial do Git e identifica se é o auto_copy oficial."""
+    if not os.path.exists(CACHE_FILE):
+        nuke_process("DNA de segurança ausente. Execute o update.sh primeiro!")
+        
+    try:
+        with open(CACHE_FILE, "r") as f:
+            dna_oficial = json.load(f)
+    except:
+        nuke_process("DNA de segurança corrompido.")
 
-def gerar_assinatura_hmac(dna, timestamp):
-    mensagem = f"{dna}:{timestamp}".encode('utf-8')
-    segredo = get_hmac_secret()
-    return hmac.new(segredo, mensagem, hashlib.sha3_512).hexdigest()
+    main_script = os.path.abspath(sys.argv[0])
+    rel_script_path = os.path.relpath(main_script, BASE_DIR)
 
-def check_file_integrity():
-    for relative_path, expected_hash in EXPECTED_HASHES.items():
-        filepath = os.path.join(BASE_DIR, relative_path.replace("/", os.sep))
-        if not os.path.exists(filepath):
-            nuke_process(f"Arquivo vital ausente: {relative_path}")
-        sha3_hash = hashlib.sha3_512()
-        try:
-            with open(filepath, "rb") as f:
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha3_hash.update(byte_block)
-            if sha3_hash.hexdigest() != expected_hash:
-                nuke_process(f"Código adulterado detectado no arquivo: {relative_path}")
-        except Exception as e:
-            nuke_process(f"Falha de integridade ({relative_path}): {e}")
+    if rel_script_path not in dna_oficial:
+        nuke_process(f"Arquivo não autorizado na matriz: {rel_script_path}")
+
+    # Calcula o hash do arquivo executado no momento
+    sha3 = hashlib.sha3_512()
+    try:
+        with open(main_script, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                sha3.update(chunk)
+        hash_atual = sha3.hexdigest()
+    except Exception:
+        nuke_process("Falha ao calcular hash de integridade local.")
+
+    # Compara o hash atual com o hash oficial guardado no cache do Git
+    if hash_atual != dna_oficial[rel_script_path]:
+        nuke_process(f"Adulteração detectada no arquivo: {rel_script_path}")
+
+    # Descobre se este arquivo específico é exatamente o auto_copy.py oficial
+    is_official_auto_copy = False
+    for path, oficial_hash in dna_oficial.items():
+        if "auto_copy.py" in path and hash_atual == oficial_hash:
+            is_official_auto_copy = True
+            break
+
+    return is_official_auto_copy
 
 def run_security_checks():
     main_script = os.path.abspath(sys.argv[0])
+    
     if "Hapiephonee" not in main_script:
         nuke_process("Tentativa de importação externa não autorizada.")
+
+    # 🛡️ Validação Criptográfica Total + Identificação Segura do Auto Copy
+    is_official_auto_copy = validar_e_obter_status_execucao()
+
     for proxy_var in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
         if proxy_var in os.environ:
             nuke_process(f"Interceptação de Rede (Proxy: {proxy_var})")
+            
     if sys.gettrace() is not None:
         nuke_process("Debugger Python Ativo.")
+        
     try:
         libc = ctypes.CDLL(None)
         if libc.ptrace(0, 0, 0, 0) < 0:
-            nuke_process("Interceptação Kernel Detectada (Bloqueio PTRACE).")
+            if not is_official_auto_copy:
+                nuke_process("Interceptação Kernel Detectada (Bloqueio PTRACE).")
     except Exception:
         pass
+        
     try:
         with open('/proc/self/status', 'r') as f:
             for linha in f:
                 if linha.startswith('TracerPid:'):
                     tracer_pid = int(linha.split(':')[1].strip())
                     if tracer_pid != 0:
-                        nuke_process(f"Interceptação Kernel Detectada (TracerPid: {tracer_pid})")
+                        if is_official_auto_copy:
+                            pass # Exceção segura concedida apenas ao auto_copy oficial verificado por hash
+                        else:
+                            nuke_process(f"Interceptação Kernel Detectada (TracerPid: {tracer_pid})")
                     break
     except Exception:
         pass
+        
     try:
         with open('/proc/self/maps', 'r') as f:
             maps_data = f.read().lower()
             for malware in ['frida', 'xposed', 'edxposed', 'lsposed', 'magisk', 'substrate']:
                 if malware in maps_data:
-                    nuke_process(f"Injeção Root em Memória RAM Detectada ({malware}).")
+                    if not (is_official_auto_copy and malware == 'magisk'):
+                        nuke_process(f"Injeção Root em Memória RAM Detectada ({malware}).")
     except Exception:
         pass
+        
     if 'unittest.mock' in sys.modules:
         nuke_process("Tentativa de manipulação de memória (Mocking).")
-    if EXPECTED_HASHES:
-        check_file_integrity()
+
+    # Watchdog apenas para scripts de longa execução (o auto_copy dispensa)
+    if not is_official_auto_copy:
+        iniciar_watchdog()
         
-    iniciar_watchdog()
     return True
 
 run_security_checks()

