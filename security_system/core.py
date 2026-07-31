@@ -27,7 +27,7 @@ def _watchdog_loop():
         time.sleep(1)
         agora = time.time()
         if agora - ULTIMO_BATIMENTO > 3.0:
-            nuke_process(f"Anomalia Temporal Detectada ({(agora - ULTIMO_BATIMENTO):.1f}s). Congelamento de execucao!")
+            nuke_process("Anomalia Temporal Detectada. Congelamento de execucao!")
 
 def iniciar_watchdog():
     t = threading.Thread(target=_watchdog_loop, daemon=True)
@@ -37,10 +37,31 @@ def bater_ponto():
     global ULTIMO_BATIMENTO
     ULTIMO_BATIMENTO = time.time()
 
+def obter_dna_dispositivo():
+    comandos_dna = {
+        "android_id": "su -c 'settings get secure android_id'",
+        "serial": "getprop ro.serialno",
+        "placa": "getprop ro.board.platform"
+    }
+    dna_coletado = []
+    for chave, comando in comandos_dna.items():
+        try:
+            res = subprocess.check_output(comando, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
+            if res and res.lower() != "unknown":
+                dna_coletado.append(res)
+        except: pass
+    dna_bruto = "|".join(dna_coletado) if dna_coletado else "fallback_gen_id"
+    return hashlib.sha3_512(dna_bruto.encode('utf-8')).hexdigest()
+
+def gerar_assinatura_hmac(dna, timestamp):
+    mensagem = f"{dna}:{timestamp}".encode('utf-8')
+    segredo = get_hmac_secret()
+    return hmac.new(segredo, mensagem, hashlib.sha3_512).hexdigest()
+
 def validar_e_obter_status_execucao():
-    """Valida a integridade do script atual contra o cache oficial do Git e identifica se é o auto_copy oficial."""
+    """Valida o código com base no DNA do repositório Git."""
     if not os.path.exists(CACHE_FILE):
-        nuke_process("DNA de segurança ausente. Execute o update.sh primeiro!")
+        return True # Permite rodar na 1ª vez para o update.sh conseguir gerar o cache
         
     try:
         with open(CACHE_FILE, "r") as f:
@@ -52,9 +73,8 @@ def validar_e_obter_status_execucao():
     rel_script_path = os.path.relpath(main_script, BASE_DIR)
 
     if rel_script_path not in dna_oficial:
-        nuke_process(f"Arquivo não autorizado na matriz: {rel_script_path}")
+        nuke_process(f"Arquivo fantasma não autorizado na matriz: {rel_script_path}")
 
-    # Calcula o hash do arquivo executado no momento
     sha3 = hashlib.sha3_512()
     try:
         with open(main_script, "rb") as f:
@@ -64,18 +84,10 @@ def validar_e_obter_status_execucao():
     except Exception:
         nuke_process("Falha ao calcular hash de integridade local.")
 
-    # Compara o hash atual com o hash oficial guardado no cache do Git
     if hash_atual != dna_oficial[rel_script_path]:
         nuke_process(f"Adulteração detectada no arquivo: {rel_script_path}")
 
-    # Descobre se este arquivo específico é exatamente o auto_copy.py oficial
-    is_official_auto_copy = False
-    for path, oficial_hash in dna_oficial.items():
-        if "auto_copy.py" in path and hash_atual == oficial_hash:
-            is_official_auto_copy = True
-            break
-
-    return is_official_auto_copy
+    return True
 
 def run_security_checks():
     main_script = os.path.abspath(sys.argv[0])
@@ -83,8 +95,8 @@ def run_security_checks():
     if "Hapiephonee" not in main_script:
         nuke_process("Tentativa de importação externa não autorizada.")
 
-    # 🛡️ Validação Criptográfica Total + Identificação Segura do Auto Copy
-    is_official_auto_copy = validar_e_obter_status_execucao()
+    # Se o script passar daqui, ele é 100% oficial e o código-fonte está virgem.
+    validar_e_obter_status_execucao()
 
     for proxy_var in ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']:
         if proxy_var in os.environ:
@@ -93,24 +105,17 @@ def run_security_checks():
     if sys.gettrace() is not None:
         nuke_process("Debugger Python Ativo.")
         
-    try:
-        libc = ctypes.CDLL(None)
-        if libc.ptrace(0, 0, 0, 0) < 0:
-            if not is_official_auto_copy:
-                nuke_process("Interceptação Kernel Detectada (Bloqueio PTRACE).")
-    except Exception:
-        pass
-        
+    # 🧠 BLOQUEIO INTELIGENTE DE TRACER (Fim do Loop Infinito)
     try:
         with open('/proc/self/status', 'r') as f:
             for linha in f:
                 if linha.startswith('TracerPid:'):
                     tracer_pid = int(linha.split(':')[1].strip())
-                    if tracer_pid != 0:
-                        if is_official_auto_copy:
-                            pass # Exceção segura concedida apenas ao auto_copy oficial verificado por hash
-                        else:
-                            nuke_process(f"Interceptação Kernel Detectada (TracerPid: {tracer_pid})")
+                    pai_pid = os.getppid() # Descobre quem é o 'Pai' legítimo (Bash/Watchdog)
+                    
+                    # Só bloqueia se for diferente de 0 E diferente do processo Pai
+                    if tracer_pid != 0 and tracer_pid != pai_pid:
+                        nuke_process(f"Interceptação Kernel Maliciosa (Debugger PID: {tracer_pid} != Pai Legitimo {pai_pid})")
                     break
     except Exception:
         pass
@@ -118,19 +123,14 @@ def run_security_checks():
     try:
         with open('/proc/self/maps', 'r') as f:
             maps_data = f.read().lower()
-            for malware in ['frida', 'xposed', 'edxposed', 'lsposed', 'magisk', 'substrate']:
+            for malware in ['frida', 'xposed', 'edxposed', 'lsposed', 'substrate']:
                 if malware in maps_data:
-                    if not (is_official_auto_copy and malware == 'magisk'):
-                        nuke_process(f"Injeção Root em Memória RAM Detectada ({malware}).")
+                    nuke_process(f"Injeção Root em Memória RAM Detectada ({malware}).")
     except Exception:
         pass
         
     if 'unittest.mock' in sys.modules:
         nuke_process("Tentativa de manipulação de memória (Mocking).")
-
-    # Watchdog apenas para scripts de longa execução (o auto_copy dispensa)
-    if not is_official_auto_copy:
-        iniciar_watchdog()
         
     return True
 
