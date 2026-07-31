@@ -24,20 +24,36 @@ def check_local_status():
         except: pass
     return False
 
-
 # =========================================================
 # MODO 1: GATILHO MACRODROID (Executado via root)
 # Ex: python auto_copy.py 'texto copiado'
 # =========================================================
 if len(sys.argv) == 2:
+    texto_recebido = sys.argv[1]
+    
+    # ---------------------------------------------------------
+    # DEBUG: Mostra no console e salva em arquivo para auditoria
+    # ---------------------------------------------------------
+    print(f"🤖 [MACRODROID TRIGGER] Texto interceptado: {texto_recebido}", flush=True)
+    
+    try:
+        debug_log_path = os.path.join(CURRENT_DIR, "debug_macrodroid.log")
+        with open(debug_log_path, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Recebido: {texto_recebido}\n")
+    except Exception as e:
+        print(f"Erro ao salvar log de debug: {e}")
+    # ---------------------------------------------------------
+
     # Se o botão no seu painel estiver desligado, o script morre sem enviar nada
     if not check_local_status():
+        print("🔴 [GATILHO] Painel desligado. Ignorando envio para nuvem.", flush=True)
         sys.exit(0)
 
     try:
         # Acesso ao Cofre (Se o invasor interceptar, o Kamikaze detona aqui)
         from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
     except ImportError:
+        print("❌ [FALHA] Falha de segurança ao carregar o Cofre.")
         sys.exit(5)
 
     # Puxa a URL dinâmica salva pelo Daemon (evita quebrar se o Ngrok mudar)
@@ -58,21 +74,22 @@ if len(sys.argv) == 2:
             "timestamp": ts_agora,
             "clipboard_text": texto_copiado
         }
-        
+
         envelope_seguro = {
             "signature": assinatura,
             "payload": payload
         }
 
         try:
-            requests.post(URL_WEBHOOK, json=envelope_seguro, headers={"Content-Type": "application/json"}, timeout=10)
-        except Exception:
-            pass
+            print(f"📤 Enviando para o Webhook: {URL_WEBHOOK}...", flush=True)
+            resposta = requests.post(URL_WEBHOOK, json=envelope_seguro, headers={"Content-Type": "application/json"}, timeout=10)
+            print(f"✅ Webhook respondeu: {resposta.status_code}")
+        except Exception as e:
+            print(f"❌ Erro ao enviar webhook: {e}")
 
     # Dispara a função com o texto que o MacroDroid passou e encerra a execução
-    enviar_para_nuvem(sys.argv[1])
+    enviar_para_nuvem(texto_recebido)
     sys.exit(0)
-
 
 # =========================================================
 # MODO 2: DAEMON (Botão Ligado - Chamado pelo task_orchestrator)
@@ -113,7 +130,7 @@ def main():
         if deve_rodar and not estado_ativo:
             print("🟢 [GATILHO] Sistema de Cópia LIGADO. Aguardando gatilho invisível do MacroDroid...", flush=True)
             estado_ativo = True
-            
+
         elif not deve_rodar and estado_ativo:
             print("🔴 [GATILHO] Sistema de Cópia DESLIGADO.", flush=True)
             estado_ativo = False
