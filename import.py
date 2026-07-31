@@ -12,40 +12,23 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals()
 sys.path.insert(0, BASE_DIR)
 
 # ==========================================
-# 🛑 AUTO-DEFESA DE PRIMEIRA EXECUÇÃO (BOOT)
+# 🛡️ 1. WATCHDOG (PREPARAÇÃO E LIMPEZA)
+# O Watchdog agora roda ANTES da segurança.
 # ==========================================
-CACHE_FILE = os.path.join(BASE_DIR, "security_system", ".hash_cache.json")
-if not os.path.exists(CACHE_FILE):
-    print("🛡️ [Security] Matriz de segurança ausente (Primeira execução ou burla detectada).")
-    print("🔄 Restaurando código puro do GitHub e gerando DNA Oficial...")
-    # Se o hacker deletou o cache para tentar validar um código sujo, 
-    # esses 2 comandos apagam o vírus dele e forçam o código original antes de assinar!
-    os.system("git clean -fdx > /dev/null 2>&1")
-    os.system("git reset --hard origin/main > /dev/null 2>&1")
-    subprocess.run([sys.executable, "security_system/build_hashes.py"], cwd=BASE_DIR)
-    print("✅ Blindagem construída! Iniciando o motor C-Level...")
-    os.execv(sys.executable, ['python'] + sys.argv)
-# ==========================================
-
-# ==========================================
-# 🛑 BLINDAGEM DE SEGURANÇA (CYTHON C-LEVEL)
-# ==========================================
-try:
-    # Ao importar, a verificação de DNA e PID no Kernel dentro do C já é executada!
-    from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
-except ImportError:
-    print("\n💀 [Security] Módulo de segurança compilado (core.so) ausente ou corrompido.")
-    print("🔒 O sistema entrou em Lockdown e não pode iniciar sem a blindagem oficial.")
-    sys.exit(5)
-except Exception as e:
-    print(f"\n💀 [Security] LOCKDOWN ATIVADO: Integridade violada! ({e})")
-    sys.exit(5)
-# ==========================================
-
 if os.environ.get("HAPIE_WATCHDOG") != "1":
     os.environ["HAPIE_WATCHDOG"] = "1"
     os.system("clear" if os.name == "posix" else "cls")
-    print("🛡️ [Watchdog] Escudo de Resiliência ativado. O bot agora é imortal a crashs de código.")
+    print("🛡️ [Watchdog] Escudo de Resiliência ativado. Coordenando inicialização...")
+
+    # AQUI ESTÁ A MÁGICA: O Bash atualiza e limpa TUDO antes do C-Level ser chamado!
+    print("🔄 [Watchdog] Checando atualizações via Bash...")
+    subprocess.run(["bash", "update.sh"], cwd=BASE_DIR)
+
+    # Se não tem o arquivo de hash, o Watchdog cria para o filho
+    CACHE_FILE = os.path.join(BASE_DIR, "security_system", ".hash_cache.json")
+    if not os.path.exists(CACHE_FILE):
+        print("🛡️ [Watchdog] DNA ausente. Gerando Matriz Oficial...")
+        subprocess.run([sys.executable, "security_system/build_hashes.py"], cwd=BASE_DIR)
 
     p_process = None
 
@@ -58,15 +41,15 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
 
     while True:
         try:
+            # Roda o bot de fato
             p_process = subprocess.Popen([sys.executable, __file__] + sys.argv[1:])
             p_process.wait()
 
             if p_process.returncode in (0, -15, 143):
-                print("🛡️ [Watchdog] Desligamento seguro detectado (Sinal ou CTRL+C). Encerrando o nó.")
+                print("🛡️ [Watchdog] Desligamento seguro detectado. Encerrando o nó.")
                 sys.exit(0)
             elif p_process.returncode == 2:
                 print("\n⚠️ [Watchdog] CONFIGURAÇÃO INCOMPLETA: Faltam os IDs de Autenticação!")
-                print("👉 Execute o comando assim na primeira vez: python import.py <GUILD_ID> <OWNER_ID>")
                 sys.exit(2)
             elif p_process.returncode == 3:
                 print("\n⚠️ [Watchdog] ERRO DE AMBIENTE: Dispositivo sem permissão ROOT!")
@@ -75,13 +58,16 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
                 print("\n⚠️ [Watchdog] Conexão recusada pelo Servidor Central (Shutdown).")
                 sys.exit(4)
             elif p_process.returncode == 5:
-                print("\n⚠️ [Watchdog] FALHA DE SEGURANÇA: Módulo bloqueou a execução.")
-                sys.exit(5)
+                print("\n⚠️ [Watchdog] FALHA DE SEGURANÇA (Lockdown) detectada pelo C-Level!")
+                print("🔄 [Watchdog] Forçando limpeza extrema via Bash para purificar o sistema...")
+                # O Watchdog usa o update.sh para curar a invasão e recriar as chaves
+                subprocess.run(["bash", "update.sh"], cwd=BASE_DIR)
+                time.sleep(3)
             else:
                 print(f"\n💀 [Watchdog] CRASH DE CÓDIGO DETECTADO (Código {p_process.returncode})!")
-                print("🔄 [Watchdog] A versão atual está quebrada. Buscando correções no GitHub em 10 segundos...")
-                time.sleep(10)
-                os.system("git pull > /dev/null 2>&1")
+                print("🔄 [Watchdog] A versão atual está quebrada. Buscando correções...")
+                time.sleep(5)
+                subprocess.run(["bash", "update.sh"], cwd=BASE_DIR)
                 print("🚀 [Watchdog] Tentando ressuscitar o bot com o código novo...\n")
         except KeyboardInterrupt:
             print("\n🛡️ [Watchdog] Interrompido à força pelo usuário.")
@@ -93,6 +79,20 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
 def handle_child_sigterm(signum, frame):
     raise KeyboardInterrupt
 signal.signal(signal.SIGTERM, handle_child_sigterm)
+
+# ==========================================
+# 🛑 2. BLINDAGEM DE SEGURANÇA (CYTHON C-LEVEL)
+# Agora sim! O código puro e as chaves já foram garantidos pelo Bash.
+# ==========================================
+try:
+    from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
+except ImportError:
+    print("\n💀 [Security] Módulo de segurança compilado (core.so) ausente ou corrompido.")
+    sys.exit(5)
+except Exception as e:
+    print(f"\n💀 [Security] LOCKDOWN ATIVADO: Integridade violada! ({e})")
+    sys.exit(5)
+# ==========================================
 
 try:
     import requests
@@ -307,9 +307,6 @@ def update_client_token(new_token):
             with open(CONFIG_FILE, "w") as f: json.dump(config, f)
         except: pass
 
-# ==========================================
-# 📡 RADAR FANTASMA (DELEGADO PARA O BASH)
-# ==========================================
 def radar_de_updates():
     while True:
         time.sleep(300)
@@ -323,7 +320,6 @@ def radar_de_updates():
 
 thread_radar = threading.Thread(target=radar_de_updates, daemon=True)
 thread_radar.start()
-# ==========================================
 
 spinner = Halo(text='Deploying background modules...', spinner='dots')
 spinner.start()
