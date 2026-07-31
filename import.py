@@ -15,11 +15,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals()
 sys.path.insert(0, BASE_DIR)
 
 try:
-    # Ao importar, o run_security_checks() dentro do C já é executado automaticamente!
+    # Ao importar, a verificação de DNA e PID no Kernel dentro do C já é executada!
     from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
 except ImportError:
     print("\n💀 [Security] Módulo de segurança compilado (core.so) ausente ou corrompido.")
-    print("🔒 O sistema entrou em Lockdown e não pode iniciar sem a blindagem.")
+    print("🔒 O sistema entrou em Lockdown e não pode iniciar sem a blindagem oficial.")
+    sys.exit(5)
+except Exception as e:
+    print(f"\n💀 [Security] LOCKDOWN ATIVADO: Integridade violada! ({e})")
     sys.exit(5)
 # ==========================================
 
@@ -56,7 +59,7 @@ if os.environ.get("HAPIE_WATCHDOG") != "1":
                 print("\n⚠️ [Watchdog] Conexão recusada pelo Servidor Central (Shutdown).")
                 sys.exit(4)
             elif p_process.returncode == 5:
-                print("\n⚠️ [Watchdog] FALHA DE SEGURANÇA: Binário de proteção não encontrado.")
+                print("\n⚠️ [Watchdog] FALHA DE SEGURANÇA: Módulo bloqueou a execução.")
                 sys.exit(5)
             else:
                 print(f"\n💀 [Watchdog] CRASH DE CÓDIGO DETECTADO (Código {p_process.returncode})!")
@@ -289,27 +292,19 @@ def update_client_token(new_token):
         except: pass
 
 # ==========================================
-# 📡 RADAR FANTASMA (UPDATE AUTOMÁTICO)
+# 📡 RADAR FANTASMA (DELEGADO PARA O BASH)
 # ==========================================
 def radar_de_updates():
-    """Roda em segundo plano checando o GitHub a cada 5 minutos."""
+    """Roda em segundo plano e aciona o update.sh para fazer o trabalho sujo."""
     while True:
         time.sleep(300) # Espera 5 minutos
         try:
-            subprocess.run(["git", "fetch", "origin"], cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            local = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=BASE_DIR).decode('utf-8').strip()
-            remoto = subprocess.check_output(["git", "rev-parse", "origin/main"], cwd=BASE_DIR).decode('utf-8').strip()
+            # Chama o update.sh. Se não tiver update, o bash sai quieto.
+            resultado = subprocess.run(["bash", "update.sh"], cwd=BASE_DIR)
             
-            if local != remoto:
-                console.print("\n[bold red][🚨 ALERTA] Novo código detectado no GitHub![/bold red]")
-                console.print("[bold yellow][🔄] Iniciando protocolo de atualização e re-blindagem...[/bold yellow]")
-                
-                # Executa o seu update.sh que baixa o código e gera os novos hashes
-                subprocess.run(["bash", "update.sh"], cwd=BASE_DIR)
-                
-                console.print("[bold green][♻️] Atualização concluída. Reiniciando os módulos de segurança...[/bold green]")
-                
-                # Reinicia o próprio import.py do zero para carregar os novos hashes
+            # Se o bash sair com código 10, quer dizer que ele atualizou e gerou o DNA novo
+            if resultado.returncode == 10:
+                console.print("\n[bold green][♻️] O Bash confirmou a atualização. Reiniciando o sistema...[/bold green]")
                 os.execv(sys.executable, ['python'] + sys.argv)
         except Exception:
             pass
