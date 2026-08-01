@@ -12,88 +12,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals()
 sys.path.insert(0, BASE_DIR)
 
 # ==========================================
-# 🛡️ 1. WATCHDOG (PREPARAÇÃO E LIMPEZA)
-# O Watchdog agora roda ANTES da segurança.
+# 🎨 0. INICIALIZAÇÃO DE UI (DEPENDÊNCIAS)
+# Carregado no topo para que o Watchdog possa ser bonito também
 # ==========================================
-if os.environ.get("HAPIE_WATCHDOG") != "1":
-    os.environ["HAPIE_WATCHDOG"] = "1"
-    os.system("clear" if os.name == "posix" else "cls")
-    print("🛡️ [Watchdog] Escudo de Resiliência ativado. Coordenando inicialização...")
-
-    # AQUI ESTÁ A MÁGICA: O Bash atualiza e limpa TUDO antes do C-Level ser chamado!
-    print("🔄 [Watchdog] Checando atualizações via Bash...")
-    subprocess.run(["bash", "update.sh"], cwd=BASE_DIR)
-
-    # Se não tem o arquivo de hash, o Watchdog cria para o filho
-    CACHE_FILE = os.path.join(BASE_DIR, "security_system", ".hash_cache.json")
-    if not os.path.exists(CACHE_FILE):
-        print("🛡️ [Watchdog] DNA ausente. Gerando Matriz Oficial...")
-        subprocess.run([sys.executable, "security_system/build_hashes.py"], cwd=BASE_DIR)
-
-    p_process = None
-
-    def handle_watchdog_sigterm(signum, frame):
-        if p_process:
-            try: p_process.terminate()
-            except: pass
-        sys.exit(0)
-    signal.signal(signal.SIGTERM, handle_watchdog_sigterm)
-
-    while True:
-        try:
-            # Roda o bot de fato
-            p_process = subprocess.Popen([sys.executable, __file__] + sys.argv[1:])
-            p_process.wait()
-
-            if p_process.returncode in (0, -15, 143):
-                print("🛡️ [Watchdog] Desligamento seguro detectado. Encerrando o nó.")
-                sys.exit(0)
-            elif p_process.returncode == 2:
-                print("\n⚠️ [Watchdog] CONFIGURAÇÃO INCOMPLETA: Faltam os IDs de Autenticação!")
-                sys.exit(2)
-            elif p_process.returncode == 3:
-                print("\n⚠️ [Watchdog] ERRO DE AMBIENTE: Dispositivo sem permissão ROOT!")
-                sys.exit(3)
-            elif p_process.returncode == 4:
-                print("\n⚠️ [Watchdog] Conexão recusada pelo Servidor Central (Shutdown).")
-                sys.exit(4)
-            elif p_process.returncode == 5:
-                print("\n⚠️ [Watchdog] FALHA DE SEGURANÇA (Lockdown) detectada pelo C-Level!")
-                print("🔄 [Watchdog] Forçando limpeza extrema via Bash para purificar o sistema...")
-                # O Watchdog usa o update.sh para curar a invasão e recriar as chaves
-                subprocess.run(["bash", "update.sh"], cwd=BASE_DIR)
-                time.sleep(3)
-            else:
-                print(f"\n💀 [Watchdog] CRASH DE CÓDIGO DETECTADO (Código {p_process.returncode})!")
-                print("🔄 [Watchdog] A versão atual está quebrada. Buscando correções...")
-                time.sleep(5)
-                subprocess.run(["bash", "update.sh"], cwd=BASE_DIR)
-                print("🚀 [Watchdog] Tentando ressuscitar o bot com o código novo...\n")
-        except KeyboardInterrupt:
-            print("\n🛡️ [Watchdog] Interrompido à força pelo usuário.")
-            if p_process:
-                try: p_process.terminate()
-                except: pass
-            sys.exit(0)
-
-def handle_child_sigterm(signum, frame):
-    raise KeyboardInterrupt
-signal.signal(signal.SIGTERM, handle_child_sigterm)
-
-# ==========================================
-# 🛑 2. BLINDAGEM DE SEGURANÇA (CYTHON C-LEVEL)
-# Agora sim! O código puro e as chaves já foram garantidos pelo Bash.
-# ==========================================
-try:
-    from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
-except ImportError:
-    print("\n💀 [Security] Módulo de segurança compilado (core.so) ausente ou corrompido.")
-    sys.exit(5)
-except Exception as e:
-    print(f"\n💀 [Security] LOCKDOWN ATIVADO: Integridade violada! ({e})")
-    sys.exit(5)
-# ==========================================
-
 try:
     import requests
     import gdown
@@ -108,23 +29,115 @@ except ImportError:
     from rich.panel import Panel
     from halo import Halo
 
-HAPIEPHONE_VERSION = "10.6 (Auto Input Engine + Cyber Security)"
 console = Console()
+HAPIEPHONE_VERSION = "10.6 (Auto Input Engine + Cyber Security)"
 
+# ==========================================
+# 🛡️ 1. WATCHDOG (PREPARAÇÃO E LIMPEZA)
+# ==========================================
+if os.environ.get("HAPIE_WATCHDOG") != "1":
+    os.environ["HAPIE_WATCHDOG"] = "1"
+    os.system("clear" if os.name == "posix" else "cls")
+    
+    # Banner Principal exibido apenas pelo processo Pai
+    console.print(Panel.fit(f"[bold cyan]Hapiephone Cloud Node[/bold cyan]\n[dim]Version {HAPIEPHONE_VERSION} | Powered by Evollogic[/dim]", border_style="cyan"))
+    
+    spinner = Halo(text='[Watchdog] Escudo de Resiliência ativado. Checando atualizações...', spinner='dots', color='blue')
+    spinner.start()
+
+    # Roda silenciosamente para não sujar a tela
+    subprocess.run(["bash", "update.sh"], cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    spinner.succeed('[Watchdog] Sistema central atualizado e purificado.')
+
+    CACHE_FILE = os.path.join(BASE_DIR, "security_system", ".hash_cache.json")
+    if not os.path.exists(CACHE_FILE):
+        spinner = Halo(text='[Watchdog] DNA ausente. Gerando Matriz Oficial...', spinner='dots', color='yellow')
+        spinner.start()
+        subprocess.run([sys.executable, "security_system/build_hashes.py"], cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        spinner.succeed('🔒 Hapiephone HASH DNA atualizado! Arquivos assinados com sucesso.')
+
+    p_process = None
+
+    def handle_watchdog_sigterm(signum, frame):
+        if p_process:
+            try: p_process.terminate()
+            except: pass
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, handle_watchdog_sigterm)
+
+    while True:
+        try:
+            p_process = subprocess.Popen([sys.executable, __file__] + sys.argv[1:])
+            p_process.wait()
+
+            if p_process.returncode in (0, -15, 143):
+                console.print("\n[bold green]🛡️ [Watchdog] Desligamento seguro detectado. Encerrando o nó.[/bold green]")
+                sys.exit(0)
+            elif p_process.returncode == 2:
+                console.print("\n[bold yellow]⚠️ [Watchdog] CONFIGURAÇÃO INCOMPLETA: Faltam os IDs de Autenticação![/bold yellow]")
+                sys.exit(2)
+            elif p_process.returncode == 3:
+                console.print("\n[bold red]⚠️ [Watchdog] ERRO DE AMBIENTE: Dispositivo sem permissão ROOT![/bold red]")
+                sys.exit(3)
+            elif p_process.returncode == 4:
+                console.print("\n[bold yellow]⚠️ [Watchdog] Conexão recusada pelo Servidor Central (Shutdown).[/bold yellow]")
+                sys.exit(4)
+            elif p_process.returncode == 5:
+                console.print("\n[bold red]⚠️ [Watchdog] FALHA DE SEGURANÇA (Lockdown) detectada pelo C-Level![/bold red]")
+                spinner = Halo(text='[Watchdog] Forçando limpeza extrema via Bash...', spinner='dots', color='red')
+                spinner.start()
+                subprocess.run(["bash", "update.sh"], cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(3)
+                spinner.succeed('[Watchdog] Ameaça neutralizada. Tentando reinício...')
+            else:
+                console.print(f"\n[bold red]💀 [Watchdog] CRASH DE CÓDIGO DETECTADO (Código {p_process.returncode})![/bold red]")
+                spinner = Halo(text='[Watchdog] Buscando correções automáticas...', spinner='dots', color='yellow')
+                spinner.start()
+                time.sleep(5)
+                subprocess.run(["bash", "update.sh"], cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                spinner.succeed('🚀 [Watchdog] Tentando ressuscitar o bot com o código novo...\n')
+        except KeyboardInterrupt:
+            if p_process:
+                try: p_process.terminate()
+                except: pass
+            sys.exit(0)
+
+def handle_child_sigterm(signum, frame):
+    raise KeyboardInterrupt
+signal.signal(signal.SIGTERM, handle_child_sigterm)
+
+# ==========================================
+# 🛑 2. BLINDAGEM DE SEGURANÇA (CYTHON C-LEVEL)
+# ==========================================
+try:
+    from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
+except ImportError:
+    console.print("\n[bold red]💀 [Security] Módulo de segurança compilado (core.so) ausente ou corrompido.[/bold red]")
+    sys.exit(5)
+except Exception as e:
+    console.print(f"\n[bold red]💀 [Security] LOCKDOWN ATIVADO: Integridade violada! ({e})[/bold red]")
+    sys.exit(5)
+
+# ==========================================
+# ⚙️ 3. CONFIGURAÇÃO DE AMBIENTE E SETUP
+# ==========================================
 arquivo_comprovante = os.path.join(BASE_DIR, "setup_concluido.txt")
 if not os.path.exists(arquivo_comprovante):
-    console.print("\n[bold yellow]🛠️ Primeira execução detectada! Rodando a blindagem do sistema...[/bold yellow]")
+    spinner = Halo(text='🛠️ Primeira execução detectada! Rodando blindagem do sistema...', spinner='dots', color='cyan')
+    spinner.start()
     caminho_setup = os.path.join(BASE_DIR, "auto_setup.py")
     if os.path.exists(caminho_setup):
         try:
-            subprocess.run([sys.executable, caminho_setup], check=True)
+            # Roda o auto_setup ocultando aquele output sujo
+            subprocess.run([sys.executable, caminho_setup], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             with open(arquivo_comprovante, "w") as f:
                 f.write("Setup de persistencia feito com sucesso em: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-            console.print("[bold green]✅ Blindagem concluída com sucesso! Iniciando o sistema principal...[/bold green]\n")
+            spinner.succeed('✅ Blindagem inicial concluída com sucesso!')
         except Exception as e:
-            console.print(f"[bold red]❌ Erro ao rodar a blindagem inicial: {e}[/bold red]\n")
+            spinner.fail(f'❌ Erro ao rodar a blindagem inicial: {e}')
     else:
-        console.print("[bold red]⚠️ Arquivo auto_setup.py não encontrado! Pulando blindagem...[/bold red]\n")
+        spinner.warn('⚠️ Arquivo auto_setup.py não encontrado! Pulando blindagem...')
+    print("") # Quebra de linha para respiro
 
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 FUNCTIONS_JSON_FILE = os.path.join(BASE_DIR, "functions.json")
@@ -135,11 +148,8 @@ ESSENCIAL_DIR = os.path.join(BASE_DIR, "essencial")
 PROTOCOLS_DIR = os.path.join(BASE_DIR, "Protocols")
 TELEMETRIA_DIR = os.path.join(BASE_DIR, "telemetria")
 
-os.makedirs(FUNCTIONS_DIR, exist_ok=True)
-os.makedirs(HAPIE_APPS_DIR, exist_ok=True)
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(ESSENCIAL_DIR, exist_ok=True)
-os.makedirs(TELEMETRIA_DIR, exist_ok=True)
+for dr in [FUNCTIONS_DIR, HAPIE_APPS_DIR, DATA_DIR, ESSENCIAL_DIR, TELEMETRIA_DIR]:
+    os.makedirs(dr, exist_ok=True)
 
 init_file = os.path.join(TELEMETRIA_DIR, "__init__.py")
 if not os.path.exists(init_file):
@@ -166,7 +176,6 @@ def set_function_status(func_name, is_active):
     except: pass
 
 saved_config = {}
-console.print(Panel.fit(f"[bold cyan]Hapiephone Cloud Node[/bold cyan]\n[dim]Version {HAPIEPHONE_VERSION} | Powered by Evollogic[/dim]", border_style="cyan"))
 
 if os.path.exists(CONFIG_FILE):
     try:
@@ -174,14 +183,11 @@ if os.path.exists(CONFIG_FILE):
     except: pass
 
 if len(sys.argv) > 2:
-    guild_id = str(sys.argv[1]).strip()
-    owner_id = str(sys.argv[2]).strip()
+    guild_id, owner_id = str(sys.argv[1]).strip(), str(sys.argv[2]).strip()
 elif len(sys.argv) > 1:
-    guild_id = str(sys.argv[1]).strip()
-    owner_id = saved_config.get("owner_id", "")
+    guild_id, owner_id = str(sys.argv[1]).strip(), saved_config.get("owner_id", "")
 else:
-    guild_id = saved_config.get("guild_id", "")
-    owner_id = saved_config.get("owner_id", "")
+    guild_id, owner_id = saved_config.get("guild_id", ""), saved_config.get("owner_id", "")
 
 client_token = saved_config.get("client_token", None)
 
@@ -198,14 +204,19 @@ else:
 URL_WEBHOOK = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/webhook"
 report = {"installation_status": "pending", "steps": {}, "system_info": {}}
 
-console.print("[bold yellow]⏳ Executando e verificando Protocolos...[/bold yellow]")
+# ==========================================
+# 🚀 4. INICIALIZAÇÃO DE SERVIÇOS
+# ==========================================
+spinner = Halo(text='Executando e verificando Protocolos...', spinner='dots', color='cyan')
+spinner.start()
+
 if os.path.exists(PROTOCOLS_DIR):
     for file_name in os.listdir(PROTOCOLS_DIR):
         if file_name.endswith(".py"):
             script_path = os.path.join(PROTOCOLS_DIR, file_name)
-            try: subprocess.run([sys.executable, script_path], check=True)
+            try: subprocess.run([sys.executable, script_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except subprocess.CalledProcessError:
-                console.print(f"[bold red]❌ Falha ao executar o protocolo: {file_name}. Abortando inicialização.[/bold red]")
+                spinner.fail(f'❌ Falha ao executar o protocolo: {file_name}. Abortando.')
                 sys.exit(1)
 
 protocol_file = os.path.join(PROTOCOLS_DIR, "active_protocol.txt")
@@ -217,13 +228,11 @@ else:
         with open(protocol_file, "w") as f: f.write(current_protocol)
     except: pass
 
-spinner = Halo(text=f'Preparing Cloud Phone environment (Protocol: {current_protocol})...', spinner='dots')
-spinner.start()
+spinner.text = f'Preparing Cloud Phone environment (Protocol: {current_protocol})...'
 os.system("pkg update -y -q > /dev/null 2>&1 && pkg upgrade -y -q > /dev/null 2>&1")
 
 try:
-    pkg_file = os.path.join(ESSENCIAL_DIR, "reqs_pkg.txt")
-    URL_PKG = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/essencial/reqs_pkg.txt"
+    pkg_file, URL_PKG = os.path.join(ESSENCIAL_DIR, "reqs_pkg.txt"), "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/essencial/reqs_pkg.txt"
     os.system(f"curl -sL {URL_PKG} -o {pkg_file} > /dev/null 2>&1")
     if os.path.exists(pkg_file):
         with open(pkg_file, "r") as f: pkgs = f.read().replace('\n', ' ')
@@ -232,14 +241,14 @@ try:
 except: pass
 
 try:
-    pip_file = os.path.join(ESSENCIAL_DIR, "reqs_pip.txt")
-    URL_PIP = "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/essencial/reqs_pip.txt"
+    pip_file, URL_PIP = os.path.join(ESSENCIAL_DIR, "reqs_pip.txt"), "https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/essencial/reqs_pip.txt"
     os.system(f"curl -sL {URL_PIP} -o {pip_file} > /dev/null 2>&1")
     if os.path.exists(pip_file): os.system(f"pip install -r {pip_file} --upgrade -q > /dev/null 2>&1")
 except: pass
 
 spinner.succeed("Environment verified and updated.")
-spinner = Halo(text='Scanning hardware data...', spinner='dots')
+
+spinner = Halo(text='Scanning hardware data...', spinner='dots', color='magenta')
 spinner.start()
 
 def get_prop(command):
@@ -311,8 +320,9 @@ def radar_de_updates():
     while True:
         time.sleep(300)
         try:
-            resultado = subprocess.run(["bash", "update.sh"], cwd=BASE_DIR)
+            resultado = subprocess.run(["bash", "update.sh"], cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if resultado.returncode == 10:
+                sys.stdout.write("\r\033[K")
                 console.print("\n[bold green][♻️] O Bash confirmou a atualização. Reiniciando o sistema...[/bold green]")
                 os.execv(sys.executable, ['python'] + sys.argv)
         except Exception:
@@ -321,7 +331,7 @@ def radar_de_updates():
 thread_radar = threading.Thread(target=radar_de_updates, daemon=True)
 thread_radar.start()
 
-spinner = Halo(text='Deploying background modules...', spinner='dots')
+spinner = Halo(text='Deploying background modules...', spinner='dots', color='blue')
 spinner.start()
 try:
     python_path = sys.executable
@@ -368,13 +378,9 @@ try:
 
         if now - last_action >= PING_INTERVAL or not registered_in_db:
             try:
-                install_success = []
-                install_failed = []
-                order_success = []
-                order_failed = []
-                apps_installed_data = {}
-                telemetry_data = {}
-                auto_input_data = {}
+                install_success, install_failed = [], []
+                order_success, order_failed = [], []
+                apps_installed_data, telemetry_data, auto_input_data = {}, {}, {}
 
                 if os.path.exists(REPORT_FILE):
                     try:
@@ -458,7 +464,8 @@ try:
                             ac_status = bool(d_cmd["auto_copy"])
                             set_function_status("auto_copy", ac_status)
                             estado_txt = "ATIVADO" if ac_status else "DESATIVADO"
-                            console.print(f"\n[bold green]✅ Permissão 'Auto Copy' -> {estado_txt}[/bold green]")
+                            sys.stdout.write("\r\033[K")
+                            console.print(f"[bold green]✅ Permissão 'Auto Copy' -> {estado_txt}[/bold green]")
 
                     if "auto_input" in response_json:
                         ai_status = bool(response_json["auto_input"])
@@ -471,7 +478,8 @@ try:
                         if old_status != ai_status:
                             set_function_status("auto_input", ai_status)
                             estado_txt = "ATIVADO" if ai_status else "DESATIVADO"
-                            console.print(f"\n[bold green]✅ Permissão 'Auto Input' -> {estado_txt}[/bold green]")
+                            sys.stdout.write("\r\033[K")
+                            console.print(f"[bold green]✅ Permissão 'Auto Input' -> {estado_txt}[/bold green]")
 
                         if ai_status:
                             if subprocess.run("pgrep -f auto_input.py", shell=True, stdout=subprocess.DEVNULL).returncode != 0:
@@ -479,6 +487,7 @@ try:
                                 ai_log_path = os.path.join(DATA_DIR, "auto_input_daemon.txt")
                                 if os.path.exists(ai_script_path):
                                     os.system(f"nohup {sys.executable} {ai_script_path} > {ai_log_path} 2>&1 &")
+                                    sys.stdout.write("\r\033[K")
                                     console.print("[dim]⚙️ Serviço Auto Input iniciado em background...[/dim]")
                         else:
                             os.system("pkill -f auto_input.py > /dev/null 2>&1")
@@ -486,15 +495,16 @@ try:
                     if "auto_input_cmd" in response_json:
                         cmd_data = response_json["auto_input_cmd"]
                         if "id_alvo" in cmd_data and "texto" in cmd_data:
-                            console.print(f"\n[bold yellow]⚡ Recebida ordem HTTP: Injetar texto no campo ID {cmd_data['id_alvo']}...[/bold yellow]")
+                            sys.stdout.write("\r\033[K")
+                            console.print(f"[bold yellow]⚡ Injetando texto no campo ID {cmd_data['id_alvo']}...[/bold yellow]")
                             trigger_inject_path = "/sdcard/Hapiephone/trigger_inject.txt"
                             try:
                                 with open(trigger_inject_path, "w", encoding="utf-8") as tf:
                                     auto_enter_val = "1" if cmd_data.get("auto_enter", False) else "0"
                                     tf.write(f"{cmd_data['id_alvo']}|{auto_enter_val}|{cmd_data['texto']}")
-                                console.print("[dim]💉 Gatilho de injeção enviado para o Daemon Auto Input.[/dim]")
+                                console.print("[dim]💉 Gatilho enviado para o Daemon Auto Input.[/dim]")
                             except Exception as e:
-                                console.print(f"[bold red]❌ Erro ao criar gatilho de injeção: {e}[/bold red]")
+                                console.print(f"[bold red]❌ Erro ao criar gatilho: {e}[/bold red]")
 
                     if "ordens" in response_json:
                         lista_ordens = response_json["ordens"]
@@ -503,7 +513,7 @@ try:
                             if os.path.exists(brain_script_path):
                                 try:
                                     with open(PAYLOAD_FILE, "w") as pf: json.dump(response_json, pf)
-                                    subprocess.run([sys.executable, brain_script_path, "--file", PAYLOAD_FILE], check=True)
+                                    subprocess.run([sys.executable, brain_script_path, "--file", PAYLOAD_FILE], check=True, stdout=subprocess.DEVNULL)
                                 except: pass
 
                     if response_json.get("mudo") == True:
@@ -519,6 +529,8 @@ try:
                         update_client_token(response_json["new_client_token"])
 
                     if response_json.get("status") == "shutdown":
+                        sys.stdout.write("\r\033[K")
+                        console.print("[bold red]⚠️ Comando de Shutdown recebido.[/bold red]")
                         sys.exit(4)
 
                     registered_in_db = True
@@ -527,13 +539,13 @@ try:
                     has_tasks = any(k in response_json for k in ["install", "commands", "remove", "instalar", "comandos"])
                     if has_tasks:
                         install_script_path = os.path.join(HAPIE_APPS_DIR, "install.py")
-                        with Halo(text='Updating Install Engine...', spinner='dots'):
+                        with Halo(text='Atualizando motor de instalação...', spinner='dots', color='cyan'):
                             v_cache_install = int(time.time())
                             URL_INSTALL = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/install.py?v={v_cache_install}"
-                            os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path}")
+                            os.system(f"curl -sL '{URL_INSTALL}' -o {install_script_path} > /dev/null 2>&1")
                         try:
                             with open(PAYLOAD_INSTALL_FILE, "w") as pf: json.dump(response_json, pf)
-                            subprocess.run([sys.executable, install_script_path, "--file", PAYLOAD_INSTALL_FILE], check=True)
+                            subprocess.run([sys.executable, install_script_path, "--file", PAYLOAD_INSTALL_FILE], check=True, stdout=subprocess.DEVNULL)
                         except: pass
 
                 sys.stdout.write(f"\r\033[K\033[90m📡 {current_protocol} | Awaiting tasks...\033[0m")
@@ -543,13 +555,13 @@ try:
 
 except KeyboardInterrupt:
     print("\n")
-    shutdown_spinner = Halo(text='Shutting down background services safely...', spinner='dots')
+    shutdown_spinner = Halo(text='Desligando serviços em segundo plano...', spinner='dots', color='red')
     shutdown_spinner.start()
     os.system("pkill -f auto_copy.py > /dev/null 2>&1")
     os.system("pkill -f auto_input.py > /dev/null 2>&1")
     set_function_status("auto_copy", False)
     os.system("pkill -f monitor_apps.py > /dev/null 2>&1")
     time.sleep(1)
-    shutdown_spinner.succeed('All Evollogic services stopped.')
-    console.print("[bold green]✅ Node disconnected safely. Goodbye![/bold green]\n")
+    shutdown_spinner.succeed('Todos os serviços parados com segurança.')
+    console.print("[bold green]✅ Node desconectado. Até logo![/bold green]\n")
     sys.exit(0)

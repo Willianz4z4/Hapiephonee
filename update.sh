@@ -10,10 +10,8 @@ URL_ATUAL_LIMPA=${URL_ATUAL%.git}
 
 if [ "$URL_ATUAL_LIMPA" != "$URL_OFICIAL" ]; then
     echo "💀 [ALERTA CRÍTICO] Fonte de atualização não reconhecida!"
-    echo "❌ O sistema negou a aprovação do download. URL adulterada detectada."
     exit 1
 fi
-# ==========================================
 
 git fetch origin > /dev/null 2>&1
 
@@ -22,15 +20,13 @@ REMOTE=$(git rev-parse origin/main)
 MUDANCAS_SUJAS=$(git status --porcelain)
 
 # ==========================================
-# 🛑 2ª CAMADA: VALIDAÇÃO DE INTEGRIDADE LOCAL
-# (DEVE FICAR AQUI, ANTES DO EXIT 0)
+# 🛑 2ª CAMADA: FLAGRANTE (DELEGA PARA O C-LEVEL)
 # ==========================================
 if [ -n "$MUDANCAS_SUJAS" ]; then
-    echo "💀 [ALERTA] Edição local detectada! Esmagando alterações e purificando..."
-    git reset --hard origin/main > /dev/null 2>&1
-    git clean -fdx > /dev/null 2>&1
-    python security_system/build_hashes.py
-    exit 10
+    echo "👀 [BASH] Adulteração detectada! Repassando flagrante para o Motor C-Level..."
+    # O Bash NÃO limpa e NÃO reseta. Ele sai com sucesso (0) para que o bot inicie
+    # com o arquivo sujo e o Core aplique o Lockdown e o banimento!
+    exit 0
 fi
 
 # Se não tem arquivo sujo e as versões são iguais, aí sim ele sai quieto
