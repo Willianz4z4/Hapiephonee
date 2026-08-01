@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(CURRENT_DIR)
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-FUNCTIONS_FILE = os.path.join(CURRENT_DIR, "functions.json")
+FUNCTIONS_FILE = os.path.join(BASE_DIR, "functions.json")
 WEBHOOK_CACHE = os.path.join(CURRENT_DIR, ".webhook_cache")
 DATA_DIR = os.path.join(BASE_DIR, "Data")
 INIT_MARKER_FILE = os.path.join(DATA_DIR, "macrodroid_initialized.json")
@@ -108,13 +108,13 @@ def verificar_e_iniciar_macrodroid():
     """Verifica na pasta Data se o MacroDroid já foi aberto/configurado alguma vez.
        Se nunca rodou, desoculta, abre por 5 segundos para inicializar os serviços e oculta de novo."""
     os.makedirs(DATA_DIR, exist_ok=True)
-    
+
     if os.path.exists(INIT_MARKER_FILE):
         print("ℹ️ [SETUP] MacroDroid já foi inicializado anteriormente. Pulando abertura de tela.", flush=True)
         return
 
     print("🚀 [SETUP] Primeira execução detectada! Configurando e inicializando MacroDroid...", flush=True)
-    
+
     # 1. Desoculta temporariamente
     subprocess.run('su -c "pm unhide com.arlosoft.macrodroid"', shell=True, capture_output=True)
     time.sleep(1)
@@ -141,10 +141,13 @@ def forcar_acessibilidade():
     subprocess.run('su -c "settings put secure accessibility_enabled 0 > /dev/null 2>&1"', shell=True)
     subprocess.run(f'su -c "settings put secure enabled_accessibility_services {servicos} > /dev/null 2>&1"', shell=True)
     subprocess.run('su -c "settings put secure accessibility_enabled 1 > /dev/null 2>&1"', shell=True)
-    
+
     # Garante whitelist de bateria
     subprocess.run('su -c "dumpsys deviceidle whitelist +com.arlosoft.macrodroid > /dev/null 2>&1"', shell=True)
     subprocess.run('su -c "dumpsys deviceidle whitelist +com.termux > /dev/null 2>&1"', shell=True)
+
+    # Força parada do app para garantir que ele leia as novas permissões do sistema sem exibir pop-up
+    subprocess.run('su -c "am force-stop com.arlosoft.macrodroid"', shell=True)
 
 def main():
     print("📡 Hapiephone Copy System Online (Modo Híbrido Seguro)...", flush=True)
@@ -152,7 +155,7 @@ def main():
 
     forcar_acessibilidade()
     verificar_e_iniciar_macrodroid()
-    
+
     estado_ativo = False
 
     while True:
@@ -167,9 +170,6 @@ def main():
             estado_ativo = False
 
         time.sleep(5)
-
-if __name__ ==".main__": # Evita execução errada se importado
-    pass
 
 if __name__ == "__main__":
     main()
