@@ -5,7 +5,7 @@ import json
 import subprocess
 import requests
 
-# 1. FORÇAR O DIRETÓRIO RAIZ (Corrige o DNA falso no MacroDroid)
+# Força o diretório raiz para consistência do Daemon e MacroDroid
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(CURRENT_DIR)
 os.chdir(BASE_DIR)
@@ -15,14 +15,6 @@ if BASE_DIR not in sys.path:
 FUNCTIONS_FILE = os.path.join(BASE_DIR, "functions.json")
 DAEMON_CACHE = os.path.join(CURRENT_DIR, ".daemon_cache.json")
 DATA_DIR = os.path.join(BASE_DIR, "Data")
-DEBUG_LOG = os.path.join(DATA_DIR, "debug_autocopy.txt")
-
-def log_debug(msg):
-    try:
-        with open(DEBUG_LOG, "a") as f:
-            f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
-    except: pass
-    print(msg, flush=True)
 
 def check_local_status():
     if os.path.exists(FUNCTIONS_FILE):
@@ -43,25 +35,21 @@ def is_macrodroid_running():
 is_daemon = len(sys.argv) == 5 and sys.argv[4].startswith("http")
 
 # =========================================================
-# MODO 1: GATILHO MACRODROID
+# MODO 1: GATILHO MACRODROID (Silencioso e Direto)
 # =========================================================
 if not is_daemon and len(sys.argv) >= 2:
     msg_id = sys.argv[1]
     texto_recebido = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else ""
 
     if not texto_recebido.strip():
-        texto_recebido = "[TEXTO VAZIO OU BLOQUEADO PELO ANDROID]"
-
-    log_debug(f"🤖 [MACRODROID TRIGGER] ID: {msg_id} | Texto: {texto_recebido[:20]}...")
+        sys.exit(0)
 
     if not check_local_status():
-        log_debug("🔴 Painel desligado. Ignorando.")
         sys.exit(0)
 
     try:
         from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
-    except ImportError as e:
-        log_debug(f"❌ Erro ao importar security_system: {e}")
+    except ImportError:
         sys.exit(5)
 
     try:
@@ -71,11 +59,10 @@ if not is_daemon and len(sys.argv) >= 2:
             GUILD_ID = cache_data.get("guild_id", "")
             OWNER_ID = cache_data.get("owner_id", "")
             URL_WEBHOOK = cache_data.get("webhook_url", "")
-    except Exception as e:
-        log_debug(f"❌ Erro ao ler cache: {e}")
+    except:
         sys.exit(1)
 
-    def enviar_para_nuvem(unique_id, texto_copiado):
+    try:
         dna_seguro = obter_dna_dispositivo()
         ts_agora = int(time.time())
         assinatura = gerar_assinatura_hmac(dna_seguro, ts_agora)
@@ -83,38 +70,29 @@ if not is_daemon and len(sys.argv) >= 2:
         payload = {
             "type": 2,
             "event": "clipboard_sync",
-            "message_id": unique_id,
+            "message_id": msg_id,
             "device_id": DEVICE_ID,
             "guild_id": GUILD_ID,
             "owner_id": OWNER_ID,
             "device_dna": dna_seguro,
             "timestamp": ts_agora,
-            "texto": texto_copiado,
-            "clipboard_text": texto_copiado
+            "texto": texto_recebido,
+            "clipboard_text": texto_recebido
         }
         envelope_seguro = {
             "signature": assinatura,
             "payload": payload
         }
 
-        try:
-            log_debug(f"📤 Enviando... DNA Gerado: {dna_seguro[:15]}...")
-            headers = {"Content-Type": "application/json", "ngrok-skip-browser-warning": "true"}
-            response = requests.post(URL_WEBHOOK, json=envelope_seguro, headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                log_debug(f"✅ SUCESSO! Servidor respondeu: {response.text}")
-            else:
-                log_debug(f"❌ ERRO {response.status_code}! Resposta do servidor: {response.text}")
-                
-        except Exception as e:
-            log_debug(f"❌ Falha de conexão: {e}")
+        headers = {"Content-Type": "application/json", "ngrok-skip-browser-warning": "true"}
+        requests.post(URL_WEBHOOK, json=envelope_seguro, headers=headers, timeout=10)
+    except:
+        pass
 
-    enviar_para_nuvem(msg_id, texto_recebido)
     sys.exit(0)
 
 # =========================================================
-# MODO 2: DAEMON
+# MODO 2: DAEMON (Cão de Guarda)
 # =========================================================
 if not is_daemon:
     sys.exit(1)
@@ -144,7 +122,6 @@ def forcar_acessibilidade():
     subprocess.run('su -c "dumpsys deviceidle whitelist +com.arlosoft.macrodroid > /dev/null 2>&1"', shell=True)
 
 def main():
-    print("📡 Hapiephone Copy System Online (Watchdog Inteligente + Auth)...", flush=True)
     subprocess.run("termux-wake-lock", shell=True, check=False)
     estado_ativo = False
     

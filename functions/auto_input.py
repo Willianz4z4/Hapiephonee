@@ -6,11 +6,15 @@ import sys
 import time
 from datetime import datetime
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(CURRENT_DIR)
+os.chdir(BASE_DIR)
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 DATA_DIR = os.path.join(BASE_DIR, "Data")
 CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json")
 FUNCTIONS_FILE = os.path.join(BASE_DIR, "functions.json")
-DEBUG_LOG = os.path.join(DATA_DIR, "auto_input_debug.txt")
 
 TRIGGER_FILE = "/sdcard/Hapiephone/trigger_visao.txt"
 TRIGGER_INJECT = "/sdcard/Hapiephone/trigger_inject.txt"
@@ -21,12 +25,8 @@ os.makedirs("/sdcard/Hapiephone", exist_ok=True)
 cache_mapa = {}
 
 def log_debug(msg):
-    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    texto = f"[{agora}] {msg}"
-    print(texto, flush=True)
-    try:
-        with open(DEBUG_LOG, "a", encoding="utf-8") as f: f.write(texto + "\n")
-    except: pass
+    agora = datetime.now().strftime("%H:%M:%S")
+    print(f"[{agora}] {msg}", flush=True)
 
 def execute_root(comando):
     caminhos_su_android = ["/system/xbin/su", "/system/bin/su", "/sbin/su"]
@@ -75,15 +75,31 @@ def obter_todos_edittexts_robusto(max_tentativas=3, delay=1.5):
         time.sleep(delay)
     return campos
 
+if len(sys.argv) == 2 and not sys.argv[1].startswith("--"):
+    session_id = sys.argv[1]
+    log_debug(f"🚀 [VISÃO DIRETA] MacroDroid acionou o Raio-X! (Session: {session_id})")
+    
+    if check_permission():
+        campos = obter_todos_edittexts_robusto()
+        if campos:
+            payload = {"status_autoinput": True, "campos_disponiveis": campos, "session": session_id, "session_id": session_id}
+            with open(CAMPOS_FILE, "w", encoding="utf-8") as f: 
+                json.dump(payload, f, indent=4)
+            log_debug(f"✅ Mapa salvo! (Session: {session_id})")
+    else:
+        log_debug("🔴 Auto-Input desligado no painel. Ignorando.")
+    
+    sys.exit(0)
+
 def main():
     global cache_mapa
     if len(sys.argv) >= 3 and sys.argv[1] == "--file": sys.exit(0)
-    print("👁️ [VISÃO] Bot Online. Vigiando chamados do MacroDroid...", flush=True)
+    print("👁️ [AUTO-INPUT DAEMON] Vigiando ordens de injeção e fallbacks...", flush=True)
 
     while True:
         if os.path.exists(TRIGGER_FILE):
             time.sleep(0.5)
-            log_debug("🚀 O MacroDroid pediu leitura da tela! Iniciando Raio-X...")
+            log_debug("🚀 [VISÃO ARQUIVO] Raio-X Iniciado...")
             session_id = ""
             try:
                 with open(TRIGGER_FILE, "r", encoding="utf-8") as f:
@@ -109,7 +125,6 @@ def main():
                 with open(TRIGGER_INJECT, "r", encoding="utf-8") as f: conteudo_injetar = f.read().strip()
                 os.remove(TRIGGER_INJECT)
 
-                # O split(" | ", 2) limita o corte em 3 pedaços, assim ele não quebra caso o texto alvo tenha "|"
                 if "|" in conteudo_injetar:
                     partes = conteudo_injetar.split("|", 2)
                     id_alvo = int(partes[0].strip())
@@ -129,14 +144,14 @@ def main():
                             centro_y = (bounds[1] + bounds[3]) // 2
                             execute_root(f"input tap {centro_x} {centro_y}")
                             time.sleep(0.5)
-                            
+
                             texto_formatado = texto_alvo.replace(" ", "%s").replace("'", "\\'")
                             execute_root(f"input text '{texto_formatado}'")
-                            
+
                             if auto_enter_flag:
                                 log_debug("↵ Pressionando ENTER...")
                                 execute_root("input keyevent 66")
-                            
+
                             log_debug("✅ Injeção concluída!")
             except Exception as e:
                 log_debug(f"❌ Erro na injeção: {e}")
