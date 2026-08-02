@@ -23,6 +23,8 @@ def inicializar_ambiente():
         os.makedirs(BASE_DATA_DIR, exist_ok=True)
 
 def dprint(msg):
+    # Agora exibe no terminal (print) E salva no log
+    print(msg)
     try:
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
@@ -41,37 +43,62 @@ def executar_root(comando):
     return True, resultado.stdout.strip() + "\n" + resultado.stderr.strip()
 
 def data_save(pacote):
+    dprint(f"\n--- [data_save] Iniciando processo para pacote: {pacote} ---")
+    
     if not pacote_eh_valido(pacote):
+        dprint(f"[data_save] ERRO: Nome do pacote ({pacote}) é inválido.")
         return False
 
     inicializar_ambiente()
     safe_pkg = pacote.replace(".", "_")
     destino_final = os.path.join(BASE_DATA_DIR, f"data_{safe_pkg}.tar.gz")
+    dprint(f"[data_save] Destino do arquivo será: {destino_final}")
 
     comando = f"""
     if [ -d "/data/data/{pacote}" ]; then
-        tar --exclude='cache' --exclude='code_cache' --exclude='no_backup' -czf "{destino_final}" -C "/data/data" "{pacote}" 2>/dev/null || true
-        chmod 777 "{destino_final}"
-        echo "sucesso"
+        echo "Pasta do app encontrada. Iniciando compressão tar..."
+        tar --exclude='cache' --exclude='code_cache' --exclude='no_backup' -czf "{destino_final}" -C "/data/data" "{pacote}" 2>&1
+        TAR_STATUS=$?
+        
+        if [ $TAR_STATUS -eq 0 ] || [ $TAR_STATUS -eq 1 ] || [ $TAR_STATUS -eq 2 ]; then
+            chmod 777 "{destino_final}"
+            echo "sucesso_tar"
+        else
+            echo "erro_tar_codigo_$TAR_STATUS"
+        fi
     else
         echo "erro_pasta_nao_encontrada"
     fi
     """
+    
+    dprint("[data_save] Executando comando root...")
     sucesso, saida = executar_root(comando)
+    dprint(f"[data_save] Saída do terminal root:\n{saida.strip()}")
 
     if "erro_pasta_nao_encontrada" in saida:
+        dprint(f"[data_save] FALHA: A pasta /data/data/{pacote} não existe. App pode não estar instalado ou nunca foi aberto.")
         return False
+        
+    if "erro_tar_codigo_" in saida:
+        dprint(f"[data_save] FALHA: Ocorreu um erro no comando tar ao criar o backup.")
+        return False
+
     if os.path.exists(destino_final):
+        tamanho = os.path.getsize(destino_final)
+        dprint(f"[data_save] SUCESSO: Arquivo final gerado! Tamanho: {tamanho} bytes.")
         return True
     else:
+        dprint(f"[data_save] FALHA GRAVE: Root diz que foi sucesso, mas o arquivo {destino_final} não apareceu!")
         return False
 
 def data_export(pacote, url_servidor, owner_id, device_id):
+    dprint(f"\n--- [data_export] Exportando dados de {pacote} ---")
     inicializar_ambiente()
     safe_pkg = pacote.replace(".", "_")
     arquivo_bot = os.path.join(BASE_DATA_DIR, f"data_{safe_pkg}.tar.gz")
 
     if not os.path.exists(arquivo_bot):
+        dprint(f"[data_export] ERRO: Arquivo para upload não foi encontrado ({arquivo_bot})")
         return False
 
     try:
@@ -82,17 +109,24 @@ def data_export(pacote, url_servidor, owner_id, device_id):
                 'owner_id': str(owner_id),
                 'device_id': str(device_id)
             }
+            
+            dprint(f"[data_export] Enviando POST para: {url_servidor}")
             response = requests.post(url_servidor, files=files, data=data, timeout=TIMEOUT_REDE)
+            dprint(f"[data_export] Código HTTP de Resposta: {response.status_code}")
 
             if response.status_code in [200, 201]:
                 os.remove(arquivo_bot)
+                dprint("[data_export] SUCESSO: Arquivo exportado e apagado localmente.")
                 return True
             else:
+                dprint("[data_export] FALHA: O servidor rejeitou o envio.")
                 return False
     except Exception as e:
+        dprint(f"[data_export] ERRO DE CONEXÃO: {str(e)}")
         return False
 
 def baixar_data_com_cookies(url, out_path):
+    dprint(f"[baixar] Preparando download da URL: {url}")
     file_id = None
     match_d = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
     if match_d:
@@ -105,12 +139,15 @@ def baixar_data_com_cookies(url, out_path):
     if file_id:
         if gdown:
             try:
+                dprint("[baixar] Tentando gdown...")
                 gdown.download(f"https://drive.google.com/uc?id={file_id}", out_path, quiet=True)
                 if os.path.exists(out_path) and os.path.getsize(out_path) > 1000:
+                    dprint("[baixar] Download gdown completo!")
                     return True
             except Exception as e:
-                pass
+                dprint(f"[baixar] Falha no gdown: {e}")
 
+        dprint("[baixar] Tentando requests manual para Google Drive...")
         session = requests.Session()
         confirm_url = "https://docs.google.com/uc?export=download"
         params = {'id': file_id}
@@ -130,23 +167,30 @@ def baixar_data_com_cookies(url, out_path):
                 with open(out_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
+                dprint("[baixar] Download requests manual completo!")
                 return True
         except requests.exceptions.RequestException as e:
+            dprint(f"[baixar] Erro na requisição Drive: {e}")
             return False
     else:
         try:
+            dprint("[baixar] Tentando requisição direta (Link normal)...")
             response = requests.get(url, stream=True, timeout=TIMEOUT_REDE)
             if response.status_code == 200:
                 with open(out_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
+                dprint("[baixar] Requisição direta completa!")
                 return True
         except requests.exceptions.RequestException as e:
+            dprint(f"[baixar] Erro na requisição direta: {e}")
             return False
 
+    dprint("[baixar] Todos os métodos de download falharam.")
     return False
 
 def data_inject(pacote, url_servidor):
+    dprint(f"\n--- [data_inject] Iniciando Injeção de {pacote} ---")
     if not pacote_eh_valido(pacote):
         return False
 
@@ -160,17 +204,20 @@ def data_inject(pacote, url_servidor):
         else:
             url_download = f"{url_servidor.rstrip('/')}/download/data_{safe_pkg}.tar.gz"
 
+        dprint(f"[data_inject] Baixando pacote do servidor/nuvem...")
         try:
             sucesso_download = baixar_data_com_cookies(url_download, arquivo_local)
             if sucesso_download and os.path.exists(arquivo_local) and os.path.getsize(arquivo_local) > 1000:
-                pass
+                dprint("[data_inject] Arquivo baixado com sucesso.")
             else:
                 if os.path.exists(arquivo_local):
                     os.remove(arquivo_local)
+                dprint("[data_inject] FALHA no download do zip.")
                 return False
         except Exception as e:
             if os.path.exists(arquivo_local):
                 os.remove(arquivo_local)
+            dprint(f"[data_inject] EXCEÇÃO no download: {e}")
             return False
 
     temp_extract_dir = os.path.join(BASE_DATA_DIR, f"temp_inspect_{safe_pkg}")
@@ -180,13 +227,14 @@ def data_inject(pacote, url_servidor):
 
     try:
         import tarfile
+        dprint("[data_inject] Reempacotando estrutura do TAR (Fix)...")
         try:
             with tarfile.open(arquivo_local, "r:gz") as tar:
                 tar.extractall(path=temp_extract_dir)
         except EOFError:
             pass
         except Exception as e:
-            pass
+            dprint(f"[data_inject] Aviso no tar.extractall: {e}")
 
         conteudo_temp = os.listdir(temp_extract_dir)
         target_data_dir = os.path.join(temp_extract_dir, pacote)
@@ -212,9 +260,9 @@ def data_inject(pacote, url_servidor):
         padrao_tar_local = os.path.join(BASE_DATA_DIR, f"fixed_{safe_pkg}.tar.gz")
         subprocess.run(["tar", "-czf", padrao_tar_local, "-C", temp_extract_dir, pacote], check=True)
         os.replace(padrao_tar_local, arquivo_local)
-
+        dprint("[data_inject] Fix do tar concluído.")
     except Exception as e:
-        pass
+        dprint(f"[data_inject] Erro ao fazer o FIX do tar: {e}")
     finally:
         if os.path.exists(temp_extract_dir):
             subprocess.run(["rm", "-rf", temp_extract_dir])
@@ -225,9 +273,11 @@ def data_inject(pacote, url_servidor):
     am force-stop "{pacote}"
     APP_OWNER=$(stat -c '%U:%G' /data/data/{pacote})
 
+    echo "Extraindo arquivos no sistema..."
     tar -xzf "{arquivo_local}" -C /data/data/ 2>&1
     TAR_STATUS=$?
 
+    echo "Ajustando permissões para $APP_OWNER..."
     chown -R $APP_OWNER /data/data/{pacote}
     restorecon -R /data/data/{pacote}
 
@@ -238,15 +288,19 @@ def data_inject(pacote, url_servidor):
     fi
     """
 
+    dprint("[data_inject] Executando injeção raiz...")
     sucesso, saida = executar_root(comando)
+    dprint(f"[data_inject] Saída Root:\n{saida.strip()}")
 
     if os.path.exists(arquivo_local):
         try: os.remove(arquivo_local)
         except: pass
 
     if "erro_pacote_nao_instalado" in saida:
+        dprint("[data_inject] FALHA: O aplicativo não está instalado.")
         return False
     elif "sucesso_absoluto" in saida:
+        dprint("[data_inject] SUCESSO na injeção de dados!")
         try:
             report_file = os.path.join(os.path.dirname(SCRIPT_DIR), "Data", "install_report.json")
             os.makedirs(os.path.dirname(report_file), exist_ok=True)
@@ -262,9 +316,11 @@ def data_inject(pacote, url_servidor):
             pass
         return True
     else:
+        dprint("[data_inject] FALHA na descompressão (Root).")
         return False
 
 def add_ugclone_config(pacote_alvo, configs):
+    dprint(f"\n--- [ugclone_config] Configurando clones para {pacote_alvo} ---")
     inicializar_ambiente()
     master_xml = "/data/data/com.ugcloner.xfein/shared_prefs/com.ugcloner.xfein_preferences.xml"
     ug_pkg = "com.ugcloner.xfein"
@@ -307,14 +363,16 @@ def add_ugclone_config(pacote_alvo, configs):
     chmod 660 "{master_xml}"
     restorecon "{master_xml}" 2>/dev/null || true
     rm -f "{temp_file}"
-    echo "sucesso"
+    echo "sucesso_xml"
     """
 
     sucesso_write, saida = executar_root(comando)
 
-    if "sucesso" in saida:
+    if "sucesso_xml" in saida:
+        dprint("[ugclone_config] SUCESSO: Configuração inserida no master xml.")
         return True
     else:
+        dprint(f"[ugclone_config] FALHA ao gravar via root:\n{saida}")
         return False
 
 if __name__ == "__main__":
@@ -323,6 +381,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.file:
+        dprint(f"\n[Main CLI] Execução direta iniciada usando o arquivo: {args.file}")
         inicializar_ambiente()
 
         pacote_alvo = None
@@ -344,4 +403,5 @@ if __name__ == "__main__":
             else:
                 sys.exit(0)
         else:
+            dprint("[Main CLI] ERRO: Pacote não reconhecido pelo nome do arquivo.")
             sys.exit(1)
