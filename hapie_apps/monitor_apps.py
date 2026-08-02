@@ -59,8 +59,7 @@ def get_native_packages():
                         native_pkgs.add(info["package"])
         except:
             pass
-    # Failsafe para esconder o termux base e as ferramentas da ROM, caso não estejam no JSON
-    native_pkgs.update(["com.termux", "com.termux.api", "com.termux.boot", "com.termux.styling", "com.termux.tasker", "com.og.toolcenter", "com.og.launcher", "com.og.gamecenter"])
+    native_pkgs.update(["com.termux", "com.termux.api", "com.termux.boot", "com.termux.styling", "com.termux.tasker"])
     return native_pkgs
 
 def get_user_apps():
@@ -145,6 +144,18 @@ def update_relationships(app_db):
 
 def get_app_info(pkg_name):
     info = {"name": pkg_name, "version": "Desconhecida", "icon_local": None, "size_mb": 0.0, "is_parent": True}
+    
+    # VIP ICONS
+    # VIP ICONS (Imagens HD Oficiais)
+    VIP_ICONS = {
+        "bin.mt.plus": "https://img.utdstc.com/icon/978/40a/97840a1b87a8b6f3c5f242e20b666a7b2cb5d2a912bbbc126ed3149baee3a3e6:200",
+        "com.arlosoft.macrodroid": "https://play-lh.googleusercontent.com/k_y5r1Uzt_B098x_Kz5T8N69w0lZ4Hwz1A4L5e2GjI2O-o-t_2pD6fT4X1K1h5n4V5I=s256",
+        "com.pranavpandey.rotation": "https://iili.io/CSj79vs.png"
+    }
+
+    if pkg_name in VIP_ICONS:
+        info["icon_local"] = VIP_ICONS[pkg_name]
+
     try:
         apk_path_cmd = f"su -c 'pm path {pkg_name}'"
         apk_path_raw = subprocess.check_output(apk_path_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
@@ -152,7 +163,6 @@ def get_app_info(pkg_name):
         if not apk_path_raw: return info
         lines = [line.replace("package:", "").strip() for line in apk_path_raw.split("\n") if line.strip()]
         if not lines: return info
-
         apk_path = lines[0]
 
         try:
@@ -171,67 +181,57 @@ def get_app_info(pkg_name):
             size_bytes = int(subprocess.check_output(size_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip())
             info["size_mb"] = round(size_bytes / (1024 * 1024), 2)
         except Exception:
-            try:
-                ls_cmd = f"su -c 'ls -l \"{apk_path}\"'"
-                ls_out = subprocess.check_output(ls_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8').strip()
-                size_bytes = int(ls_out.split()[4])
-                info["size_mb"] = round(size_bytes / (1024 * 1024), 2)
-            except:
-                info["size_mb"] = 0.0
+            info["size_mb"] = 0.0
 
         badging_cmd = f"aapt dump badging \"{apk_path}\""
         badging_output = subprocess.check_output(badging_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
 
         version_match = re.search(r"versionName='([^']+)'", badging_output)
-        if version_match:
-            info["version"] = version_match.group(1)
+        if version_match: info["version"] = version_match.group(1)
 
         version_code_match = re.search(r"versionCode='([^']+)'", badging_output)
-        if version_code_match:
-            info["version_code"] = int(version_code_match.group(1))
+        if version_code_match: info["version_code"] = int(version_code_match.group(1))
 
         name_match = re.search(r"application-label:'([^']+)'", badging_output)
-        if name_match:
-            info["name"] = name_match.group(1)
+        if name_match: info["name"] = name_match.group(1)
 
-        icon_match = re.search(r"application: label=.*? icon='([^']+)'", badging_output)
-        if not icon_match:
-            icon_match = re.search(r"icon='([^']+)'", badging_output)
+        # EXTRAÇÃO CIRÚRGICA
+        if not info["icon_local"]:
+            icon_match = re.search(r"application: label=.*? icon='([^']+)'", badging_output)
+            if not icon_match:
+                icon_match = re.search(r"icon='([^']+)'", badging_output)
 
-        unzip_list_cmd = f"unzip -l \"{apk_path}\""
-        files_list = subprocess.check_output(unzip_list_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
+            unzip_list_cmd = f"unzip -l \"{apk_path}\""
+            try:
+                files_list = subprocess.check_output(unzip_list_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
+            except:
+                files_list = ""
 
-        icon_internal_path = None
-        if icon_match:
-            full_icon_path = icon_match.group(1)
-            icon_name_base = os.path.splitext(os.path.basename(full_icon_path))[0]
-            potential_icons = re.findall(r"\s+([^\s]*" + re.escape(icon_name_base) + r"\.(?:png|webp))\b", files_list)
-            potential_icons.sort(key=lambda x: ("xxxhdpi" in x, "xxhdpi" in x, "xhdpi" in x), reverse=True)
-            if potential_icons:
-                icon_internal_path = potential_icons[0]
-
-        if not icon_internal_path:
-            all_imgs = re.findall(r"\s+([^\s]+\.(?:png|webp|jpg|jpeg))\b", files_list)
-            fallback_icons = [f for f in all_imgs if "icon" in f.lower() or "logo" in f.lower() or "launcher" in f.lower()]
-            fallback_icons.sort(key=lambda x: ("xxxhdpi" in x, "xxhdpi" in x, "xhdpi" in x, "mipmap" in x), reverse=True)
-            if fallback_icons:
-                icon_internal_path = fallback_icons[0]
-            elif all_imgs:
-                icon_internal_path = all_imgs[0]
-
-        if icon_internal_path:
-            icon_ext = icon_internal_path.split('.')[-1]
-            icon_dest = os.path.join(ICONS_DIR, f"{pkg_name}.{icon_ext}")
-            unzip_p_cmd = f"unzip -p \"{apk_path}\" \"{icon_internal_path}\" > \"{icon_dest}\""
-            os.system(unzip_p_cmd)
-
-            if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
-                cloud_url = upload_to_nuvem(icon_dest)
-                if cloud_url:
-                    info["icon_local"] = cloud_url
+            icon_internal_path = None
+            if icon_match and files_list:
+                full_icon_path = icon_match.group(1)
+                
+                if full_icon_path.endswith(('.png', '.webp', '.jpg')):
+                    icon_internal_path = full_icon_path
                 else:
-                    icon_filename = os.path.basename(icon_dest)
-                    info["icon_local"] = f"icons/{icon_filename}"
+                    icon_name_base = os.path.splitext(os.path.basename(full_icon_path))[0]
+                    potential_icons = re.findall(r"\s+([^\s]*" + re.escape(icon_name_base) + r"\.(?:png|webp))\b", files_list)
+                    potential_icons.sort(key=lambda x: ("xxxhdpi" in x, "xxhdpi" in x, "xhdpi" in x), reverse=True)
+                    if potential_icons:
+                        icon_internal_path = potential_icons[0]
+
+            if icon_internal_path:
+                icon_ext = icon_internal_path.split('.')[-1]
+                icon_dest = os.path.join(ICONS_DIR, f"{pkg_name}.{icon_ext}")
+                unzip_p_cmd = f"unzip -p \"{apk_path}\" \"{icon_internal_path}\" > \"{icon_dest}\""
+                os.system(unzip_p_cmd)
+
+                if os.path.exists(icon_dest) and os.path.getsize(icon_dest) > 0:
+                    cloud_url = upload_to_nuvem(icon_dest)
+                    if cloud_url: info["icon_local"] = cloud_url
+                    else: info["icon_local"] = f"icons/{os.path.basename(icon_dest)}"
+            else:
+                info["icon_local"] = "https://cdn-icons-png.flaticon.com/512/1040/1040228.png"
 
     except Exception:
         pass
@@ -419,6 +419,11 @@ def start_monitor():
 
             time.sleep(2)
             new_apps = get_user_apps()
+
+            # 🔥 AQUI ESTÁ A CORREÇÃO: Força a recriação do arquivo imediatamente se ele não existir
+            if not os.path.exists(JSON_FILE):
+                save_data(app_db)
+                console.print(f"\n[bold yellow]⚠️ Arquivo apps_install.json ausente! Recriado imediatamente com {len(app_db)} apps da memória.[/bold yellow]")
 
             if new_apps != current_apps or force_relationship_update:
                 added = new_apps - current_apps

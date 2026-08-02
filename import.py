@@ -170,7 +170,8 @@ def verificar_e_instalar_apps_essenciais():
     else:
         spinner_apps.succeed("✅ Todos os plugins essenciais já estão instalados!")
 
-verificar_e_instalar_apps_essenciais()
+if not os.path.exists(os.path.join(BASE_DIR, "setup_concluido.txt")):
+    verificar_e_instalar_apps_essenciais()
 
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 FUNCTIONS_JSON_FILE = os.path.join(BASE_DIR, "functions.json")
