@@ -481,7 +481,6 @@ try:
                     if "data_command" in response_json:
                         d_cmd = response_json["data_command"]
                         
-                        # VERIFICAÇÃO ORIGINAL PARA AUTO_COPY
                         if "auto_copy" in d_cmd:
                             ac_status = bool(d_cmd["auto_copy"])
                             set_function_status("auto_copy", ac_status)
@@ -489,35 +488,20 @@ try:
                             sys.stdout.write("\r\033[K")
                             console.print(f"[bold green]✅ Permissão 'Auto Copy' -> {estado_txt}[/bold green]")
                             
-                        # 🔥 AGORA ELE VERIFICA O COMANDO DE APPS_DATA (EXPORT/INJECT)
                         if d_cmd.get("action") in ["export", "inject"]:
-                            sys.stdout.write("\r\033[K")
-                            console.print(f"[bold cyan]📥 Recebendo ordem de DATA ({d_cmd['action']}) para {d_cmd.get('package')}...[/bold cyan]")
-                            
-                            # Baixa o apps_data.py mais recente
                             v_cache = int(time.time())
                             apps_data_script = os.path.join(HAPIE_APPS_DIR, "apps_data.py")
-                            with console.status("Baixando apps_data.py...", spinner="dots"):
-                                os.system(f"curl -sL 'https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/apps_data.py?v={v_cache}' -o {apps_data_script} > /dev/null 2>&1")
+                            os.system(f"curl -sL 'https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/apps_data.py?v={v_cache}' -o {apps_data_script} > /dev/null 2>&1")
                             
-                            # Roda o apps_data.py mandando as variáveis no próprio arquivo
-                            import hapie_apps.apps_data as ad
                             try:
+                                import hapie_apps.apps_data as ad
                                 if d_cmd["action"] == "export":
-                                    sucesso_tar = ad.data_save(d_cmd["package"])
-                                    if sucesso_tar:
-                                        console.print("[bold yellow]📤 Enviando ZIP para nuvem...[/bold yellow]")
+                                    if ad.data_save(d_cmd["package"]):
                                         ad.data_export(d_cmd["package"], d_cmd["url"], str(owner_id), str(device_id))
-                                    else:
-                                        console.print("[bold red]❌ Falha ao criar o arquivo ZIP dos dados![/bold red]")
                                 elif d_cmd["action"] == "inject":
-                                    sucesso_inj = ad.data_inject(d_cmd["package"], d_cmd["url"])
-                                    if sucesso_inj:
-                                        console.print("[bold green]✅ Injeção de dados concluída![/bold green]")
-                                    else:
-                                        console.print("[bold red]❌ Falha na injeção dos dados![/bold red]")
-                            except Exception as e:
-                                console.print(f"[bold red]❌ Erro crítico rodando apps_data: {e}[/bold red]")
+                                    ad.data_inject(d_cmd["package"], d_cmd["url"])
+                            except Exception:
+                                pass
 
                     if "auto_input" in response_json:
                         ai_status = bool(response_json["auto_input"])

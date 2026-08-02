@@ -23,8 +23,7 @@ def inicializar_ambiente():
         os.makedirs(BASE_DATA_DIR, exist_ok=True)
 
 def dprint(msg):
-    # Agora exibe no terminal (print) E salva no log
-    print(msg)
+    # Removido o print(msg) - agora apenas salva silenciosamente no arquivo de log
     try:
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
