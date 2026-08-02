@@ -26,7 +26,7 @@ except ImportError:
     from halo import Halo
 
 console = Console()
-HAPIEPHONE_VERSION = "10.6 (Auto Input Engine + Cyber Security)"
+HAPIEPHONE_VERSION = "10.7 (Auto Input Engine + Cyber Security)"
 
 if os.environ.get("HAPIE_WATCHDOG") != "1":
     os.environ["HAPIE_WATCHDOG"] = "1"
@@ -196,7 +196,7 @@ PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
 PAYLOAD_INSTALL_FILE = os.path.join(DATA_DIR, "payload_install.json")
 PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")
 REPORT_ORDERS_FILE = os.path.join(DATA_DIR, "report_orders.json")
-CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json") # Mantido apenas para evitar erro se outras partes chamarem, mas n lido.
+CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json") 
 
 def set_function_status(func_name, is_active):
     data = {}
@@ -480,12 +480,44 @@ try:
 
                     if "data_command" in response_json:
                         d_cmd = response_json["data_command"]
+                        
+                        # VERIFICAÇÃO ORIGINAL PARA AUTO_COPY
                         if "auto_copy" in d_cmd:
                             ac_status = bool(d_cmd["auto_copy"])
                             set_function_status("auto_copy", ac_status)
                             estado_txt = "ATIVADO" if ac_status else "DESATIVADO"
                             sys.stdout.write("\r\033[K")
                             console.print(f"[bold green]✅ Permissão 'Auto Copy' -> {estado_txt}[/bold green]")
+                            
+                        # 🔥 AGORA ELE VERIFICA O COMANDO DE APPS_DATA (EXPORT/INJECT)
+                        if d_cmd.get("action") in ["export", "inject"]:
+                            sys.stdout.write("\r\033[K")
+                            console.print(f"[bold cyan]📥 Recebendo ordem de DATA ({d_cmd['action']}) para {d_cmd.get('package')}...[/bold cyan]")
+                            
+                            # Baixa o apps_data.py mais recente
+                            v_cache = int(time.time())
+                            apps_data_script = os.path.join(HAPIE_APPS_DIR, "apps_data.py")
+                            with console.status("Baixando apps_data.py...", spinner="dots"):
+                                os.system(f"curl -sL 'https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/hapie_apps/apps_data.py?v={v_cache}' -o {apps_data_script} > /dev/null 2>&1")
+                            
+                            # Roda o apps_data.py mandando as variáveis no próprio arquivo
+                            import hapie_apps.apps_data as ad
+                            try:
+                                if d_cmd["action"] == "export":
+                                    sucesso_tar = ad.data_save(d_cmd["package"])
+                                    if sucesso_tar:
+                                        console.print("[bold yellow]📤 Enviando ZIP para nuvem...[/bold yellow]")
+                                        ad.data_export(d_cmd["package"], d_cmd["url"], str(owner_id), str(device_id))
+                                    else:
+                                        console.print("[bold red]❌ Falha ao criar o arquivo ZIP dos dados![/bold red]")
+                                elif d_cmd["action"] == "inject":
+                                    sucesso_inj = ad.data_inject(d_cmd["package"], d_cmd["url"])
+                                    if sucesso_inj:
+                                        console.print("[bold green]✅ Injeção de dados concluída![/bold green]")
+                                    else:
+                                        console.print("[bold red]❌ Falha na injeção dos dados![/bold red]")
+                            except Exception as e:
+                                console.print(f"[bold red]❌ Erro crítico rodando apps_data: {e}[/bold red]")
 
                     if "auto_input" in response_json:
                         ai_status = bool(response_json["auto_input"])
