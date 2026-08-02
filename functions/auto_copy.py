@@ -89,6 +89,7 @@ if not is_daemon and len(sys.argv) >= 2:
             "owner_id": OWNER_ID,
             "device_dna": dna_seguro,
             "timestamp": ts_agora,
+            "texto": texto_copiado,
             "clipboard_text": texto_copiado
         }
         envelope_seguro = {
