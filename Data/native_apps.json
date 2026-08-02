@@ -1,0 +1,34 @@
+{
+    "nativos": {
+        "termux": {
+            "name": "Termux",
+            "package": "com.termux",
+            "is_essential": true
+        },
+        "termux_boot": {
+            "name": "Termux:Boot",
+            "package": "com.termux.boot",
+            "is_essential": true
+        },
+        "termux_api": {
+            "name": "Termux:API",
+            "package": "com.termux.api",
+            "is_essential": true
+        },
+        "termux_styling": {
+            "name": "Termux:Styling",
+            "package": "com.termux.styling",
+            "is_essential": true
+        },
+        "termux_tasker": {
+            "name": "Termux:Tasker",
+            "package": "com.termux.tasker",
+            "is_essential": true
+        },
+        "google_ar_core": {
+            "name": "Google Play Services for AR",
+            "package": "com.google.ar.core",
+            "is_essential": true
+        }
+    }
+}

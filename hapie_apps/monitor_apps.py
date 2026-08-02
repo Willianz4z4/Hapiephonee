@@ -24,6 +24,7 @@ REPO_ROOT = os.path.dirname(BASE_DIR)
 ICONS_DIR = os.path.join(REPO_ROOT, "icons")
 DATA_DIR = os.path.join(REPO_ROOT, "Data")
 JSON_FILE = os.path.join(DATA_DIR, "apps_install.json")
+NATIVE_APPS_FILE = os.path.join(DATA_DIR, "native_apps.json")
 PENDING_TASKS_FILE = os.path.join(DATA_DIR, "pending_tasks.json")
 PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")
 CONFIG_FILE = os.path.join(REPO_ROOT, "hapie_config.json")
@@ -46,14 +47,32 @@ def save_data(data):
     with open(JSON_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
+def get_native_packages():
+    native_pkgs = set()
+    if os.path.exists(NATIVE_APPS_FILE):
+        try:
+            with open(NATIVE_APPS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                nativos = data.get("nativos", {})
+                for key, info in nativos.items():
+                    if "package" in info:
+                        native_pkgs.add(info["package"])
+        except:
+            pass
+    # Failsafe para esconder o termux base e as ferramentas da ROM, caso não estejam no JSON
+    native_pkgs.update(["com.termux", "com.termux.api", "com.termux.boot", "com.termux.styling", "com.termux.tasker", "com.og.toolcenter", "com.og.launcher", "com.og.gamecenter"])
+    return native_pkgs
+
 def get_user_apps():
+    native_pkgs = get_native_packages()
     try:
         out = subprocess.check_output("su -c 'pm list packages -3'", shell=True, stderr=subprocess.DEVNULL).decode('utf-8')
         apps = set()
         for line in out.split("\n"):
             pkg = line.replace("package:", "").strip()
             if pkg and not pkg.startswith("com.android.") and not pkg.startswith("android.") and not pkg.startswith("com.google.android."):
-                apps.add(pkg)
+                if pkg not in native_pkgs:
+                    apps.add(pkg)
         return apps
     except:
         return set()
@@ -72,7 +91,7 @@ def upload_to_nuvem(file_path):
 def update_relationships(app_db):
     for pkg, info in app_db.items():
         info.pop("clone_count", None)
-        info.pop("filhos_setup", None) 
+        info.pop("filhos_setup", None)
 
     child_parent_map = {}
 
@@ -104,7 +123,6 @@ def update_relationships(app_db):
                 deduced_parent = re.sub(r'(\.clone\d+|\-\d+)$', '', pkg, flags=re.IGNORECASE)
                 child_parent_map[pkg] = deduced_parent
 
-    # 🔥 A CORREÇÃO: Ele roda o script do motor SEMPRE! Não importa se o mapa de clones está vazio.
     monitor_script = os.path.join(BASE_DIR, "ugclone_monitor.py")
     if os.path.exists(monitor_script):
         cmd_args = []
@@ -118,7 +136,6 @@ def update_relationships(app_db):
             if out_ug:
                 dados_ug = json.loads(out_ug)
                 if "filhos_setup" in dados_ug:
-                    # Injeta o DATA em QUALQUER pacote instalado (Pai ou Clone)
                     for pkg_key, setup_data in dados_ug["filhos_setup"].items():
                         if pkg_key in app_db:
                             if isinstance(setup_data, dict) and len(setup_data) > 0:
@@ -183,7 +200,7 @@ def get_app_info(pkg_name):
 
         unzip_list_cmd = f"unzip -l \"{apk_path}\""
         files_list = subprocess.check_output(unzip_list_cmd, shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='ignore')
-        
+
         icon_internal_path = None
         if icon_match:
             full_icon_path = icon_match.group(1)
@@ -192,7 +209,7 @@ def get_app_info(pkg_name):
             potential_icons.sort(key=lambda x: ("xxxhdpi" in x, "xxhdpi" in x, "xhdpi" in x), reverse=True)
             if potential_icons:
                 icon_internal_path = potential_icons[0]
-                
+
         if not icon_internal_path:
             all_imgs = re.findall(r"\s+([^\s]+\.(?:png|webp|jpg|jpeg))\b", files_list)
             fallback_icons = [f for f in all_imgs if "icon" in f.lower() or "logo" in f.lower() or "launcher" in f.lower()]
@@ -258,7 +275,7 @@ def process_ugclone_action(task):
 
     if not link:
         return
-        
+
     try:
         r = requests.get(link, timeout=15)
         if r.status_code in [200, 201]:
@@ -272,34 +289,34 @@ def process_ugclone_action(task):
                     console.print(f"\n[bold magenta]🔍 Inspecionando JSON recebido do servidor para '{target_pkg}':[/bold magenta]")
                     json_formatado = json.dumps(settings, indent=4, ensure_ascii=False)
                     console.print(f"[cyan]{json_formatado}[/cyan]")
-                    
+
                     sucesso_injecao = apps_data.add_ugclone_config(target_pkg, settings)
-                    
+
                     if sucesso_injecao:
                         console.print(f"\n[bold green]✅ XML modificado de forma 100% silenciosa para {target_pkg}![/bold green]")
-                        
+
     except Exception as e:
         console.print(f"[bold red][X] Erro ao processar requisição UGClone: {e}[/bold red]")
 
 def process_pending_apps():
     has_processed_something = False
     if not os.path.exists(PENDING_APPS_FILE): return False
-    
+
     try:
         with open(PENDING_APPS_FILE, "r", encoding="utf-8") as f:
             tasks = json.load(f)
-            
+
         if tasks:
             for task in tasks:
                 if isinstance(task, dict):
                     if task.get("action") == "update_ugclone":
                         process_ugclone_action(task)
                         has_processed_something = True
-                        
+
             os.remove(PENDING_APPS_FILE)
     except:
         pass
-        
+
     return has_processed_something
 
 def process_pending_uploads():
@@ -352,9 +369,10 @@ def start_monitor():
     console.print("[yellow]📂 Carregando memória...[/yellow]")
     app_db = load_data()
     current_apps = get_user_apps()
+    native_pkgs = get_native_packages()
     new_or_updated = 0
 
-    lixo_para_remover = [pkg for pkg in app_db if pkg.startswith("com.android.") or pkg.startswith("android.") or pkg.startswith("com.google.android.")]
+    lixo_para_remover = [pkg for pkg in app_db if pkg.startswith("com.android.") or pkg.startswith("android.") or pkg.startswith("com.google.android.") or pkg in native_pkgs]
     for lixo in lixo_para_remover:
         del app_db[lixo]
         new_or_updated += 1
@@ -388,9 +406,9 @@ def start_monitor():
     save_data(app_db)
 
     if new_or_updated > 0:
-        console.print(f"[bold green]✅ apps_install.json atualizado! ({len(app_db)} apps no total)[/bold green]")
+        console.print(f"[bold green]✅ apps_install.json atualizado! Removidos os pacotes nativos. ({len(app_db)} apps listados)[/bold green]")
     else:
-        console.print(f"[bold green]✅ Árvore de DNA e XML sincronizados perfeitamente. ({len(app_db)} apps)[/bold green]")
+        console.print(f"[bold green]✅ Árvore de DNA e XML sincronizados perfeitamente. ({len(app_db)} apps listados)[/bold green]")
 
     print("\n🌟 Monitor ativo... (Pressione CTRL+C para sair)\n")
 
@@ -398,10 +416,10 @@ def start_monitor():
         try:
             force_relationship_update = process_pending_apps()
             process_pending_uploads()
-            
+
             time.sleep(2)
             new_apps = get_user_apps()
-            
+
             if new_apps != current_apps or force_relationship_update:
                 added = new_apps - current_apps
                 removed = current_apps - new_apps
@@ -419,14 +437,14 @@ def start_monitor():
                         if app in app_db:
                             del app_db[app]
                         console.print(Panel(f"[bold red]🗑️ Aplicativo Removido:[/bold red]\n📦 [yellow]{app}[/yellow]", border_style="red"))
-                
+
                 if force_relationship_update:
                     console.print("\n[bold yellow]⏳ Ordem de injeção detectada! Aguardando 20 segundos para o motor concluir o trabalho no sistema...[/bold yellow]")
                     time.sleep(20)
 
                 update_relationships(app_db)
                 save_data(app_db)
-                
+
                 if force_relationship_update and not added and not removed:
                     console.print("\n[bold cyan]🔄 Injeção finalizada! Configurações dos clones sincronizadas e salvas no JSON.[/bold cyan]")
                 elif added:
@@ -435,7 +453,7 @@ def start_monitor():
                             print_app_panel(app, app_db[app], is_new=True)
 
                 current_apps = new_apps
-                
+
         except KeyboardInterrupt:
             break
         except Exception as e:
