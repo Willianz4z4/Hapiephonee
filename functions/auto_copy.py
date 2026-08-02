@@ -14,6 +14,7 @@ if BASE_DIR not in sys.path:
 FUNCTIONS_FILE = os.path.join(BASE_DIR, "functions.json")
 DAEMON_CACHE = os.path.join(CURRENT_DIR, ".daemon_cache.json")
 DATA_DIR = os.path.join(BASE_DIR, "Data")
+CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json")
 
 def check_local_status():
     if os.path.exists(FUNCTIONS_FILE):
@@ -28,7 +29,7 @@ def is_macrodroid_running():
     try:
         res = subprocess.run('su -c "pidof com.arlosoft.macrodroid"', shell=True, capture_output=True, text=True)
         return bool(res.stdout.strip())
-    except: 
+    except:
         return False
 
 is_daemon = len(sys.argv) == 5 and sys.argv[4].startswith("http")
@@ -70,6 +71,31 @@ if not is_daemon and len(sys.argv) >= 2:
         ts_agora = int(time.time())
         assinatura = gerar_assinatura_hmac(dna_seguro, ts_agora)
 
+        # ============================================================
+        # 👉 ORQUESTRAÇÃO: O AUTO COPY CHAMA O AUTO INPUT
+        # ============================================================
+        auto_input_data = {}
+        ai_ligado = False
+        
+        try:
+            with open(FUNCTIONS_FILE, "r") as f:
+                ai_ligado = json.load(f).get("auto_input", False)
+        except: pass
+
+        if ai_ligado:
+            script_ai = os.path.join(CURRENT_DIR, "auto_input.py")
+            if os.path.exists(script_ai):
+                # Executa o auto_input.py travando a thread até ele terminar o Raio-X
+                subprocess.run([sys.executable, script_ai, "SCAN"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+                # Assim que terminar, pega o resultado
+                if os.path.exists(CAMPOS_FILE):
+                    try:
+                        with open(CAMPOS_FILE, "r", encoding="utf-8") as f:
+                            auto_input_data = json.load(f)
+                        os.remove(CAMPOS_FILE)
+                    except: pass
+
         payload = {
             "type": 2,
             "event": "clipboard_sync",
@@ -82,6 +108,10 @@ if not is_daemon and len(sys.argv) >= 2:
             "texto": texto_recebido,
             "clipboard_text": texto_recebido
         }
+
+        if auto_input_data:
+            payload["auto_input_data"] = auto_input_data
+
         envelope_seguro = {
             "signature": assinatura,
             "payload": payload
@@ -127,7 +157,7 @@ def forcar_acessibilidade():
 def main():
     subprocess.run("termux-wake-lock", shell=True, check=False)
     estado_ativo = False
-    
+
     while True:
         deve_rodar = check_local_status()
         if deve_rodar:

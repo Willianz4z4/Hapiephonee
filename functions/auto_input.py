@@ -30,7 +30,7 @@ def log_debug(msg):
     texto = f"[{agora}] {msg}"
     print(texto, flush=True)
     try:
-        with open(DEBUG_LOG, "a", encoding="utf-8") as f: 
+        with open(DEBUG_LOG, "a", encoding="utf-8") as f:
             f.write(texto + "\n")
     except: pass
 
@@ -79,7 +79,7 @@ def obter_todos_edittexts_robusto(max_tentativas=3, delay=1.5):
                         nome_base = text_val or (res_id.split('/')[-1] if res_id else "Campo Web/Google")
                         campos.append({"id": contador, "nome_identificador": f"[📝 TEXTO] {nome_base}", "bounds": bounds})
                         contador += 1
-            if campos: 
+            if campos:
                 log_debug(f"[*] {len(campos)} campos mapeados com sucesso!")
                 break
             else:
@@ -90,24 +90,23 @@ def obter_todos_edittexts_robusto(max_tentativas=3, delay=1.5):
     return campos
 
 # =========================================================
-# MODO 1: GATILHO DIRETO
+# MODO 1: GATILHO DIRETO (CHAMADO PELO AUTO_COPY)
 # =========================================================
-if len(sys.argv) == 2 and not sys.argv[1].startswith("--"):
-    session_id = sys.argv[1]
-    log_debug(f"🚀 [VISÃO DIRETA] MacroDroid acionou o Raio-X! (Session: {session_id})")
-    
+if len(sys.argv) == 2 and sys.argv[1] == "SCAN":
+    log_debug("🚀 [VISÃO DIRETA] Auto Copy acionou o Raio-X!")
+
     if check_permission():
         campos = obter_todos_edittexts_robusto()
         if campos:
-            payload = {"status_autoinput": True, "campos_disponiveis": campos, "session": session_id, "session_id": session_id}
-            with open(CAMPOS_FILE, "w", encoding="utf-8") as f: 
+            payload = {"status_autoinput": True, "campos_disponiveis": campos}
+            with open(CAMPOS_FILE, "w", encoding="utf-8") as f:
                 json.dump(payload, f, indent=4)
-            log_debug(f"✅ Mapa salvo com sucesso no arquivo! (Session: {session_id})")
+            log_debug("✅ Mapa salvo com sucesso no arquivo para o auto_copy pegar!")
         else:
             log_debug("⚠️ Abortando: Nenhum campo de texto válido para salvar no mapa.")
     else:
         log_debug("🔴 Abortando: Permissão auto_input desligada no painel.")
-    
+
     sys.exit(0)
 
 # =========================================================
@@ -122,11 +121,7 @@ def main():
         if os.path.exists(TRIGGER_FILE):
             time.sleep(0.5)
             log_debug("🚀 [VISÃO ARQUIVO] Raio-X Iniciado...")
-            session_id = ""
             try:
-                with open(TRIGGER_FILE, "r", encoding="utf-8") as f:
-                    conteudo = f.read().strip()
-                    if "|" in conteudo: session_id = conteudo.split("|")[1].strip()
                 os.remove(TRIGGER_FILE)
             except: pass
 
@@ -134,12 +129,9 @@ def main():
                 campos = obter_todos_edittexts_robusto()
                 if campos:
                     payload = {"status_autoinput": True, "campos_disponiveis": campos}
-                    if session_id:
-                        payload["session"] = session_id
-                        payload["session_id"] = session_id
                     cache_mapa = payload
                     with open(CAMPOS_FILE, "w", encoding="utf-8") as f: json.dump(payload, f, indent=4)
-                    log_debug(f"✅ Mapa salvo! (Session: {session_id})")
+                    log_debug("✅ Mapa salvo!")
 
         if os.path.exists(TRIGGER_INJECT):
             time.sleep(0.3)

@@ -195,7 +195,7 @@ PAYLOAD_FILE = os.path.join(DATA_DIR, "payload.json")
 PAYLOAD_INSTALL_FILE = os.path.join(DATA_DIR, "payload_install.json")
 PENDING_APPS_FILE = os.path.join(DATA_DIR, "pending_apps.json")
 REPORT_ORDERS_FILE = os.path.join(DATA_DIR, "report_orders.json")
-CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json")
+CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json") # Mantido apenas para evitar erro se outras partes chamarem, mas n lido.
 
 def set_function_status(func_name, is_active):
     data = {}
@@ -414,7 +414,7 @@ try:
             try:
                 install_success, install_failed = [], []
                 order_success, order_failed = [], []
-                apps_installed_data, telemetry_data, auto_input_data = {}, {}, {}
+                apps_installed_data, telemetry_data = {}, {}
 
                 if os.path.exists(REPORT_FILE):
                     try:
@@ -435,12 +435,6 @@ try:
                 if os.path.exists(APPS_JSON_FILE):
                     try:
                         with open(APPS_JSON_FILE, "r") as f: apps_installed_data = json.load(f)
-                    except: pass
-
-                if os.path.exists(CAMPOS_FILE):
-                    try:
-                        with open(CAMPOS_FILE, "r") as f: auto_input_data = json.load(f)
-                        os.remove(CAMPOS_FILE)
                     except: pass
 
                 try:
@@ -467,18 +461,9 @@ try:
                     "install_success": install_success, "install_failed": install_failed,
                     "order_success": order_success, "order_failed": order_failed,
                     "apps_installed": apps_installed_data, "telemetry": telemetry_data,
-                    "auto_input_data": auto_input_data,
                     "device_dna": dna_seguro,
                     "timestamp": ts_agora
                 }
-
-                if isinstance(auto_input_data, dict):
-                    sess_val = auto_input_data.get("session") or auto_input_data.get("session_id") or auto_input_data.get("session_raw")
-                    if sess_val:
-                        payload["session_raw"] = sess_val
-                        payload["session"] = sess_val
-                        auto_input_data["session_raw"] = sess_val
-                        auto_input_data["session"] = sess_val
 
                 assinatura = gerar_assinatura_hmac(dna_seguro, ts_agora)
                 envelope_seguro = {
