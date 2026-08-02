@@ -32,14 +32,14 @@ is_daemon = len(sys.argv) == 5 and sys.argv[4].startswith("http")
 # =========================================================
 if not is_daemon and len(sys.argv) >= 2:
     msg_id = sys.argv[1]
-    
+
     # Junta tudo que vier depois do ID. Se o shell quebrar espaços, o Python conserta.
     texto_recebido = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else ""
-    
+
     # Se mesmo assim estiver vazio, avisa no print para não ficar em branco
     if not texto_recebido.strip():
         texto_recebido = "[TEXTO VAZIO OU BLOQUEADO PELO ANDROID]"
-        
+
     print(f"🤖 [MACRODROID TRIGGER] ID: {msg_id} | Texto: {texto_recebido}", flush=True)
 
     try:
@@ -117,13 +117,16 @@ except:
 
 def verificar_e_iniciar_macrodroid():
     os.makedirs(DATA_DIR, exist_ok=True)
-    if os.path.exists(INIT_MARKER_FILE):
-        return
+    
+    # O "if os.path.exists(INIT_MARKER_FILE): return" foi removido daqui
+    # para garantir que o MacroDroid sempre seja reaberto.
+    
     subprocess.run('su -c "pm unhide com.arlosoft.macrodroid"', shell=True, capture_output=True)
     time.sleep(1)
     subprocess.run('su -c "monkey -p com.arlosoft.macrodroid 1"', shell=True, capture_output=True)
     time.sleep(5)
     subprocess.run('su -c "pm hide com.arlosoft.macrodroid"', shell=True, capture_output=True)
+    
     try:
         with open(INIT_MARKER_FILE, "w") as f:
             json.dump({"initialized": True, "timestamp": time.time()}, f)
