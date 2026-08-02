@@ -28,10 +28,10 @@ def setup_termux_tasker():
     with open(trigger_copy_path, "w", encoding="utf-8") as f:
         f.write(copy_sh_content)
 
-    # 4. Cria o script de gatilho do Auto Input (Raio-X / Visão Direta)
+    # 4. Cria o script de gatilho do Auto Input (GATILHO LEVE VIA BASH)
     trigger_input_path = os.path.join(termux_tasker_dir, "trigger_input.sh")
     input_sh_content = """#!/data/data/com.termux/files/usr/bin/sh
-/data/data/com.termux/files/usr/bin/python /data/data/com.termux/files/home/Hapiephonee/functions/auto_input.py "$1"
+echo "visao | $1" > /sdcard/Hapiephone/trigger_visao.txt
 """
     with open(trigger_input_path, "w", encoding="utf-8") as f:
         f.write(input_sh_content)
