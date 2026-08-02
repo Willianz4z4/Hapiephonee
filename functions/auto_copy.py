@@ -81,7 +81,7 @@ if not is_daemon and len(sys.argv) >= 2:
         assinatura = gerar_assinatura_hmac(dna_seguro, ts_agora)
 
         payload = {
-            "type": 2, # Flag extra para o servidor saber que é um evento secundário
+            "type": 2,
             "event": "clipboard_sync",
             "message_id": unique_id,
             "device_id": DEVICE_ID,
