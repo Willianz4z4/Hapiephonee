@@ -5,14 +5,24 @@ import json
 import subprocess
 import requests
 
+# 1. FORÇAR O DIRETÓRIO RAIZ (Corrige o DNA falso no MacroDroid)
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(CURRENT_DIR)
+os.chdir(BASE_DIR)
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 FUNCTIONS_FILE = os.path.join(BASE_DIR, "functions.json")
 DAEMON_CACHE = os.path.join(CURRENT_DIR, ".daemon_cache.json")
 DATA_DIR = os.path.join(BASE_DIR, "Data")
+DEBUG_LOG = os.path.join(DATA_DIR, "debug_autocopy.txt")
+
+def log_debug(msg):
+    try:
+        with open(DEBUG_LOG, "a") as f:
+            f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+    except: pass
+    print(msg, flush=True)
 
 def check_local_status():
     if os.path.exists(FUNCTIONS_FILE):
@@ -24,14 +34,12 @@ def check_local_status():
     return False
 
 def is_macrodroid_running():
-    """Verifica silenciosamente se o processo do MacroDroid está vivo"""
     try:
         res = subprocess.run('su -c "pidof com.arlosoft.macrodroid"', shell=True, capture_output=True, text=True)
         return bool(res.stdout.strip())
     except: 
         return False
 
-# Identifica se é o Daemon rodando (Iniciado pelo import.py)
 is_daemon = len(sys.argv) == 5 and sys.argv[4].startswith("http")
 
 # =========================================================
@@ -44,19 +52,18 @@ if not is_daemon and len(sys.argv) >= 2:
     if not texto_recebido.strip():
         texto_recebido = "[TEXTO VAZIO OU BLOQUEADO PELO ANDROID]"
 
-    print(f"🤖 [MACRODROID TRIGGER] ID: {msg_id} | Texto: {texto_recebido}", flush=True)
+    log_debug(f"🤖 [MACRODROID TRIGGER] ID: {msg_id} | Texto: {texto_recebido[:20]}...")
 
     if not check_local_status():
-        print("🔴 [GATILHO] Painel desligado. Ignorando envio para nuvem.", flush=True)
+        log_debug("🔴 Painel desligado. Ignorando.")
         sys.exit(0)
 
     try:
         from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
-    except ImportError:
-        print("❌ [FALHA] Falha de segurança ao carregar o Cofre.")
+    except ImportError as e:
+        log_debug(f"❌ Erro ao importar security_system: {e}")
         sys.exit(5)
 
-    # 1. Recupera as credenciais que o Daemon (import.py) salvou
     try:
         with open(DAEMON_CACHE, "r") as f:
             cache_data = json.load(f)
@@ -65,19 +72,16 @@ if not is_daemon and len(sys.argv) >= 2:
             OWNER_ID = cache_data.get("owner_id", "")
             URL_WEBHOOK = cache_data.get("webhook_url", "")
     except Exception as e:
-        print(f"❌ [FALHA] Não foi possível ler as credenciais do Daemon: {e}")
-        URL_WEBHOOK = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/webhook"
-        DEVICE_ID = ""
-        GUILD_ID = ""
-        OWNER_ID = ""
+        log_debug(f"❌ Erro ao ler cache: {e}")
+        sys.exit(1)
 
     def enviar_para_nuvem(unique_id, texto_copiado):
         dna_seguro = obter_dna_dispositivo()
         ts_agora = int(time.time())
         assinatura = gerar_assinatura_hmac(dna_seguro, ts_agora)
 
-        # 2. Agora o payload envia as credenciais idênticas ao import.py
         payload = {
+            "type": 2, # Flag extra para o servidor saber que é um evento secundário
             "event": "clipboard_sync",
             "message_id": unique_id,
             "device_id": DEVICE_ID,
@@ -93,22 +97,27 @@ if not is_daemon and len(sys.argv) >= 2:
         }
 
         try:
-            print(f"📤 Enviando para o Webhook com IDs completos...", flush=True)
+            log_debug(f"📤 Enviando... DNA Gerado: {dna_seguro[:15]}...")
             headers = {"Content-Type": "application/json", "ngrok-skip-browser-warning": "true"}
-            requests.post(URL_WEBHOOK, json=envelope_seguro, headers=headers, timeout=10)
+            response = requests.post(URL_WEBHOOK, json=envelope_seguro, headers=headers, timeout=10)
+            
+            if response.status_code == 200:
+                log_debug(f"✅ SUCESSO! Servidor respondeu: {response.text}")
+            else:
+                log_debug(f"❌ ERRO {response.status_code}! Resposta do servidor: {response.text}")
+                
         except Exception as e:
-            print(f"❌ [ERRO] Falha de conexão: {e}")
+            log_debug(f"❌ Falha de conexão: {e}")
 
     enviar_para_nuvem(msg_id, texto_recebido)
     sys.exit(0)
 
 # =========================================================
-# MODO 2: DAEMON (CÃO DE GUARDA RESPEITANDO O USUÁRIO)
+# MODO 2: DAEMON
 # =========================================================
 if not is_daemon:
     sys.exit(1)
 
-# 3. Salva os dados de autenticação passados pelo import.py
 try:
     cache_data = {
         "device_id": sys.argv[1],
@@ -124,7 +133,6 @@ def verificar_e_iniciar_macrodroid():
     os.makedirs(DATA_DIR, exist_ok=True)
     subprocess.run('su -c "pm unhide com.arlosoft.macrodroid > /dev/null 2>&1"', shell=True)
     time.sleep(1)
-    print("🔄 Iniciando o serviço do MacroDroid em background...", flush=True)
     subprocess.run('su -c "am start-service -n com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.MacroDroidAccessibilityServiceJellyBean > /dev/null 2>&1"', shell=True)
 
 def forcar_acessibilidade():
@@ -137,29 +145,21 @@ def forcar_acessibilidade():
 def main():
     print("📡 Hapiephone Copy System Online (Watchdog Inteligente + Auth)...", flush=True)
     subprocess.run("termux-wake-lock", shell=True, check=False)
-    
     estado_ativo = False
     
     while True:
         deve_rodar = check_local_status()
-        
         if deve_rodar:
             if not estado_ativo:
-                print("🟢 [GATILHO] Sistema de Cópia LIGADO pelo usuário. Ativando serviços...", flush=True)
                 forcar_acessibilidade()
                 verificar_e_iniciar_macrodroid()
                 estado_ativo = True
-            
             if not is_macrodroid_running():
-                print("⚠️ [WATCHDOG] O Android fechou o MacroDroid! Ressuscitando em background...", flush=True)
                 forcar_acessibilidade()
                 verificar_e_iniciar_macrodroid()
-                
         else:
             if estado_ativo:
-                print("🔴 [GATILHO] Sistema de Cópia DESLIGADO pelo usuário.", flush=True)
                 estado_ativo = False
-            
         time.sleep(5)
 
 if __name__ == "__main__":
