@@ -11,10 +11,6 @@ from datetime import datetime
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 sys.path.insert(0, BASE_DIR)
 
-# ==========================================
-# 🎨 0. INICIALIZAÇÃO DE UI (DEPENDÊNCIAS)
-# Carregado no topo para que o Watchdog possa ser bonito também
-# ==========================================
 try:
     import requests
     import gdown
@@ -32,20 +28,15 @@ except ImportError:
 console = Console()
 HAPIEPHONE_VERSION = "10.6 (Auto Input Engine + Cyber Security)"
 
-# ==========================================
-# 🛡️ 1. WATCHDOG (PREPARAÇÃO E LIMPEZA)
-# ==========================================
 if os.environ.get("HAPIE_WATCHDOG") != "1":
     os.environ["HAPIE_WATCHDOG"] = "1"
     os.system("clear" if os.name == "posix" else "cls")
-    
-    # Banner Principal exibido apenas pelo processo Pai
+
     console.print(Panel.fit(f"[bold cyan]Hapiephone Cloud Node[/bold cyan]\n[dim]Version {HAPIEPHONE_VERSION} | Powered by Evollogic[/dim]", border_style="cyan"))
-    
+
     spinner = Halo(text='[Watchdog] Escudo de Resiliência ativado. Checando atualizações...', spinner='dots', color='blue')
     spinner.start()
 
-    # Roda silenciosamente para não sujar a tela
     subprocess.run(["bash", "update.sh"], cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     spinner.succeed('[Watchdog] Sistema central atualizado e purificado.')
 
@@ -106,9 +97,6 @@ def handle_child_sigterm(signum, frame):
     raise KeyboardInterrupt
 signal.signal(signal.SIGTERM, handle_child_sigterm)
 
-# ==========================================
-# 🛑 2. BLINDAGEM DE SEGURANÇA (CYTHON C-LEVEL)
-# ==========================================
 try:
     from security_system.core import gerar_assinatura_hmac, obter_dna_dispositivo
 except ImportError:
@@ -118,9 +106,6 @@ except Exception as e:
     console.print(f"\n[bold red]💀 [Security] LOCKDOWN ATIVADO: Integridade violada! ({e})[/bold red]")
     sys.exit(5)
 
-# ==========================================
-# ⚙️ 3. CONFIGURAÇÃO DE AMBIENTE E SETUP
-# ==========================================
 arquivo_comprovante = os.path.join(BASE_DIR, "setup_concluido.txt")
 if not os.path.exists(arquivo_comprovante):
     spinner = Halo(text='🛠️ Primeira execução detectada! Rodando blindagem do sistema...', spinner='dots', color='cyan')
@@ -128,7 +113,6 @@ if not os.path.exists(arquivo_comprovante):
     caminho_setup = os.path.join(BASE_DIR, "auto_setup.py")
     if os.path.exists(caminho_setup):
         try:
-            # Roda o auto_setup ocultando aquele output sujo
             subprocess.run([sys.executable, caminho_setup], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             with open(arquivo_comprovante, "w") as f:
                 f.write("Setup de persistencia feito com sucesso em: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -137,7 +121,56 @@ if not os.path.exists(arquivo_comprovante):
             spinner.fail(f'❌ Erro ao rodar a blindagem inicial: {e}')
     else:
         spinner.warn('⚠️ Arquivo auto_setup.py não encontrado! Pulando blindagem...')
-    print("") # Quebra de linha para respiro
+    print("")
+
+def verificar_e_instalar_apps_essenciais():
+    apps_essenciais = {
+        "com.termux.boot": "install_termux_boot",
+        "com.termux.api": "install_single_plugin",
+        "com.termux.widget": "install_single_plugin",
+        "com.termux.float": "install_single_plugin",
+        "com.termux.tasker": "install_single_plugin",
+        "com.termux.styling": "install_single_plugin",
+        "com.termux.gui": "install_single_plugin"
+    }
+
+    spinner_apps = Halo(text='🔍 Verificando integridade dos plugins essenciais...', spinner='dots', color='cyan')
+    spinner_apps.start()
+
+    check_installed = subprocess.run("su -c 'pm list packages'", shell=True, capture_output=True, text=True).stdout
+
+    faltando = []
+    for pkg, func in apps_essenciais.items():
+        if pkg not in check_installed:
+            faltando.append((pkg, func))
+
+    if faltando:
+        spinner_apps.warn(f"⚠️ {len(faltando)} plugin(s) faltando no Android! Invocando auto_setup.py...")
+        caminho_setup = os.path.join(BASE_DIR, "auto_setup.py")
+        if os.path.exists(caminho_setup):
+            try:
+                import auto_setup
+                for pkg, func_name in faltando:
+                    spinner_inst = Halo(text=f'📦 Instalando plugin ausente: {pkg}...', spinner='dots', color='yellow')
+                    spinner_inst.start()
+                    if hasattr(auto_setup, func_name):
+                        funcao_alvo = getattr(auto_setup, func_name)
+                        if func_name == "install_single_plugin":
+                            funcao_alvo(pkg)
+                        else:
+                            funcao_alvo()
+                        spinner_inst.succeed(f'✅ {pkg} instalado e configurado.')
+                    else:
+                        if hasattr(auto_setup, "install_and_hide_plugins"):
+                            auto_setup.install_and_hide_plugins()
+                            spinner_inst.succeed('✅ Plugins atualizados via auto_setup.')
+                            break
+            except Exception as e:
+                console.print(f"[bold red]❌ Erro ao instalar plugin individual: {e}[/bold red]")
+    else:
+        spinner_apps.succeed("✅ Todos os plugins essenciais já estão instalados!")
+
+verificar_e_instalar_apps_essenciais()
 
 CONFIG_FILE = os.path.join(BASE_DIR, "hapie_config.json")
 FUNCTIONS_JSON_FILE = os.path.join(BASE_DIR, "functions.json")
@@ -204,9 +237,6 @@ else:
 URL_WEBHOOK = "https://pandanaceous-meghann-nonincarnate.ngrok-free.dev/webhook"
 report = {"installation_status": "pending", "steps": {}, "system_info": {}}
 
-# ==========================================
-# 🚀 4. INICIALIZAÇÃO DE SERVIÇOS
-# ==========================================
 spinner = Halo(text='Executando e verificando Protocolos...', spinner='dots', color='cyan')
 spinner.start()
 

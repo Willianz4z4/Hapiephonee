@@ -47,7 +47,6 @@ def setup_termux_bashrc():
     bashrc_path = os.path.expanduser("~/.bashrc")
 
     startup_code = """
-# Verifica se já existe um processo do bot rodando no sistema
 if pgrep -f "python import.py" > /dev/null; then
     echo "🤖 Hapiephone Bot já está rodando perfeitamente em outra aba/sessão!"
     echo "👉 Terminal livre para uso."
@@ -149,6 +148,33 @@ su -c 'am start --user 0 -n com.termux/com.termux.app.TermuxActivity'
         spinner.fail(f"Failed to setup Termux:Boot: {e}")
         write_log(f"❌ Failed to setup Termux:Boot: {e}")
 
+def install_single_plugin(pkg_target):
+    plugins = {
+        "com.termux.api": "https://f-droid.org/repo/com.termux.api_51.apk",
+        "com.termux.widget": "https://f-droid.org/repo/com.termux.widget_14.apk",
+        "com.termux.float": "https://f-droid.org/repo/com.termux.float_15.apk",
+        "com.termux.tasker": "https://f-droid.org/repo/com.termux.tasker_5.apk",
+        "com.termux.styling": "https://f-droid.org/repo/com.termux.styling_29.apk",
+        "com.termux.gui": "https://github.com/termux/termux-gui/releases/download/v0.1.0/app-release.apk"
+    }
+
+    if pkg_target in plugins:
+        url = plugins[pkg_target]
+        apk_path = f"/sdcard/{pkg_target}.apk"
+        os.system("su -c 'settings put global package_verifier_enable 0'")
+        os.system("su -c 'settings put global upload_apk_enable 0'")
+        os.system(f"curl -sL '{url}' -o {apk_path} > /dev/null 2>&1")
+
+        if os.path.exists(apk_path):
+            os.system(f"su -c 'pm install -r {apk_path} > /dev/null 2>&1'")
+            os.system(f"rm {apk_path}")
+            os.system(f"su -c 'appops set {pkg_target} SYSTEM_ALERT_WINDOW allow'")
+            os.system(f"su -c 'appops set {pkg_target} RUN_IN_BACKGROUND allow'")
+            os.system(f"su -c 'dumpsys deviceidle whitelist +{pkg_target}'")
+            hide_cmd = f"su -c 'ACTIVITY=$(cmd package resolve-activity --brief {pkg_target} | tail -n 1); pm disable $ACTIVITY > /dev/null 2>&1'"
+            os.system(hide_cmd)
+        os.system("su -c 'settings put global package_verifier_enable 1'")
+
 def install_and_hide_plugins():
     write_log("Setting up additional Termux Plugins...")
     spinner = Halo(text='Downloading & Hiding Extra Termux Plugins...', spinner='dots')
@@ -157,7 +183,6 @@ def install_and_hide_plugins():
     os.system("su -c 'settings put global package_verifier_enable 0'")
     os.system("su -c 'settings put global upload_apk_enable 0'")
 
-    # Dicionário mestre com os links dos plugins
     plugins = {
         "Termux:API": {"pkg": "com.termux.api", "url": "https://f-droid.org/repo/com.termux.api_51.apk"},
         "Termux:Widget": {"pkg": "com.termux.widget", "url": "https://f-droid.org/repo/com.termux.widget_14.apk"},
@@ -172,13 +197,12 @@ def install_and_hide_plugins():
         url = info["url"]
         apk_path = f"/sdcard/{pkg}.apk"
 
-        # Verifica se o plugin já existe no sistema
         check_pkg = subprocess.run(f"su -c 'pm list packages {pkg}'", shell=True, capture_output=True, text=True)
-        
+
         if pkg not in check_pkg.stdout:
             write_log(f"Downloading {name}...")
             os.system(f"curl -sL '{url}' -o {apk_path} > /dev/null 2>&1")
-            
+
             if os.path.exists(apk_path):
                 write_log(f"Installing {name}...")
                 os.system(f"su -c 'pm install -r {apk_path} > /dev/null 2>&1'")
@@ -189,12 +213,10 @@ def install_and_hide_plugins():
         else:
             write_log(f"ℹ️ {name} already installed.")
 
-        # Força as permissões essenciais de sobreposição de tela e bateria
         os.system(f"su -c 'appops set {pkg} SYSTEM_ALERT_WINDOW allow'")
         os.system(f"su -c 'appops set {pkg} RUN_IN_BACKGROUND allow'")
         os.system(f"su -c 'dumpsys deviceidle whitelist +{pkg}'")
 
-        # MAGIA AQUI: Ocultador Dinâmico. Descobre a tela inicial do app e desativa ela do menu do Android.
         hide_cmd = f"su -c 'ACTIVITY=$(cmd package resolve-activity --brief {pkg} | tail -n 1); pm disable $ACTIVITY > /dev/null 2>&1'"
         os.system(hide_cmd)
         write_log(f"✅ {name} installed and hidden successfully.")
@@ -228,8 +250,7 @@ if __name__ == "__main__":
     force_android_permissions()
     setup_termux_bashrc()
     install_termux_boot()
-    
-    # Executa a nova função que baixa e esconde todos os plugins!
+
     install_and_hide_plugins()
 
     console.print("\n[bold green]✅ Main script import completed![/bold green]")
