@@ -23,14 +23,15 @@ def check_local_status():
             with open(FUNCTIONS_FILE, "r") as f:
                 config = json.load(f)
                 return config.get("auto_copy", config.get("autocopy", False))
-        except: pass
+        except:
+            pass
     return False
 
 # =========================================================
 # MODO 1: GATILHO MACRODROID (Executado via root)
 # Recebe: python auto_copy.py [ID_UNICO] [TEXTO_COPIADO]
 # =========================================================
-if len(sys.argv) >= 3:
+if len(sys.argv) == 3:
     msg_id = sys.argv[1]
     texto_recebido = sys.argv[2]
 
@@ -79,7 +80,13 @@ if len(sys.argv) >= 3:
 
         try:
             print(f"📤 Enviando ID {unique_id} para o Webhook: {URL_WEBHOOK}...", flush=True)
-            resposta = requests.post(URL_WEBHOOK, json=envelope_seguro, headers={"Content-Type": "application/json"}, timeout=10)
+            
+            headers_seguros = {
+                "Content-Type": "application/json",
+                "ngrok-skip-browser-warning": "true"
+            }
+            
+            resposta = requests.post(URL_WEBHOOK, json=envelope_seguro, headers=headers_seguros, timeout=10)
             print(f"✅ Webhook respondeu: {resposta.status_code}")
         except Exception as e:
             print(f"❌ Erro ao enviar webhook: {e}")
@@ -102,7 +109,8 @@ URL_WEBHOOK = sys.argv[4]
 try:
     with open(WEBHOOK_CACHE, "w") as f:
         f.write(URL_WEBHOOK)
-except: pass
+except:
+    pass
 
 def verificar_e_iniciar_macrodroid():
     """Verifica na pasta Data se o MacroDroid já foi aberto/configurado alguma vez.
@@ -152,7 +160,7 @@ def forcar_acessibilidade():
 def main():
     print("📡 Hapiephone Copy System Online (Modo Híbrido Seguro)...", flush=True)
     subprocess.run("termux-wake-lock", shell=True, check=False)
-
+    
     forcar_acessibilidade()
     verificar_e_iniciar_macrodroid()
 
@@ -168,7 +176,7 @@ def main():
         elif not deve_rodar and estado_ativo:
             print("🔴 [GATILHO] Sistema de Cópia DESLIGADO.", flush=True)
             estado_ativo = False
-
+            
         time.sleep(5)
 
 if __name__ == "__main__":
