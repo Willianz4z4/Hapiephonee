@@ -70,12 +70,13 @@ def get_package_name_from_apk(apk_path):
     return None
 
 def hide_app(package_name):
-    """Oculta o app do launcher do Android sem matar ou desativar o funcionamento dele."""
+    """Oculta o app do launcher do Android desativando apenas o ícone, mantendo-o em segundo plano."""
     if not package_name:
         return
-    log_debug(f"Ocultando app do launcher: {package_name}")
-    # Usa apenas o pm hide para esconder, removido o disable-user que matava o app.
-    subprocess.run(f"su -c 'pm hide \"{package_name}\"'", shell=True, capture_output=True)
+    log_debug(f"Ocultando app do launcher desativando Activity: {package_name}")
+    # Descobre a Activity principal e a desativa para sumir com o ícone sem congelar o app
+    cmd = f"su -c 'ACTIVITY=$(cmd package resolve-activity --brief {package_name} | tail -n 1) && pm disable $ACTIVITY'"
+    subprocess.run(cmd, shell=True, capture_output=True)
 
 def download_file(url, dest_folder, extras=None):
     if extras is None: extras = {}
