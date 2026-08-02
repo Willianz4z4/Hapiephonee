@@ -15,6 +15,7 @@ if BASE_DIR not in sys.path:
 DATA_DIR = os.path.join(BASE_DIR, "Data")
 CAMPOS_FILE = os.path.join(DATA_DIR, "campos_mapeados.json")
 FUNCTIONS_FILE = os.path.join(BASE_DIR, "functions.json")
+DEBUG_LOG = os.path.join(DATA_DIR, "auto_input_debug.txt")
 
 TRIGGER_FILE = "/sdcard/Hapiephone/trigger_visao.txt"
 TRIGGER_INJECT = "/sdcard/Hapiephone/trigger_inject.txt"
@@ -25,8 +26,13 @@ os.makedirs("/sdcard/Hapiephone", exist_ok=True)
 cache_mapa = {}
 
 def log_debug(msg):
-    agora = datetime.now().strftime("%H:%M:%S")
-    print(f"[{agora}] {msg}", flush=True)
+    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    texto = f"[{agora}] {msg}"
+    print(texto, flush=True)
+    try:
+        with open(DEBUG_LOG, "a", encoding="utf-8") as f: 
+            f.write(texto + "\n")
+    except: pass
 
 def execute_root(comando):
     caminhos_su_android = ["/system/xbin/su", "/system/bin/su", "/sbin/su"]
@@ -46,12 +52,14 @@ def obter_todos_edittexts_robusto(max_tentativas=3, delay=1.5):
     classes_alvo = ['android.widget.EditText', 'android.widget.AutoCompleteTextView']
     campos = []
     for tentativa in range(1, max_tentativas + 1):
-        log_debug(f"[*] Tentativa {tentativa}/{max_tentativas}...")
+        log_debug(f"[*] Raio-X Tentativa {tentativa}/{max_tentativas}...")
         execute_root('pkill uiautomator')
         time.sleep(0.5)
         execute_root('rm -f /sdcard/ui_dump_loop.xml')
         execute_root('uiautomator dump /sdcard/ui_dump_loop.xml')
         xml_data = execute_root('cat /sdcard/ui_dump_loop.xml').stdout
+
+        log_debug(f"[*] Tamanho do XML retornado: {len(xml_data)} caracteres")
 
         if len(xml_data) > 300:
             contador = 1
@@ -71,10 +79,19 @@ def obter_todos_edittexts_robusto(max_tentativas=3, delay=1.5):
                         nome_base = text_val or (res_id.split('/')[-1] if res_id else "Campo Web/Google")
                         campos.append({"id": contador, "nome_identificador": f"[📝 TEXTO] {nome_base}", "bounds": bounds})
                         contador += 1
-            if campos: break
+            if campos: 
+                log_debug(f"[*] {len(campos)} campos mapeados com sucesso!")
+                break
+            else:
+                log_debug("[*] XML foi lido, mas nenhum campo de texto foi encontrado na tela.")
+        else:
+            log_debug("[!] Erro: XML muito pequeno ou Uiautomator travado.")
         time.sleep(delay)
     return campos
 
+# =========================================================
+# MODO 1: GATILHO DIRETO
+# =========================================================
 if len(sys.argv) == 2 and not sys.argv[1].startswith("--"):
     session_id = sys.argv[1]
     log_debug(f"🚀 [VISÃO DIRETA] MacroDroid acionou o Raio-X! (Session: {session_id})")
@@ -85,12 +102,17 @@ if len(sys.argv) == 2 and not sys.argv[1].startswith("--"):
             payload = {"status_autoinput": True, "campos_disponiveis": campos, "session": session_id, "session_id": session_id}
             with open(CAMPOS_FILE, "w", encoding="utf-8") as f: 
                 json.dump(payload, f, indent=4)
-            log_debug(f"✅ Mapa salvo! (Session: {session_id})")
+            log_debug(f"✅ Mapa salvo com sucesso no arquivo! (Session: {session_id})")
+        else:
+            log_debug("⚠️ Abortando: Nenhum campo de texto válido para salvar no mapa.")
     else:
-        log_debug("🔴 Auto-Input desligado no painel. Ignorando.")
+        log_debug("🔴 Abortando: Permissão auto_input desligada no painel.")
     
     sys.exit(0)
 
+# =========================================================
+# MODO 2: DAEMON
+# =========================================================
 def main():
     global cache_mapa
     if len(sys.argv) >= 3 and sys.argv[1] == "--file": sys.exit(0)

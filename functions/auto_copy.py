@@ -5,7 +5,6 @@ import json
 import subprocess
 import requests
 
-# Força o diretório raiz para consistência do Daemon e MacroDroid
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(CURRENT_DIR)
 os.chdir(BASE_DIR)
@@ -42,6 +41,10 @@ if not is_daemon and len(sys.argv) >= 2:
     texto_recebido = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else ""
 
     if not texto_recebido.strip():
+        sys.exit(0)
+
+    # Filtro que ignora silenciosamente a cópia vazia ou bloqueada
+    if "[TEXTO VAZIO OU BLOQUEADO PELO ANDROID]" in texto_recebido:
         sys.exit(0)
 
     if not check_local_status():
